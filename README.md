@@ -53,6 +53,9 @@ place to the dashboard's normalized lead schema and preserves the raw source
 evidence needed to debug later. The only search-engine behavior change is a
 bounded `radiusKm` override (1–80 km); OpenScout's existing search, filtering,
 ranking, verification, and deduplication behavior is otherwise preserved.
+Direct arbitrary-origin site probes are enabled only on local/file previews;
+the hosted dashboard keeps a narrow Content Security Policy and leaves that
+checkbox disabled until verification moves behind the Operations API.
 
 Lead Discovery requires a Google Maps browser key with the Maps JavaScript API
 and Places enabled. Enter the key on the Lead Discovery page. It is stored only
@@ -168,6 +171,9 @@ the dashboard and MCP.
 - Browser/network privacy controls can make site verification inconclusive.
   OpenScout keeps ambiguous checks as `unknown` instead of falsely marking a
   live website as dead.
+- Hosted builds intentionally do not allow the browser to connect to arbitrary
+  business domains. Live-site probes work in local/file previews; production
+  verification should be the first OpenScout operation moved server-side.
 - The Supabase project advisor still recommends enabling leaked-password
   protection in Auth settings. Empty-table index usage notices are expected
   until production data and queries accumulate.
