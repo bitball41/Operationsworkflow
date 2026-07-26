@@ -1,22 +1,35 @@
 const initialData = {
   profile: null,
   leads: [],
-  analyses: [],
+  discoveryRuns: [],
+  discoveryResults: [],
   templates: [],
   demos: [],
   demoVersions: [],
   drafts: [],
-  communications: [],
+  emailThreads: [],
+  emails: [],
   followUps: [],
   approvals: [],
   agentRuns: [],
   agentEvents: [],
   notifications: [],
   clients: [],
-  costEvents: [],
+  clientSites: [],
+  projects: [],
+  projectTasks: [],
+  maintenanceSubscriptions: [],
+  maintenanceRequests: [],
+  payments: [],
+  expenses: [],
+  aiUsage: [],
   pricingExperiments: [],
-  financeTransactions: [],
-  financeGoals: [],
+  activity: [],
+  tasks: [],
+  calendarEvents: [],
+  notes: [],
+  deployments: [],
+  settings: [],
   integrations: [],
 };
 
@@ -24,11 +37,22 @@ const state = {
   mode: "loading",
   session: null,
   user: null,
-  route: "command-center",
+  route: "home",
   routeParams: {},
   mobileNavOpen: false,
   agentPanelOpen: false,
+  approvalPanelOpen: false,
   notificationPanelOpen: false,
+  sidebarCollapsed: localStorage.getItem("operations.sidebarCollapsed") === "true",
+  discovery: {
+    status: "idle",
+    progress: null,
+    results: [],
+    selected: [],
+    runId: null,
+    error: "",
+    summary: null,
+  },
   data: structuredClone(initialData),
 };
 
@@ -43,6 +67,11 @@ export function setState(patch, options = {}) {
   if (!options.silent) notify();
 }
 
+export function setDiscovery(patch, options = {}) {
+  state.discovery = { ...state.discovery, ...patch };
+  if (!options.silent) notify();
+}
+
 export function setData(patch, options = {}) {
   Object.assign(state.data, patch);
   if (!options.silent) notify();
@@ -50,6 +79,7 @@ export function setData(patch, options = {}) {
 
 export function resetData() {
   state.data = structuredClone(initialData);
+  state.discovery = { status: "idle", progress: null, results: [], selected: [], runId: null, error: "", summary: null };
   notify();
 }
 
@@ -61,4 +91,3 @@ export function subscribe(listener) {
 export function notify() {
   listeners.forEach((listener) => listener(state));
 }
-
