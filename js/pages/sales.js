@@ -2,7 +2,7 @@ import { PIPELINE_STAGES } from "../config.js";
 import { pageHead, scoreBar } from "../components/ui.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, sum } from "../core/utils.js";
-import { getStoredApiKey } from "../services/openscout/adapter.js";
+import { canUseDirectWebsiteVerification, getStoredApiKey } from "../services/openscout/adapter.js";
 import {
   badge,
   button,
@@ -51,6 +51,7 @@ export function renderDiscovery() {
   const state = getState();
   const { data, routeParams, discovery } = state;
   const savedKey = Boolean(getStoredApiKey());
+  const directVerification = canUseDirectWebsiteVerification();
   const run = discovery.runId ? byId(data.discoveryRuns, discovery.runId) : data.discoveryRuns[0];
   const allRows = latestDiscoveryRows(data, state);
   const query = (routeParams.q || "").toLowerCase();
@@ -96,7 +97,7 @@ export function renderDiscovery() {
           <label><input type="checkbox" name="no_website" checked> Must not have a real website</label>
           <label><input type="checkbox" name="must_have_phone"> Must have phone</label>
           <label class="is-disabled" title="OpenScout does not return email addresses"><input type="checkbox" name="must_have_email" disabled> Must have email <small>needs enrichment integration</small></label>
-          <label><input type="checkbox" name="verify" checked> Verify ambiguous links live</label>
+          <label class="${directVerification ? "" : "is-disabled"}" title="${directVerification ? "Use OpenScout’s direct browser probes" : "Hosted verification needs the future Operations API"}"><input type="checkbox" name="verify" ${directVerification ? "checked" : "disabled"}> Verify ambiguous links live ${directVerification ? "" : "<small>local preview only</small>"}</label>
           <button class="button button--primary" type="submit" ${discovery.status === "running" ? "disabled" : ""}>${icon("radar")}<span>${discovery.status === "running" ? "Searching…" : "Search with OpenScout"}</span></button>
         </div>
       </form>
