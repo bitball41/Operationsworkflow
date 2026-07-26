@@ -39,6 +39,7 @@ export async function guessLocation() {
 
 export async function discoverWithOpenScout(options, onProgress) {
   const engine = getOpenScout();
+  const verifyDirectly = options.verify === true && canUseDirectWebsiteVerification();
   const result = await engine.googlePlaces.searchLeads({
     apiKey: options.apiKey,
     location: options.location,
@@ -46,7 +47,7 @@ export async function discoverWithOpenScout(options, onProgress) {
     depth: options.depth,
     radiusKm: options.radiusKm,
     minConfidence: Number(options.minConfidence) || 0,
-    verify: options.verify !== false,
+    verify: verifyDirectly,
     locationGuess: options.locationGuess || null,
     onProgress,
   });
@@ -71,6 +72,13 @@ export async function discoverWithOpenScout(options, onProgress) {
     leads,
     engineVersion: ENGINE_VERSION,
   };
+}
+
+export function canUseDirectWebsiteVerification() {
+  const pageLocation = globalThis.location;
+  if (!pageLocation) return false;
+  if (pageLocation.protocol === "file:") return true;
+  return ["localhost", "127.0.0.1", "[::1]"].includes(pageLocation.hostname);
 }
 
 export function normalizeLead(place, context = {}) {
