@@ -1,179 +1,197 @@
-# Operations Workflow
+# Operations
 
-A desktop-first, mobile-responsive operating system for a website-selling
-business. It connects lead discovery, qualification, demo creation, outreach,
-follow-ups, client fulfillment, deployments, maintenance, revenue, and costs in
-one plain JavaScript application.
+A personal operations system for a website-selling business: find local
+businesses without websites, build them a real demo site, send one email, and
+follow the work through to a paid client — with automation doing the repetitive
+part.
 
-## Stack
+It is one person's control centre, not a SaaS product. Plain HTML, CSS and
+JavaScript, no framework, no build step, no dependencies at runtime.
 
-- Plain HTML, CSS, and modular JavaScript
-- Supabase Auth, Postgres, Storage, and Realtime
-- OpenScout's real browser-based Google Places discovery engine
-- Static hosting compatible with Cloudflare Pages
-
-There is no frontend framework, bundler, or runtime dependency.
-
-## Local preview
+## Running it
 
 ```bash
 python3 -m http.server 4173
+# open http://localhost:4173
 ```
 
-Open `http://localhost:4173`, then either sign in with Supabase Auth or choose
-**Open preview workspace**. Preview mode loads realistic local data and does not
-write to Supabase.
-
-Run the verification suite with:
+The dashboard opens straight into the workspace. There is no sign-in wall.
 
 ```bash
-npm test
+npm test   # 49 OpenScout engine tests + 68 application tests
 ```
 
-The suite includes the 49 upstream OpenScout classification, scoring,
-deduplication, verification, and location tests, plus render smoke tests for all
-24 dashboard routes and the normalization boundary.
-
-## OpenScout integration
-
-The discovery engine was copied from `bitball41/openscout` commit
-`6058ef5b0daec85399b523f8c42d23b6d32ef1d5`. Its working implementation remains
-in isolated classic browser modules under `js/services/openscout/`:
-
-- `google-places.js` — Google Maps loader, location resolution, tiled Places
-  Text Search, adaptive subdivision, result parsing, and progress reporting
-- `classify.js` — weak-site detection, chain exclusion, confidence scoring, and
-  strongest-presence duplicate merging
-- `verify.js` — conservative live-site verification across URL variants
-- `location.js` — GPS fusion and multi-provider IP location fallback
-- `storage.js` — browser-local Google Maps API key storage
-
-`adapter.js` is the only Operations Workflow boundary. It converts an OpenScout
-place to the dashboard's normalized lead schema and preserves the raw source
-evidence needed to debug later. The only search-engine behavior change is a
-bounded `radiusKm` override (1–80 km); OpenScout's existing search, filtering,
-ranking, verification, and deduplication behavior is otherwise preserved.
-Direct arbitrary-origin site probes are enabled only on local/file previews;
-the hosted dashboard keeps a narrow Content Security Policy and leaves that
-checkbox disabled until verification moves behind the Operations API.
-
-Lead Discovery requires a Google Maps browser key with the Maps JavaScript API
-and Places enabled. Enter the key on the Lead Discovery page. It is stored only
-in that browser's `localStorage`; it is never committed or written to Supabase.
-Restrict the key to the dashboard's deployed origins and set an appropriate
-Google Cloud quota.
-
-OpenScout does not extract email addresses. The dashboard presents this
-accurately: phone, listing, location, source evidence, website status, and score
-come from OpenScout, while email can be added during qualification or supplied
-by a future enrichment service.
-
-## Discovery data flow
+## How it is put together
 
 ```text
-OpenScout place
-  -> normalizeLead()
-  -> lead_discovery_results
-  -> operator save/reject/deduplicate
-  -> leads
-  -> pipeline, demos, outreach, and follow-ups
+index.html
+styles/          tokens, base primitives, layout shell, feature surfaces
+js/
+  app.js         boot, routing, render loop
+  actions.js     one delegated handler for clicks, submits and changes
+  config.js      navigation, pipeline stages, outreach copy, defaults
+  core/          state, router, utils, icons
+  components/    ui primitives, shell, modal forms, command palette
+  pages/         one module per area, each returning an HTML string
+  services/
+    data.js          storage (Supabase when signed in, local otherwise)
+    operations.js    every business action, exactly once
+    integrations.js  "is this service actually connected?"
+    automation/      the batch engine
+    ai/              provider boundary, context adapter, tool registry, commands
+    sites/           template layouts, bundle builder, publish boundary
+    email/           outreach copy and the send boundary
+    research/        business research boundary
+    openscout/       the unmodified discovery engine + one adapter
+  data/            template catalogue, starter workspace
 ```
 
-Each run stores the query, engine version, counts, progress summary, errors, and
-timestamps. Each candidate stores normalized data, raw source metadata,
-website evidence, score, decision, duplicate match, and decision reason.
+Pages render strings, `actions.js` mutates through `services/operations.js`, and
+state changes trigger a coalesced re-render. That is the whole architecture.
+
+## Data: local first, cloud when you want it
+
+`services/data.js` has two backends behind one CRUD API:
+
+- **Local** (default) — everything persists to `localStorage`. Works offline,
+  starts instantly, seeded with a realistic starter workspace on first run.
+- **Cloud** — used automatically when a Supabase session exists in the browser.
+  Sign in from Settings if you want sync; the Supabase SDK is not even
+  downloaded until then.
+
+If the database cannot be read, the app keeps working locally and shows a small
+warning in the sidebar. It never replaces the dashboard with a login screen.
+
+## Automation
+
+`services/automation/engine.js` runs a fixed sequence per lead, built from the
+deterministic operations layer:
+
+```text
+select lead → gather info → research → pick template → build site
+→ publish demo → draft email → send → update pipeline → schedule follow-up
+```
+
+Research and template selection run in parallel; everything else is ordered
+because it depends on the previous step. A lead takes a couple of seconds, not
+minutes. The AI is never inside this loop — it only starts and stops it.
+
+Start it from the Automation page, from Home, from the command palette, or by
+typing `go` to the assistant. Settings (daily target, price, niche and location
+filters, follow-up cadence, pacing) live behind one disclosure with working
+defaults.
+
+**Gmail is not connected**, so the send step cannot complete. Automation runs
+every other step for real and leaves each email in `ready`. Nothing is ever
+marked as sent, and the page says so.
+
+## AI Assistant
+
+A full-page workspace at `#/assistant`. Three parts already work:
+
+- **Context adapter** (`services/ai/context.js`) — turns the whole workspace
+  into a structured snapshot: current route and selection, automation state,
+  today's numbers, what needs attention, money, pipeline, and slim projections
+  of every collection.
+- **Tool registry** (`services/ai/tools.js`) — 23 validated operations
+  (`get_next_lead`, `search_leads`, `get_lead`, `research_business`,
+  `list_templates`, `choose_template`, `create_demo`, `update_demo`,
+  `publish_demo`, `draft_email`, `send_email`, `create_followup`,
+  `update_pipeline`, `get_inbox`, `classify_reply`, `get_clients`,
+  `get_payments`, `get_revenue`, `get_tasks`, `get_status`,
+  `start_automation`, `stop_automation`, `run_one_lead`). `toolSchema()` emits
+  them in the shape a model API expects, so the same registry can back an MCP
+  server later.
+- **Commands** (`services/ai/commands.js`) — `go`, `go 12`, `stop`, `status`,
+  `next`, `revenue`, `inbox` run real operations with no model involved.
+
+No model provider is connected and no key is in this repository. Anything that
+is not a known command is not answered — the assistant says so instead of
+inventing a reply. `runAssistantTurn({ messages, context, tools })` is the one
+function to fill in.
+
+## Websites
+
+Templates are known-good foundations kept in the repo
+(`data/site-templates.js` + `services/sites/layouts.js`), not generated from
+scratch per prospect. Automation matches the lead's niche to a template and
+injects the business data.
+
+A demo is a real bundle — `index.html`, `style.css`, `script.js` — stored on the
+demo record. Website Studio previews that exact bundle in a sandboxed frame,
+lets you edit the files directly, and offers a Site details drawer for the
+handful of fields that usually need changing. The AI panel has the full editing
+flow (request → proposed change → diff → apply/revert); the request step waits
+for a provider.
+
+Hosting is not connected, so publishing reserves the preview URL, stores the
+bundle and reports `not hosted`. "Open" renders the real site in a browser tab
+from the stored files.
+
+## Lead discovery
+
+OpenScout's engine is used unmodified in `services/openscout/` — search,
+classification, chain exclusion, confidence scoring, duplicate merging and live
+verification. `adapter.js` is the only boundary; it converts a place into the
+normalised lead schema and keeps the source evidence.
+
+The page asks for three things: niche, location, how many. Radius, depth,
+minimum confidence, minimum rating, verification, phone requirement and
+deduplication live under **Advanced** with defaults that match the business
+model (no website, has a phone, skip businesses already saved).
+
+Lead discovery needs a Google Maps browser key with Places enabled. It is
+stored only in that browser's `localStorage`.
+
+## Outreach
+
+One email, one price, no fluff:
+
+```text
+Hey,
+
+I came across {{business}} and noticed you didn't have a website, so I went
+ahead and made one for you.
+
+Here's the preview: {{link}}
+
+If you like it, I can customize anything you want, connect your domain, and get
+the full site live.
+
+I charge a one-time fee of ${{price}}.
+If you don't like it, you don't pay.
+
+Interested?
+
+{{owner}}
+```
+
+States are explicit: `draft` → `ready` → `sent`, with `failed` kept separate.
+Every sent email can create its follow-up automatically.
+
+## Integration boundaries
+
+Each of these has its UI, records and tool calls in place, and refuses to fake
+a result until credentials exist:
+
+| Service | Boundary |
+| --- | --- |
+| Model provider | `services/ai/provider.js` → `runAssistantTurn` |
+| Gmail | `services/email/outreach.js` → `sendEmail` |
+| Cloudflare | `services/sites/publish.js` → `publishBundle` |
+| Research tool | `services/research/research.js` → `researchBusiness` |
+| MCP | `services/ai/tools.js` → `toolSchema` |
 
 ## Supabase
 
-The checked-in migrations are in `supabase/migrations/` and have been applied to
-the connected project.
+Migrations are in `supabase/migrations/` and are applied to the connected
+project. Browser-facing tables are owner-scoped with row-level security, and the
+browser only ever uses the publishable key.
 
-Core records:
+## Known limits
 
-- `profiles`, `leads`, `lead_discovery_runs`, `lead_discovery_results`
-- `site_templates`, `demos`, `demo_versions`, `message_drafts`
-- `email_threads`, `emails`, `follow_ups`
-- `clients`, `client_sites`, `projects`, `project_tasks`
-- `maintenance_subscriptions`, `maintenance_requests`
-- `payments`, `expenses`, `ai_usage`, `pricing_experiments`
-- `agent_runs`, `agent_events`, `approvals`, `notifications`, `activity_log`
-- `tasks`, `calendar_events`, `notes`, `deployments`, `settings`
-- `integration_connections`
-
-All browser-facing business tables are owner-scoped and protected by row-level
-security. The `demo-assets` bucket is private and uses owner-folder storage
-policies. Realtime is enabled for approvals, notifications, orchestrator runs,
-activity, inbox threads, and tasks. Relationship and list-view indexes support
-the dashboard's common access paths.
-
-The browser client uses only the modern Supabase publishable key. Never put a
-secret or service-role key in frontend code.
-
-## Functional now
-
-- Supabase email/password auth, persistent sessions, protected workspace,
-  profile, logout, and no-write preview mode
-- Full sidebar/topbar shell, mobile drawer/dock, command search, orchestrator,
-  approval, and notification panels
-- Real OpenScout discovery with saved runs/results, filtering, scoring,
-  multi-select, bulk save/reject, and lead deduplication
-- Lead CRUD/detail views, table filters, CSV export, and persisted Kanban moves
-- Demo/template records, Website Studio content/theme controls, private version
-  uploads, and demo-to-client conversion
-- Outreach and follow-up draft preparation with approval records
-- Inbox threading and classifications for persisted records
-- Clients, projects, project progression, maintenance plans/requests, payments,
-  expenses, pricing experiments, tasks, calendar events, and notes
-- Business metrics, funnel, revenue/cost charts, and activity history derived
-  from stored records
-- Realistic opt-in starter data for authenticated empty workspaces
-
-## Deliberate placeholders
-
-The interfaces and data boundaries exist, but these services make no external
-calls yet:
-
-- Gmail and Google Pub/Sub transport
-- Whop payments and webhooks
-- Cloudflare production deployment actions
-- OpenAI and Anthropic model calls
-- Custom MCP server
-
-Send, schedule, deploy, rollback, and model-assisted controls are clearly
-labelled and either create an approval/intention record or show a placeholder
-notice. They do not pretend an external action occurred.
-
-## Architecture
-
-Pages read and mutate a shared client state through `js/services/data.js`.
-That service owns the current Supabase persistence contract. OpenScout stays
-behind its adapter so no other feature depends on its internal object shape.
-
-The intended next backend boundary is:
-
-```text
-Dashboard / Orchestrator / future MCP
-                -> Operations API
-                -> OpenScout, Supabase, Gmail, Whop, Cloudflare, model providers
-```
-
-This keeps approvals, permissions, idempotency, audit logging, and future
-external actions in one business-logic layer instead of duplicating them across
-the dashboard and MCP.
-
-## Known limitations
-
-- A Google Maps browser key and available Places quota are required for live
-  discovery.
-- Google Places Text Search returns at most 20 results per tile. OpenScout
-  mitigates this with adaptive subdivision, but coverage is still bounded by
-  scan depth and tile budget.
-- Browser/network privacy controls can make site verification inconclusive.
-  OpenScout keeps ambiguous checks as `unknown` instead of falsely marking a
-  live website as dead.
-- Hosted builds intentionally do not allow the browser to connect to arbitrary
-  business domains. Live-site probes work in local/file previews; production
-  verification should be the first OpenScout operation moved server-side.
-- The Supabase project advisor still recommends enabling leaked-password
-  protection in Auth settings. Empty-table index usage notices are expected
-  until production data and queries accumulate.
+- Sending, hosting, research and model replies are boundaries, not features yet.
+- Live discovery needs a Google Maps key and available Places quota.
+- Local storage is capped by the browser; a warning appears if a write fails.
+- Website verification only runs direct probes on local previews; hosted builds
+  keep a narrow CSP.

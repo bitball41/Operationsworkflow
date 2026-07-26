@@ -3,139 +3,53 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#080b12">
-    <meta name="description" content="Operations Workflow — sales and website fulfillment command system">
-    <title>Operations Workflow</title>
+    <meta name="theme-color" content="#0e0e11">
+    <meta name="description" content="Personal operations system">
+    <title>Operations</title>
     <link rel="stylesheet" href="./styles/tokens.css">
     <link rel="stylesheet" href="./styles/base.css">
     <link rel="stylesheet" href="./styles/layout.css">
     <link rel="stylesheet" href="./styles/components.css">
-    <link rel="stylesheet" href="./styles/product.css">
-    <link rel="stylesheet" href="./styles/responsive.css">
   </head>
   <body>
-    <div id="loading-screen" class="loading-screen">
-      <div class="brand-mark brand-mark--large" aria-hidden="true"><span></span><span></span><span></span></div>
-      <p>Loading workspace</p>
-    </div>
-
-    <section id="auth-screen" class="auth-screen" hidden>
-      <div class="auth-story">
-        <a class="brand auth-brand" href="#" aria-label="Operations Workflow">
-          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span>Operations</span>
-        </a>
-        <div class="auth-story__content">
-          <span class="eyebrow">Sales → fulfillment</span>
-          <h1>Run the whole website business from one focused system.</h1>
-          <p>Find qualified businesses, build demos, approve outreach, close clients, and know exactly what every prospect costs.</p>
-          <div class="workflow-strip" aria-label="Core workflow">
-            <span>Discover</span><i></i><span>Build</span><i></i><span>Approve</span><i></i><span>Close</span>
-          </div>
+    <div id="app" class="app">
+      <aside id="sidebar" class="sidebar" aria-label="Navigation">
+        <div class="sidebar__top">
+          <a class="wordmark" href="#/home">Connor <small>/ Operations</small></a>
+          <button id="sidebar-collapse" class="icon-btn only-desktop" type="button" data-icon="sidebar" aria-label="Collapse navigation"></button>
+          <button id="sidebar-close" class="icon-btn only-mobile" type="button" data-icon="x" aria-label="Close navigation"></button>
         </div>
-        <p class="auth-story__foot">Manual-first. Automation-ready.</p>
-      </div>
-
-      <div class="auth-form-wrap">
-        <form id="auth-form" class="auth-card">
-          <div>
-            <span class="eyebrow">Owner access</span>
-            <h2 id="auth-title">Welcome back</h2>
-            <p id="auth-subtitle">Sign in to your private operations workspace.</p>
-          </div>
-          <label class="field">
-            <span>Email</span>
-            <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" required>
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input id="auth-password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required>
-          </label>
-          <p id="auth-message" class="form-message" role="status"></p>
-          <button id="auth-submit" class="button button--primary button--wide" type="submit">Sign in</button>
-          <button id="auth-switch" class="button button--ghost button--wide" type="button">Create owner account</button>
-          <div class="divider"><span>or inspect the UI</span></div>
-          <button id="preview-button" class="button button--secondary button--wide" type="button">Open preview workspace</button>
-          <p class="auth-note">Preview mode never writes to your database.</p>
-        </form>
-      </div>
-    </section>
-
-    <div id="app-shell" class="app-shell" hidden>
-      <aside id="sidebar" class="sidebar" aria-label="Main navigation">
-        <div class="sidebar__head">
-          <a class="brand" href="#/home" data-route="home" aria-label="Operations Workflow home">
-            <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
-            <span>Operations</span>
-          </a>
-          <div class="sidebar__head-actions">
-            <button id="sidebar-collapse" class="icon-button desktop-only" type="button" aria-label="Collapse navigation" data-icon="panel-right-open"></button>
-            <button id="sidebar-close" class="icon-button mobile-only" type="button" aria-label="Close navigation" data-icon="x"></button>
-          </div>
-        </div>
-        <nav id="primary-nav" class="nav-list"></nav>
-        <div class="sidebar__footer">
-          <div class="system-status">
-            <span class="status-pulse"></span>
-            <div><strong>Manual mode</strong><span>Approvals enforced</span></div>
-          </div>
-          <button id="account-button" class="account-button" type="button">
-            <span id="account-avatar" class="avatar">CO</span>
-            <span><strong id="account-name">Connor</strong><small id="account-email">Preview workspace</small></span>
-            <span data-icon="more-horizontal"></span>
-          </button>
-        </div>
+        <nav id="nav" class="nav"></nav>
+        <div id="sidebar-foot" class="sidebar__foot"></div>
       </aside>
 
-      <div id="sidebar-scrim" class="scrim" hidden></div>
+      <button id="scrim" class="scrim" type="button" aria-label="Close navigation" hidden></button>
 
-      <div class="workspace">
+      <div class="main">
         <header class="topbar">
-          <div class="topbar__left">
-            <button id="sidebar-open" class="icon-button mobile-only" type="button" aria-label="Open navigation" data-icon="menu"></button>
-            <div>
-              <div class="breadcrumb"><span>Operations</span><i>/</i><strong id="page-kicker">Command center</strong></div>
-              <h1 id="page-title">Command center</h1>
-            </div>
-          </div>
-          <div class="topbar__actions">
-            <button id="global-search" class="search-trigger" type="button">
-              <span data-icon="search"></span><span>Search anything</span><kbd>⌘ K</kbd>
+          <button id="menu-open" class="icon-btn only-mobile" type="button" data-icon="menu" aria-label="Open navigation"></button>
+          <h1 id="page-title">Home</h1>
+          <div class="topbar__right">
+            <button id="palette-open" class="search-btn" type="button">
+              <span data-icon="search"></span>
+              <span class="only-desktop">Search</span>
+              <kbd class="only-desktop">⌘K</kbd>
             </button>
-            <button id="approvals-button" class="icon-button has-badge" type="button" aria-label="Approval queue">
-              <span data-icon="shield-check"></span><b id="approval-badge">0</b>
-            </button>
-            <button id="notifications-button" class="icon-button has-badge" type="button" aria-label="Notifications">
-              <span data-icon="bell"></span><b id="notification-badge">0</b>
-            </button>
-            <button id="agent-panel-button" class="agent-trigger" type="button">
-              <span class="agent-orb"><i></i></span>
-              <span><small>Orchestrator</small><strong id="orchestrator-compact-status">Idle</strong></span>
-              <span data-icon="panel-right-open"></span>
-            </button>
-            <button id="top-account-button" class="top-account" type="button" aria-label="Open account settings">
-              <span id="top-account-avatar" class="avatar">CO</span>
-            </button>
+            <a class="icon-btn" href="#/assistant" data-icon="sparkle" aria-label="AI Assistant"></a>
           </div>
         </header>
 
-        <main id="page-content" class="page-content" tabindex="-1"></main>
+        <main id="page" class="page" tabindex="-1"></main>
       </div>
-
-      <aside id="agent-panel" class="side-panel agent-panel" aria-label="Orchestration agent" aria-hidden="true"></aside>
-      <aside id="approval-panel" class="side-panel approval-panel" aria-label="Approval queue" aria-hidden="true"></aside>
-      <aside id="notification-panel" class="side-panel notification-panel" aria-label="Notifications" aria-hidden="true"></aside>
-
-      <nav id="mobile-dock" class="mobile-dock" aria-label="Mobile navigation"></nav>
     </div>
 
     <div id="modal-root"></div>
-    <div id="command-palette-root"></div>
-    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <div id="drawer-root"></div>
+    <div id="palette-root"></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
 
-    <!-- OpenScout's proven discovery engine is intentionally kept as classic,
-         dependency-free browser modules. The Operations adapter reads its API
-         from window.OpenScout without changing its search/classification path. -->
+    <!-- OpenScout's proven discovery engine stays as classic, dependency-free
+         browser modules. The adapter reads its API from window.OpenScout. -->
     <script src="./js/services/openscout/classify.js"></script>
     <script src="./js/services/openscout/verify.js"></script>
     <script src="./js/services/openscout/location.js"></script>

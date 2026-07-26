@@ -1,12 +1,10 @@
-import { OUTREACH_BODY, PIPELINE_STAGES } from "./config.js";
-import { closeCommandPalette } from "./components/command-palette.js";
+/* Single delegated event router: clicks, form submits and control changes. */
+import { PIPELINE_STAGES } from "./config.js";
+import { closePalette, isPaletteOpen } from "./components/command-palette.js";
 import {
-  openApprovalDetails,
   openCalendarForm,
   openClientDetails,
   openClientForm,
-  openDemoDetails,
-  openDemoForm,
   openDeploymentLogs,
   openDiscoveryDetails,
   openDraftForm,
@@ -19,59 +17,57 @@ import {
   openPaymentForm,
   openPricingForm,
   openProjectForm,
+  openStageForm,
   openTaskForm,
-  openTemplateForm,
-  openUploadForm,
+  openTemplateChooser,
+  openTemplatePreview,
 } from "./components/forms.js";
-import { setMobileNav } from "./components/shell.js";
-import { closeModal, formDataObject, openModal, toast } from "./components/ui.js";
-import { navigate } from "./core/router.js";
-import { getState, setDiscovery, setState } from "./core/state.js";
-import { escapeHtml, slugify } from "./core/utils.js";
-import { signOut } from "./services/auth.js";
+import { setNav } from "./components/shell.js";
+import { closeDrawer, closeModal, confirmAction, formValues, openDrawer, toast } from "./components/ui.js";
+import { navigate, setParam } from "./core/router.js";
+import { getState, setAssistant, setDiscovery, setState, setStudio } from "./core/state.js";
+import { isoOffset, safeJson, slugify, uid } from "./core/utils.js";
+import { matchCommand, runCommand } from "./services/ai/commands.js";
+import { providerReady } from "./services/ai/provider.js";
+import { AUTOMATION_DEFAULTS } from "./config.js";
+import {
+  runOnce,
+  saveAutomationSettings,
+  startAutomation,
+  stopAutomation,
+} from "./services/automation/engine.js";
 import {
   completeDiscoveryRun,
   createDiscoveryRun,
   createRecord,
-  createRecords,
   deleteRecord,
   failDiscoveryRun,
+  findRecord,
+  loadSampleWorkspace,
   logActivity,
-  markNotificationsRead,
+  preferences,
   rejectDiscoveryCandidates,
-  resolveApproval,
   saveDiscoveryCandidates,
-  seedWorkspace,
-  startManualRun,
-  updateProfilePreferences,
+  savePreferences,
   updateRecord,
-  uploadDemoBundle,
 } from "./services/data.js";
+import { canSend } from "./services/email/outreach.js";
+import { discoverWithOpenScout, getStoredApiKey, setStoredApiKey } from "./services/openscout/adapter.js";
 import {
-  discoverWithOpenScout,
-  getStoredApiKey,
-  setStoredApiKey,
-} from "./services/openscout/adapter.js";
-
-const PROJECT_STAGES = ["payment_received", "changes", "client_review", "domain_setup", "launch", "live"];
-const SAFE_DELETE_COLLECTIONS = new Set(["leads", "tasks", "notes", "templates", "demos", "expenses"]);
-
-function record(collection, id) {
-  return getState().data[collection]?.find((item) => String(item.id) === String(id));
-}
-
-function cleanObject(value) {
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, item === "" ? null : item]));
-}
-
-function iso(value) {
-  return value ? new Date(value).toISOString() : null;
-}
-
-function number(value, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+  classifyReply,
+  createOrUpdateDemo,
+  createOutreachDraft,
+  demoForLead,
+  ensureTemplateRecords,
+  publishDemo,
+  saveDemoFiles,
+  sendDraft,
+  updatePipeline,
+} from "./services/operations.js";
+import { buildBundleForLead, catalogForRecord, composeDocument } from "./services/sites/bundle.js";
+import { downloadBundle, openBundleInTab } from "./services/sites/publish.js";
+import { signIn, signOut, signUp } from "./services/supabase.js";
+import { currentFiles, selectedDemo, siteDetailsForm } from "./pages/studio.js";
 
 async function run(action, successTitle = "", successMessage = "") {
   try {
@@ -80,949 +76,1100 @@ async function run(action, successTitle = "", successMessage = "") {
     return result;
   } catch (error) {
     console.error(error);
-    toast("Action failed", error.message || "Please try again.", "error");
+    toast("That did not work", error.message || "Try again.", "error");
     return null;
   }
 }
 
-function closePanels() {
-  setState({
-    agentPanelOpen: false,
-    approvalPanelOpen: false,
-    notificationPanelOpen: false,
-    mobileNavOpen: false,
+function number(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function iso(value) {
+  return value ? new Date(value).toISOString() : null;
+}
+
+function clean(values) {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === "" ? null : value]));
+}
+
+/**
+ * Deletes are permanent, so the first click asks. Returns true once the user
+ * has confirmed (the confirm button repeats the action with data-confirmed).
+ */
+function confirmDelete(target, collection, label) {
+  if (target.dataset.confirmed === "true") return true;
+  confirmAction({
+    title: `Delete ${label || "this record"}?`,
+    message: "This cannot be undone.",
+    confirmLabel: "Delete",
+    action: target.dataset.action,
+    attrs: `data-id="${target.dataset.id}" data-confirmed="true" data-collection="${collection}"`,
   });
-  setMobileNav(false);
+  return false;
 }
 
-function updateRouteParam(key, value) {
-  const { route, routeParams } = getState();
-  const params = { ...routeParams };
-  if (value === "" || value === "all" || value == null) delete params[key];
-  else params[key] = value;
-  navigate(route, params);
-}
+/* ---------- clicks ---------- */
 
-function personalizedOutreach(lead, demo, amount) {
-  return OUTREACH_BODY
-    .replaceAll("[Business Name]", lead?.business_name || "[Business Name]")
-    .replaceAll("[link]", demo?.preview_url || "[preview link]")
-    .replace("$400", `$${number(amount, 400)}`);
-}
-
-export async function handleActionClick(event) {
+export async function onClick(event) {
   const target = event.target.closest("[data-action]");
   if (!target) return;
-  const directLink = event.target.closest("a[href]");
-  if (directLink && !directLink.hasAttribute("data-action") && directLink !== target) return;
+
+  const anchor = event.target.closest("a[href]");
+  if (anchor && anchor !== target && !anchor.hasAttribute("data-action")) return;
+
   const action = target.dataset.action;
   const id = target.dataset.id;
-  event.preventDefault();
+  if (target.tagName !== "SELECT" && target.type !== "checkbox") event.preventDefault();
 
-  if (document.getElementById("command-palette-root").innerHTML && action !== "close-command-palette") {
-    closeCommandPalette();
-  }
+  if (isPaletteOpen() && action !== "close-palette") closePalette();
 
   switch (action) {
-    case "navigate": {
-      const params = target.dataset.routeId ? { id: target.dataset.routeId } : {};
-      navigate(target.dataset.routeTarget, params);
-      closePanels();
+    /* --- shell --- */
+    case "navigate":
+      navigate(target.dataset.routeTarget, safeJson(target.dataset.routeParams, {}) || {});
+      closeModal();
+      setNav(false);
       break;
-    }
     case "route-filter":
-      updateRouteParam(target.dataset.key, target.dataset.value);
-      break;
-    case "open-mobile-nav":
-      setState({ mobileNavOpen: true });
-      setMobileNav(true);
+      setParam(target.dataset.key, target.dataset.value);
       break;
     case "close-modal":
       closeModal();
       break;
-    case "close-command-palette":
-      closeCommandPalette();
+    case "close-drawer":
+      closeDrawer();
       break;
-    case "close-panels":
-      closePanels();
+    case "close-palette":
+      closePalette();
       break;
-    case "open-orchestrator":
-      setState({ agentPanelOpen: true, approvalPanelOpen: false, notificationPanelOpen: false });
+    case "load-sample":
+      await run(loadSampleWorkspace, "Starter workspace loaded");
       break;
-    case "open-approvals":
-      setState({ approvalPanelOpen: true, agentPanelOpen: false, notificationPanelOpen: false });
+    case "sign-out":
+      await run(async () => {
+        await signOut();
+        location.reload();
+      });
       break;
-    case "toggle-discovery-selection": {
-      const selected = new Set(getState().discovery.selected);
-      if (target.checked) selected.add(id);
-      else selected.delete(id);
-      setDiscovery({ selected: [...selected] });
+    case "sign-up": {
+      const form = target.closest("form");
+      const values = form ? formValues(form) : {};
+      await run(async () => {
+        await signUp(values.email, values.password);
+        toast("Account created", "Sign in to sync this workspace.");
+      });
       break;
     }
-    case "select-all-discovery": {
-      const pendingIds = [...document.querySelectorAll('input[data-action="toggle-discovery-selection"]')].map((input) => input.dataset.id);
-      setDiscovery({ selected: target.checked ? pendingIds : [] });
+    case "integration-setup":
+      toast(
+        `${target.dataset.provider} is not connected`,
+        "Credentials are deliberately not in this project. The interface, records and tool calls for it already exist.",
+        "info",
+      );
+      break;
+
+    /* --- automation --- */
+    case "automation-start": {
+      const result = await startAutomation();
+      if (!result.ok) toast("Automation did not start", result.reason, "error");
+      else if (!canSend()) toast("Automation started", "Gmail is not connected, so emails will stop at “ready”.", "info");
+      else toast("Automation started");
       break;
     }
-    case "save-discovery":
+    case "automation-stop": {
+      const result = stopAutomation();
+      toast(result.ok ? "Stopping" : "Nothing to stop", result.ok ? "Finishing the current lead." : result.reason, result.ok ? "success" : "info");
+      break;
+    }
+    case "automation-run-once": {
+      const result = await runOnce(target.dataset.id);
+      toast(result.ok ? "Lead prepared" : "Could not prepare", result.ok ? `${result.result.leadName} is ready.` : result.reason, result.ok ? "success" : "error");
+      break;
+    }
+    case "automation-clear-failures":
+      setState({ automation: { ...getState().automation, failures: [] } });
+      break;
+    case "automation-reset-settings":
+      saveAutomationSettings({ ...AUTOMATION_DEFAULTS });
+      toast("Settings reset");
+      break;
+
+    /* --- assistant --- */
+    case "assistant-suggest": {
+      const input = document.getElementById("assistant-input") || document.getElementById("studio-input");
+      if (input) {
+        input.value = target.dataset.text;
+        input.focus();
+      }
+      break;
+    }
+    case "assistant-toggle-context":
+      setAssistant({ contextOpen: !getState().assistant.contextOpen });
+      break;
+    case "assistant-clear":
+      setAssistant({ messages: [] });
+      break;
+
+    /* --- discovery --- */
+    case "discovery-save":
       await saveDiscovery([id]);
       break;
-    case "save-selected-discovery":
+    case "discovery-save-selected":
       await saveDiscovery(getState().discovery.selected);
       break;
-    case "reject-discovery":
+    case "discovery-reject":
       await rejectDiscovery([id]);
       break;
-    case "reject-selected-discovery":
+    case "discovery-reject-selected":
       await rejectDiscovery(getState().discovery.selected);
       break;
-    case "inspect-discovery": {
-      const result = record("discoveryResults", id);
+    case "discovery-inspect": {
+      const result = findRecord("discoveryResults", id);
       if (result) openDiscoveryDetails(result);
       break;
     }
-    case "open-discovery-run": {
-      const runRecord = record("discoveryRuns", id);
+    case "discovery-open-run": {
+      const runRecord = findRecord("discoveryRuns", id);
       if (!runRecord) break;
-      const results = getState().data.discoveryResults.filter((item) => item.run_id === id);
-      setDiscovery({ runId: id, results, selected: [], summary: runRecord.summary || null, status: "idle", error: "" });
+      setDiscovery({
+        runId: id,
+        results: getState().data.discoveryResults.filter((item) => item.run_id === id),
+        selected: [],
+        summary: runRecord.summary || null,
+        status: "idle",
+        error: "",
+      });
       break;
     }
-    case "new-lead":
+
+    /* --- leads --- */
+    case "lead-new":
       openLeadForm();
       break;
-    case "open-lead": {
-      const lead = record("leads", id || target.dataset.leadId);
+    case "lead-open": {
+      const lead = findRecord("leads", id);
       if (lead) openLeadDetails(lead);
       break;
     }
-    case "edit-lead": {
-      const lead = record("leads", id);
+    case "lead-edit": {
+      const lead = findRecord("leads", id);
       if (lead) openLeadForm(lead);
       break;
     }
-    case "toggle-lead-selection":
-      break;
-    case "select-all-leads":
-      document.querySelectorAll('input[data-action="toggle-lead-selection"]').forEach((input) => { input.checked = target.checked; });
-      break;
-    case "bulk-lead-stage": {
-      const stage = document.getElementById("lead-bulk-stage")?.value;
-      const ids = [...document.querySelectorAll('input[data-action="toggle-lead-selection"]:checked')].map((input) => input.dataset.id);
-      if (!stage || !ids.length) {
-        toast("Choose leads and a stage", "Select at least one row before applying.", "error");
-        break;
-      }
-      await run(async () => {
-        await Promise.all(ids.map((leadId) => updateRecord("leads", leadId, { status: stage })));
-        await logActivity("pipeline_moved", "Bulk pipeline update", `${ids.length} leads moved to ${stage.replaceAll("_", " ")}.`, { metadata: { lead_ids: ids, stage } });
-      }, "Pipeline updated", `${ids.length} leads moved.`);
+    case "lead-stage": {
+      const lead = findRecord("leads", id);
+      if (lead) openStageForm(lead);
       break;
     }
-    case "compose-for-lead":
+    case "lead-delete":
+      if (!confirmDelete(target, "leads", findRecord("leads", id)?.business_name)) break;
+      await run(() => deleteRecord("leads", id), "Lead deleted");
+      closeModal();
+      break;
+    case "lead-outreach":
       closeModal();
       navigate("outreach", { lead: id });
       break;
-    case "new-task":
+    case "lead-prepare": {
+      closeModal();
+      toast("Working", "Building the demo and drafting the email.", "info");
+      const result = await runOnce(id);
+      if (result.ok) {
+        toast(
+          result.result.sent ? "Sent" : "Ready to send",
+          result.result.sent ? `${result.result.leadName} contacted.` : `${result.result.leadName}: demo built, email ready. ${result.result.blocked || ""}`,
+        );
+      } else {
+        toast("Could not prepare", result.reason, "error");
+      }
+      break;
+    }
+    case "leads-export":
+      exportLeads();
+      break;
+
+    /* --- outreach --- */
+    case "outreach-batch":
+      await prepareBatch();
+      break;
+    case "draft-send":
+      await run(async () => {
+        const result = await sendDraft(id);
+        if (result.blocked) toast("Not sent", result.reason, "info");
+        else toast("Email sent");
+      });
+      break;
+    case "draft-open": {
+      const draft = findRecord("drafts", id);
+      if (draft) openDraftForm(draft);
+      break;
+    }
+    case "thread-open":
+      closeModal();
+      navigate("inbox", { thread: id });
+      break;
+    case "followup-new":
+      openFollowUpForm();
+      break;
+    case "followup-draft": {
+      const followUp = findRecord("followUps", id);
+      if (!followUp) break;
+      const created = await run(() => createOutreachDraft(followUp.lead_id, { kind: "follow_up", status: "ready" }), "Follow-up drafted");
+      if (created) {
+        await updateRecord("followUps", id, { status: "drafted", draft_id: created.draft.id });
+        openDraftForm(created.draft);
+      }
+      break;
+    }
+    case "followup-snooze":
+      await run(() => updateRecord("followUps", id, { status: "snoozed", due_at: isoOffset({ days: 2 }) }), "Snoozed two days");
+      break;
+    case "followup-status":
+      await run(() => updateRecord("followUps", id, {
+        status: target.dataset.status,
+        completed_at: ["replied", "completed", "dead"].includes(target.dataset.status) ? new Date().toISOString() : null,
+      }), "Follow-up updated");
+      break;
+
+    /* --- studio --- */
+    case "studio-view":
+      setStudio({ view: target.dataset.value });
+      break;
+    case "studio-file":
+      setStudio({ file: target.dataset.value });
+      break;
+    case "studio-viewport":
+      setStudio({ viewport: target.dataset.value });
+      break;
+    case "studio-refresh":
+      setStudio({ draftFiles: null });
+      break;
+    case "studio-open-tab": {
+      const demo = selectedDemo();
+      if (demo && !openBundleInTab(currentFiles(demo))) {
+        toast("Popup blocked", "Allow popups to open the site in a new tab.", "error");
+      }
+      break;
+    }
+    case "studio-publish": {
+      const demo = selectedDemo();
+      if (!demo) break;
+      const result = await run(() => publishDemo(demo.id));
+      if (result) {
+        toast(
+          result.publish.hosted ? "Published" : "Saved and ready",
+          result.publish.hosted ? result.publish.url : result.publish.note,
+          result.publish.hosted ? "success" : "info",
+        );
+      }
+      break;
+    }
+    case "studio-details": {
+      const demo = selectedDemo();
+      if (demo) openDrawer({ title: "Site details", body: siteDetailsForm(demo) });
+      break;
+    }
+    case "studio-rebuild": {
+      const demo = selectedDemo();
+      if (!demo) break;
+      const lead = findRecord("leads", demo.lead_id);
+      const templateRecord = findRecord("templates", demo.template_id);
+      const built = buildBundleForLead(lead, catalogForRecord(templateRecord), demo.content?.site || {});
+      setStudio({
+        pendingChange: {
+          summary: `Rebuild from the ${templateRecord?.name || "matching"} template`,
+          before: demo.content?.files || {},
+          files: built.files,
+          primaryFile: "index.html",
+        },
+      });
+      break;
+    }
+    case "studio-suggest": {
+      const input = document.getElementById("studio-input");
+      if (input) {
+        input.value = target.dataset.text;
+        input.focus();
+      }
+      break;
+    }
+    case "studio-apply-change": {
+      const demo = selectedDemo();
+      const change = getState().studio.pendingChange;
+      if (!demo || !change) break;
+      await run(async () => {
+        await saveDemoFiles(demo.id, change.files, { summary: change.summary, custom: false });
+        setStudio({ pendingChange: null, draftFiles: null });
+      }, "Change applied");
+      break;
+    }
+    case "studio-discard-change":
+      setStudio({ pendingChange: null });
+      break;
+
+    /* --- websites --- */
+    case "templates-install":
+      await run(ensureTemplateRecords, "Templates installed");
+      break;
+    case "template-preview": {
+      const template = findRecord("templates", id);
+      if (!template) break;
+      const entry = catalogForRecord(template);
+      const { files } = buildBundleForLead({
+        business_name: "Example Local Co.",
+        category: template.category,
+        city: "Arlington",
+        region: "TX",
+        phone: "(817) 555-0100",
+        address: "120 Main Street, Arlington, TX",
+        source_metadata: { openscout: { rating: 4.8, ratingCount: 42 } },
+      }, entry);
+      openTemplatePreview(template, composeDocument(files));
+      break;
+    }
+    case "template-use": {
+      closeModal();
+      const { data } = getState();
+      openTemplateChooser(data.templates, data.leads);
+      break;
+    }
+    case "demo-build": {
+      const leadId = target.dataset.leadId || id;
+      closeModal();
+      const result = await run(() => createOrUpdateDemo(leadId), "Demo built");
+      if (result) navigate("studio", { demo: result.demo.id });
+      break;
+    }
+    case "demo-open-tab": {
+      const demo = findRecord("demos", id);
+      if (demo && !openBundleInTab(demo.content?.files || {})) {
+        toast("Popup blocked", "Allow popups to open the site in a new tab.", "error");
+      }
+      break;
+    }
+    case "demo-studio":
+      closeModal();
+      navigate("studio", { demo: id });
+      break;
+    case "demo-download": {
+      const demo = findRecord("demos", id);
+      if (demo) downloadBundle(demo.content?.files || {}, demo.slug || demo.name);
+      break;
+    }
+    case "deployment-logs": {
+      const deployment = findRecord("deployments", id);
+      if (deployment) openDeploymentLogs(deployment);
+      break;
+    }
+
+    /* --- clients --- */
+    case "client-new":
+      openClientForm();
+      break;
+    case "client-open": {
+      const client = findRecord("clients", id);
+      if (client) openClientDetails(client);
+      break;
+    }
+    case "client-edit": {
+      const client = findRecord("clients", id);
+      if (client) openClientForm(client);
+      break;
+    }
+    case "project-new":
+      closeModal();
+      openProjectForm();
+      break;
+    case "project-open": {
+      const project = findRecord("projects", id);
+      if (project) openProjectForm(project);
+      break;
+    }
+    case "project-advance": {
+      const project = findRecord("projects", id);
+      if (!project) break;
+      const stages = ["payment_received", "changes", "client_review", "domain_setup", "launch", "live"];
+      const next = stages[Math.min(stages.indexOf(project.status) + 1, stages.length - 1)];
+      await run(() => updateRecord("projects", id, {
+        status: next,
+        progress: Math.round((stages.indexOf(next) / (stages.length - 1)) * 100),
+      }), "Project advanced");
+      break;
+    }
+    case "maintenance-new":
+      closeModal();
+      openMaintenanceForm();
+      break;
+    case "maintenance-open": {
+      const subscription = findRecord("maintenanceSubscriptions", id);
+      if (subscription) openMaintenanceForm(subscription);
+      break;
+    }
+    case "maintenance-request-toggle": {
+      const request = findRecord("maintenanceRequests", id);
+      if (!request) break;
+      const complete = request.status !== "completed";
+      await run(() => updateRecord("maintenanceRequests", id, {
+        status: complete ? "completed" : "new",
+        completed_at: complete ? new Date().toISOString() : null,
+      }), complete ? "Request completed" : "Request reopened");
+      break;
+    }
+
+    /* --- money --- */
+    case "payment-new":
+      openPaymentForm();
+      break;
+    case "expense-new":
+      openExpenseForm();
+      break;
+    case "expense-open": {
+      const expense = findRecord("expenses", id);
+      if (expense) openExpenseForm(expense);
+      break;
+    }
+    case "expense-delete":
+      if (!confirmDelete(target, "expenses", findRecord("expenses", id)?.description)) break;
+      await run(() => deleteRecord("expenses", id), "Expense deleted");
+      closeModal();
+      break;
+    case "pricing-new":
+      openPricingForm();
+      break;
+    case "pricing-open": {
+      const experiment = findRecord("pricingExperiments", id);
+      if (experiment) openPricingForm(experiment);
+      break;
+    }
+
+    /* --- workspace --- */
+    case "task-new":
       openTaskForm();
       break;
-    case "open-task": {
-      const task = record("tasks", id);
+    case "task-open": {
+      const task = findRecord("tasks", id);
       if (task) openTaskForm(task);
       break;
     }
-    case "toggle-task": {
-      const task = record("tasks", id);
-      if (!task) break;
-      await run(() => updateRecord("tasks", id, { status: task.status === "completed" ? "pending" : "completed" }), task.status === "completed" ? "Task reopened" : "Task completed");
+    case "task-toggle": {
+      const task = findRecord("tasks", id);
+      if (task) await run(() => updateRecord("tasks", id, { status: task.status === "completed" ? "pending" : "completed" }));
       break;
     }
-    case "new-calendar-event":
+    case "task-delete":
+      if (!confirmDelete(target, "tasks", findRecord("tasks", id)?.title)) break;
+      await run(() => deleteRecord("tasks", id), "Task deleted");
+      closeModal();
+      break;
+    case "note-new":
+      openNoteForm();
+      break;
+    case "note-open": {
+      const note = findRecord("notes", id);
+      if (note) openNoteForm(note);
+      break;
+    }
+    case "note-delete":
+      if (!confirmDelete(target, "notes", findRecord("notes", id)?.title)) break;
+      await run(() => deleteRecord("notes", id), "Note deleted");
+      closeModal();
+      break;
+    case "calendar-new":
       openCalendarForm();
       break;
     case "calendar-day":
       openCalendarForm(target.dataset.date);
       break;
-    case "shift-calendar": {
-      const current = /^\d{4}-\d{2}$/.test(getState().routeParams.month || "") ? new Date(`${getState().routeParams.month}-01T12:00:00`) : new Date();
-      current.setMonth(current.getMonth() + number(target.dataset.direction));
-      updateRouteParam("month", `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`);
+    case "calendar-shift": {
+      const current = /^\d{4}-\d{2}$/.test(getState().routeParams.month || "")
+        ? new Date(`${getState().routeParams.month}-01T12:00:00`)
+        : new Date();
+      current.setMonth(current.getMonth() + number(target.dataset.direction, 1));
+      setParam("month", `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`);
       break;
     }
     case "calendar-today":
-      updateRouteParam("month", "");
+      setParam("month", "");
       break;
-    case "new-template":
-      openTemplateForm();
-      break;
-    case "edit-template": {
-      const template = record("templates", id);
-      if (template) openTemplateForm(template);
-      break;
-    }
-    case "duplicate-template": {
-      const template = record("templates", id);
-      if (!template) break;
-      await run(() => createRecord("templates", {
-        name: `${template.name} Copy`,
-        category: template.category,
-        description: template.description,
-        preview_url: template.preview_url,
-        desktop_preview_url: template.desktop_preview_url,
-        mobile_preview_url: template.mobile_preview_url,
-        accent_color: template.accent_color,
-        layout_key: template.layout_key,
-        is_active: false,
-        status: "draft",
-        use_count: 0,
-      }), "Template duplicated");
-      break;
-    }
-    case "preview-template": {
-      const template = record("templates", id);
-      if (!template) break;
-      openModal({
-        title: template.name,
-        subtitle: `${template.category} template preview`,
-        body: `<div class="template-preview template-preview--modal" style="--template-color:${escapeHtml(template.accent_color || "#8f75ff")}"></div><p class="message-preview" style="margin-top:14px">${escapeHtml(template.description || "Reusable template")}</p>`,
-        footer: `${buttonMarkup("Close", "close-modal", "ghost")}<button class="button button--primary" data-action="use-template" data-id="${template.id}">Use template</button>`,
-      });
-      break;
-    }
-    case "use-template":
-      openDemoForm({ templateId: id });
-      break;
-    case "new-demo":
-      openDemoForm({ leadId: target.dataset.leadId || "" });
-      break;
-    case "open-demo": {
-      const demo = record("demos", id);
-      if (demo) openDemoDetails(demo);
-      break;
-    }
-    case "open-studio":
-      closeModal();
-      navigate("studio", { demo: id });
-      break;
-    case "submit-studio":
-      document.getElementById("studio-form")?.requestSubmit();
-      break;
-    case "studio-viewport": {
-      const canvas = document.querySelector(".studio-canvas");
-      canvas?.classList.toggle("is-mobile", target.dataset.size === "mobile");
-      document.querySelectorAll("[data-action='studio-viewport']").forEach((button) => button.classList.toggle("is-active", button === target));
-      break;
-    }
-    case "preview-demo": {
-      const demo = record("demos", id);
-      if (demo?.preview_url) window.open(demo.preview_url, "_blank", "noopener,noreferrer");
-      else navigate("studio", { demo: id });
-      break;
-    }
-    case "copy-demo-link": {
-      const demo = record("demos", id);
-      if (!demo?.preview_url) {
-        toast("Preview URL is not set", "Open Website Studio or edit the demo first.", "error");
-        break;
-      }
-      await copyText(demo.preview_url);
-      toast("Preview link copied");
-      break;
-    }
-    case "archive-demo":
-      await run(() => updateRecord("demos", id, { status: "archived" }), "Demo archived");
-      closeModal();
-      break;
-    case "convert-demo": {
-      const demo = record("demos", id);
-      if (!demo) break;
-      const existing = getState().data.clients.find((client) => client.lead_id === demo.lead_id);
-      if (existing) {
-        closeModal();
-        openClientDetails(existing);
-      } else {
-        closeModal();
-        openClientForm(null, demo.lead_id);
-      }
-      break;
-    }
-    case "upload-demo":
-      openUploadForm(id);
-      break;
-    case "deployment-logs": {
-      const deployment = record("deployments", id);
-      if (deployment) openDeploymentLogs(deployment);
-      break;
-    }
-    case "deployment-placeholder": {
-      const deployment = record("deployments", id);
-      if (!deployment) break;
-      const kind = target.dataset.kind;
-      await run(() => createRecord("approvals", {
-        entity_type: "deployment",
-        entity_id: deployment.id,
-        approval_type: "site_publish",
-        title: `${kind === "rollback" ? "Rollback" : deployment.status === "live" ? "Redeploy" : "Deploy"} ${deployment.domain || "client site"}`,
-        summary: "Cloudflare is not connected. This records approval intent only and does not change an external deployment.",
-        payload: { deployment_id: deployment.id, kind, version: deployment.version },
-        status: "pending",
-        risk_level: "high",
-        requested_by_agent: "orchestrator",
-      }), "Deployment approval created", "No external deployment occurred.");
-      break;
-    }
-    case "new-draft":
-      navigate("outreach", target.dataset.leadId ? { lead: target.dataset.leadId } : {});
-      break;
-    case "edit-draft": {
-      const draft = record("drafts", id);
-      if (draft) openDraftForm(draft);
-      break;
-    }
-    case "batch-outreach":
-      await prepareBatchOutreach();
-      break;
-    case "placeholder-ai":
-      toast("AI provider not connected", "The interface is ready; no external model call was made.");
-      break;
-    case "schedule-placeholder":
-      toast("Scheduling is a placeholder", "Connect Gmail and the sending service before scheduling.");
-      break;
-    case "apply-outreach-template":
-      applyOutreachTemplate(target.dataset.template);
-      break;
-    case "open-thread":
-      closeModal();
-      navigate("inbox", { ...getState().routeParams, thread: id });
-      break;
-    case "new-follow-up":
-      openFollowUpForm();
-      break;
-    case "draft-follow-up": {
-      const followUp = record("followUps", id);
-      const lead = record("leads", followUp?.lead_id);
-      if (!followUp || !lead) break;
-      const draft = await run(() => createRecord("drafts", {
-        lead_id: lead.id,
-        kind: "follow_up",
-        subject: `Quick follow-up — ${lead.business_name}`,
-        body: followUp.suggested_text || `Hey,\n\nJust checking in on the website preview I sent for ${lead.business_name}. Happy to adjust anything you want.\n\nConnor`,
-        status: "draft",
-      }), "Follow-up draft created");
-      if (draft) openDraftForm(draft);
-      break;
-    }
-    case "snooze-follow-up": {
-      const due = new Date();
-      due.setDate(due.getDate() + 2);
-      await run(() => updateRecord("followUps", id, { status: "snoozed", due_at: due.toISOString() }), "Follow-up snoozed", "Moved two days.");
-      break;
-    }
-    case "follow-up-status":
-      await run(() => updateRecord("followUps", id, {
-        status: target.dataset.status,
-        completed_at: ["replied", "completed", "dead", "sent"].includes(target.dataset.status) ? new Date().toISOString() : null,
-      }), "Follow-up updated");
-      break;
-    case "new-client":
-      openClientForm();
-      break;
-    case "open-client": {
-      const client = record("clients", id);
-      if (client) openClientDetails(client);
-      break;
-    }
-    case "edit-client": {
-      const client = record("clients", id);
-      if (client) openClientForm(client);
-      break;
-    }
-    case "new-project":
-      openProjectForm();
-      break;
-    case "open-project": {
-      const project = record("projects", id);
-      if (project) openProjectForm(project);
-      break;
-    }
-    case "advance-project": {
-      const project = record("projects", id);
-      if (!project) break;
-      const current = PROJECT_STAGES.indexOf(project.status);
-      const next = PROJECT_STAGES[Math.min(current + 1, PROJECT_STAGES.length - 1)];
-      const progress = Math.round((PROJECT_STAGES.indexOf(next) / (PROJECT_STAGES.length - 1)) * 100);
-      await run(() => updateRecord("projects", id, { status: next, progress }), "Project advanced", `Now in ${next.replaceAll("_", " ")}.`);
-      break;
-    }
-    case "new-maintenance":
-      openMaintenanceForm();
-      break;
-    case "open-maintenance": {
-      const subscription = record("maintenanceSubscriptions", id);
-      if (subscription) openMaintenanceForm(subscription);
-      break;
-    }
-    case "maintenance-request-status": {
-      const request = record("maintenanceRequests", id);
-      if (!request) break;
-      const complete = request.status !== "completed";
-      await run(() => updateRecord("maintenanceRequests", id, { status: complete ? "completed" : "new", completed_at: complete ? new Date().toISOString() : null }), complete ? "Request completed" : "Request reopened");
-      break;
-    }
-    case "new-payment":
-      openPaymentForm();
-      break;
-    case "new-expense":
-      openExpenseForm();
-      break;
-    case "edit-expense": {
-      const expense = record("expenses", id);
-      if (expense) openExpenseForm(expense);
-      break;
-    }
-    case "new-pricing-experiment":
-      openPricingForm();
-      break;
-    case "edit-pricing": {
-      const experiment = record("pricingExperiments", id);
-      if (experiment) openPricingForm(experiment);
-      break;
-    }
-    case "new-note":
-      openNoteForm();
-      break;
-    case "open-note": {
-      const note = record("notes", id);
-      if (note) openNoteForm(note);
-      break;
-    }
-    case "toggle-note-pin": {
-      const note = record("notes", id);
-      if (note) await run(() => updateRecord("notes", id, { is_pinned: !note.is_pinned }), note.is_pinned ? "Note unpinned" : "Note pinned");
-      break;
-    }
-    case "archive-note":
-      await run(() => updateRecord("notes", id, { is_archived: true }), "Note archived");
-      closeModal();
-      break;
-    case "integration-placeholder":
-      toast(`${target.dataset.provider} setup is deferred`, "The card and data boundary are ready; credentials and external calls were intentionally not added.");
-      break;
-    case "inspect-approval": {
-      const approval = record("approvals", id);
-      if (approval) openApprovalDetails(approval);
-      break;
-    }
-    case "resolve-approval":
-      await resolveApprovalAction(id, target.dataset.status);
-      break;
-    case "queue-agent-run":
-      await run(() => startManualRun(target.dataset.title || "Review priority pipeline"), "Orchestrator plan queued", "No external AI call was made.");
-      break;
-    case "agent-control": {
-      const status = target.dataset.status;
-      await run(async () => {
-        await updateRecord("agentRuns", id, { status, current_step: status === "paused" ? "Paused by operator" : status === "cancelled" ? "Cancelled by operator" : "Resumed by operator" });
-        await createRecord("agentEvents", { run_id: id, agent_type: "orchestrator", event_type: `run_${status}`, title: `Workflow ${status}`, detail: "Operator control used from the persistent panel." });
-      }, `Workflow ${status}`);
-      break;
-    }
-    case "mark-notifications-read":
-      await run(markNotificationsRead);
-      break;
-    case "open-notification": {
-      const notification = record("notifications", id);
-      if (notification && !notification.is_read) await updateRecord("notifications", id, { is_read: true });
-      if (target.dataset.routeTarget) navigate(target.dataset.routeTarget);
-      closePanels();
-      break;
-    }
-    case "request-delete": {
-      if (!SAFE_DELETE_COLLECTIONS.has(target.dataset.collection)) break;
-      await run(() => createRecord("approvals", {
-        entity_type: target.dataset.collection,
-        entity_id: id,
-        approval_type: "record_delete",
-        title: `Delete ${target.dataset.label || "record"}`,
-        summary: "Permanent deletion is blocked until this approval is reviewed.",
-        payload: { collection: target.dataset.collection, id, label: target.dataset.label || "record" },
-        status: "pending",
-        risk_level: "high",
-        requested_by_agent: "system",
-      }), "Delete request queued", "Review it in the Approval Queue.");
-      closeModal();
-      break;
-    }
-    case "seed-workspace":
-      await run(seedWorkspace, "Starter workspace loaded", "Realistic records are now available.");
-      break;
-    case "export-leads":
-      exportLeads();
-      break;
-    case "sign-out":
-      await run(signOut, "Signed out");
-      break;
-    case "exit-preview":
-      localStorage.removeItem("operations-preview");
-      location.reload();
-      break;
+
     default:
       break;
   }
 }
 
-export async function handleFormSubmit(event) {
-  const form = event.target.closest("form[data-form]");
-  if (!form) return;
-  event.preventDefault();
-  const type = form.dataset.form;
-  const id = form.dataset.id;
-  const values = cleanObject(formDataObject(form));
-  const submitter = event.submitter;
-  const submit = submitter || form.querySelector('[type="submit"]');
-  if (submit) submit.disabled = true;
+/* ---------- control changes ---------- */
 
-  if (type === "discovery-search") {
-    await executeDiscovery(values);
-    if (submit) submit.disabled = false;
-    return;
-  }
-
-  const result = await run(async () => {
-    switch (type) {
-      case "lead": {
-        const payload = {
-          ...values,
-          email: values.email || null,
-          website_status: values.has_website ? "Has website" : "No website",
-          qualification_score: number(values.lead_score),
-          opportunity_score: number(values.lead_score),
-          lead_score: number(values.lead_score),
-          asking_price: number(values.deal_value, 400),
-          deal_value: number(values.deal_value, 400),
-          last_contacted_at: iso(values.last_contacted_at),
-          follow_up_at: iso(values.follow_up_at),
-          tags: values.tags ? values.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [],
-          listing_url: values.listing_url || null,
-          google_maps_url: values.listing_url || null,
-          discovered_at: id ? record("leads", id)?.discovered_at : new Date().toISOString(),
-        };
-        delete payload.tags_text;
-        const saved = id ? await updateRecord("leads", id, payload) : await createRecord("leads", payload);
-        await logActivity(id ? "lead_updated" : "lead_created", id ? "Lead updated" : "Lead created", saved.business_name, { lead_id: saved.id });
-        return saved;
-      }
-      case "task": {
-        const payload = { ...values, due_at: iso(values.due_at), tags: values.tags ? values.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [], created_by: "user" };
-        return id ? updateRecord("tasks", id, payload) : createRecord("tasks", payload);
-      }
-      case "calendar": {
-        const payload = { ...values, starts_at: iso(values.starts_at), ends_at: null, all_day: Boolean(values.all_day) };
-        return id ? updateRecord("calendarEvents", id, payload) : createRecord("calendarEvents", payload);
-      }
-      case "template": {
-        const payload = { ...values, is_active: values.status === "active", use_count: id ? record("templates", id)?.use_count || 0 : 0 };
-        return id ? updateRecord("templates", id, payload) : createRecord("templates", payload);
-      }
-      case "demo": {
-        const lead = record("leads", values.lead_id);
-        const payload = {
-          ...values,
-          name: values.name || `${lead?.business_name || "Prospect"} Demo`,
-          slug: values.slug || slugify(values.name || lead?.business_name || `demo-${Date.now()}`),
-          qa_score: id ? record("demos", id)?.qa_score || 0 : 0,
-          qa_checklist: id ? record("demos", id)?.qa_checklist || {} : {},
-          brief: id ? record("demos", id)?.brief || {} : {},
-          business_info: id ? record("demos", id)?.business_info || {} : { name: lead?.business_name, phone: lead?.phone, email: lead?.email, address: lead?.address },
-          content: id ? record("demos", id)?.content || {} : { headline: `${lead?.business_name || "Local service"} — local service done right`, services: ["Primary service", "Emergency help", "Free estimates"] },
-          theme: id ? record("demos", id)?.theme || {} : { primary: "#172437", accent: "#6fb87b" },
-        };
-        const saved = id ? await updateRecord("demos", id, payload) : await createRecord("demos", payload);
-        if (lead) await updateRecord("leads", lead.id, { status: values.status === "ready" ? "demo_ready" : lead.status === "new" ? "qualified" : lead.status });
-        if (!id) await logActivity("demo_created", "Demo created", saved.name, { lead_id: saved.lead_id });
-        return saved;
-      }
-      case "studio": {
-        const demo = record("demos", id);
-        if (!demo) throw new Error("Choose a demo first.");
-        const sectionControls = [...document.querySelectorAll('[form="studio-form"][name^="section_"]')];
-        const hiddenSections = sectionControls.filter((input) => !input.checked).map((input) => input.name.replace("section_", ""));
-        return updateRecord("demos", id, {
-          template_id: values.template_id,
-          business_info: { ...(demo.business_info || {}), name: values.business_name, phone: values.phone, email: values.email, address: values.address, hours: values.hours },
-          content: { ...(demo.content || {}), headline: values.headline, description: values.description, services: (values.services || "").split("\n").map((item) => item.trim()).filter(Boolean), cta: values.cta, hidden_sections: hiddenSections },
-          theme: { ...(demo.theme || {}), primary: values.primary, accent: values.accent },
-        });
-      }
-      case "outreach-draft": {
-        const mode = submitter?.dataset.submitMode || "approval";
-        return saveOutreachDraft(values, mode);
-      }
-      case "draft": {
-        const mode = submitter?.dataset.submitMode || "draft";
-        const status = mode === "approval" ? "pending_approval" : "draft";
-        const draft = await updateRecord("drafts", id, { subject: values.subject, body: values.body, kind: values.kind, status });
-        if (mode === "approval") await ensureEmailApproval(draft);
-        return draft;
-      }
-      case "thread-reply": {
-        const draft = await createRecord("drafts", { lead_id: form.dataset.leadId, kind: "reply", subject: `Re: ${record("emailThreads", form.dataset.threadId)?.subject || "Website preview"}`, body: values.body, status: "pending_approval" });
-        await ensureEmailApproval(draft, "reply");
-        return draft;
-      }
-      case "follow-up": {
-        const payload = { ...values, sequence_number: number(values.sequence_number, 1), due_at: iso(values.due_at), status: id ? record("followUps", id)?.status || "scheduled" : "scheduled" };
-        const saved = id ? await updateRecord("followUps", id, payload) : await createRecord("followUps", payload);
-        await updateRecord("leads", values.lead_id, { follow_up_at: payload.due_at });
-        return saved;
-      }
-      case "client": {
-        const lead = record("leads", values.lead_id);
-        const payload = {
-          ...values,
-          contact_name: values.contact_name || lead?.contact_name || null,
-          email: values.email || lead?.email || null,
-          phone: values.phone || lead?.phone || null,
-          agreed_price: number(values.agreed_price, 400),
-          amount_received: number(values.amount_received),
-          payment_status: number(values.amount_received) >= number(values.agreed_price, 400) ? "paid" : "pending",
-          project_status: id ? record("clients", id)?.project_status || "payment_received" : "payment_received",
-          maintenance_status: id ? record("clients", id)?.maintenance_status || "inactive" : "inactive",
-          support_requests: id ? record("clients", id)?.support_requests || 0 : 0,
-          closed_at: id ? record("clients", id)?.closed_at : new Date().toISOString(),
-          handoff_checklist: id ? record("clients", id)?.handoff_checklist || {} : {},
-        };
-        const saved = id ? await updateRecord("clients", id, payload) : await createRecord("clients", payload);
-        if (lead) await updateRecord("leads", lead.id, { status: "won" });
-        if (!id) await logActivity("client_created", "Client created", lead?.business_name || "Won lead converted", { lead_id: lead?.id, client_id: saved.id });
-        return saved;
-      }
-      case "project": {
-        const site = getState().data.clientSites.find((item) => item.client_id === values.client_id);
-        const payload = { ...values, site_id: site?.id || null, progress: number(values.progress), requested_edits: (values.requested_edits || "").split("\n").map((item) => item.trim()).filter(Boolean) };
-        return id ? updateRecord("projects", id, payload) : createRecord("projects", payload);
-      }
-      case "maintenance": {
-        const payload = { ...values, monthly_amount: number(values.monthly_amount, 50), hosting_included: Boolean(values.hosting_included), domain_managed: Boolean(values.domain_managed), cancelled_on: values.status === "cancelled" ? new Date().toISOString().slice(0, 10) : null };
-        const saved = id ? await updateRecord("maintenanceSubscriptions", id, payload) : await createRecord("maintenanceSubscriptions", payload);
-        const client = record("clients", values.client_id);
-        if (client) await updateRecord("clients", client.id, { maintenance_status: values.status });
-        return saved;
-      }
-      case "payment": {
-        const payload = { ...values, amount: number(values.amount), fee_amount: number(values.fee_amount), paid_at: iso(values.paid_at), refund_state: values.status === "refunded" ? "refunded" : "none", source: "manual" };
-        return id ? updateRecord("payments", id, payload) : createRecord("payments", payload);
-      }
-      case "expense": {
-        const payload = { ...values, amount: number(values.amount) };
-        return id ? updateRecord("expenses", id, payload) : createRecord("expenses", payload);
-      }
-      case "pricing": {
-        const payload = { ...values, offer_amount: number(values.offer_amount), sent_count: number(values.sent_count), reply_count: number(values.reply_count), close_count: number(values.close_count), revenue: number(values.revenue), started_at: values.status === "active" ? record("pricingExperiments", id)?.started_at || new Date().toISOString() : record("pricingExperiments", id)?.started_at || null, ended_at: values.status === "complete" ? new Date().toISOString() : null };
-        return id ? updateRecord("pricingExperiments", id, payload) : createRecord("pricingExperiments", payload);
-      }
-      case "note": {
-        const payload = { ...values, tags: values.tags ? values.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [], is_pinned: Boolean(values.is_pinned), is_archived: id ? record("notes", id)?.is_archived || false : false };
-        return id ? updateRecord("notes", id, payload) : createRecord("notes", payload);
-      }
-      case "settings": {
-        const preferences = {
-          business_name: values.business_name,
-          owner_name: values.owner_name,
-          timezone: values.timezone,
-          currency: values.currency,
-          theme: values.theme,
-          default_site_price: number(values.default_site_price, 400),
-          maintenance_price: number(values.maintenance_price, 50),
-          default_offer: values.default_offer,
-          default_email: values.default_email,
-          signature: values.signature,
-          follow_up_days: String(values.follow_up_days || "").split(",").map((item) => number(item.trim())).filter((item) => item > 0),
-          ai_behavior: values.ai_behavior,
-          daily_cost_limit: number(values.daily_cost_limit, 10),
-          preview_domain: values.preview_domain,
-          default_template_id: values.default_template_id,
-        };
-        await updateProfilePreferences(preferences);
-        const existing = getState().data.settings.find((item) => item.key === "workspace");
-        return existing ? updateRecord("settings", existing.id, { value: preferences }) : createRecord("settings", { key: "workspace", value: preferences });
-      }
-      case "orchestrator-message": {
-        const runRecord = record("agentRuns", id);
-        if (!runRecord) {
-          const created = await startManualRun("Operator-directed workflow");
-          return updateRecord("agentRuns", created.id, { messages: [{ role: "user", text: values.message, at: new Date().toISOString() }] });
-        }
-        return updateRecord("agentRuns", id, { messages: [...(runRecord.messages || []), { role: "user", text: values.message, at: new Date().toISOString() }] });
-      }
-      case "upload-demo": {
-        const file = form.querySelector('input[type="file"]')?.files?.[0];
-        if (!file) throw new Error("Choose a file first.");
-        return uploadDemoBundle(id, file);
-      }
-      default:
-        throw new Error("Unknown form action.");
-    }
-  });
-
-  if (result) {
-    if (!["studio", "outreach-draft", "thread-reply", "orchestrator-message"].includes(type)) closeModal();
-    const labels = {
-      lead: id ? "Lead updated" : "Lead added",
-      task: "Task saved",
-      calendar: "Calendar event saved",
-      template: "Template saved",
-      demo: "Demo saved",
-      studio: "Website changes saved",
-      "outreach-draft": submitter?.dataset.submitMode === "draft" ? "Draft saved" : "Approval requested",
-      draft: submitter?.dataset.submitMode === "approval" ? "Approval requested" : "Draft saved",
-      "thread-reply": "Reply approval requested",
-      "follow-up": "Follow-up saved",
-      client: "Client saved",
-      project: "Project saved",
-      maintenance: "Maintenance plan saved",
-      payment: "Payment saved",
-      expense: "Expense saved",
-      pricing: "Experiment saved",
-      note: "Note saved",
-      settings: "Settings saved",
-      "orchestrator-message": "Direction recorded",
-      "upload-demo": "Demo version uploaded",
-    };
-    toast(labels[type] || "Saved");
-  } else if (submit) {
-    submit.disabled = false;
-  }
-}
-
-export async function handleControlChange(event) {
+export async function onChange(event) {
   const target = event.target;
   const action = target.dataset.action;
   if (!action) return;
+
   if (action === "route-select") {
-    updateRouteParam(target.dataset.key, target.value);
+    setParam(target.dataset.key, target.value);
     return;
   }
-  if (action === "outreach-lead-select") {
+  if (action === "discovery-select") {
+    const selected = new Set(getState().discovery.selected.map(String));
+    if (target.checked) selected.add(String(target.dataset.id));
+    else selected.delete(String(target.dataset.id));
+    setDiscovery({ selected: [...selected] });
+    return;
+  }
+  if (action === "outreach-lead") {
     navigate("outreach", { ...getState().routeParams, lead: target.value });
     return;
   }
-  if (action === "classify-thread") {
-    await run(() => updateRecord("emailThreads", target.dataset.id, { classification: target.value, intent: target.value, is_unread: false }), "Thread classified");
+  if (action === "studio-demo") {
+    setStudio({ draftFiles: null, pendingChange: null });
+    navigate("studio", { demo: target.value });
     return;
   }
-  if (action === "studio-demo-select") {
-    navigate("studio", { demo: target.value });
+  if (action === "thread-classify") {
+    await run(() => classifyReply(target.dataset.id, target.value), "Reply classified");
   }
 }
 
-export function handleRouteSearch(value) {
-  updateRouteParam("q", value.trim());
+/* ---------- form submits ---------- */
+
+export async function onSubmit(event) {
+  const form = event.target.closest("form[data-form]");
+  if (!form) return;
+  event.preventDefault();
+
+  const type = form.dataset.form;
+  const id = form.dataset.id;
+  const values = clean(formValues(form));
+  const mode = event.submitter?.dataset.mode || "";
+  const submit = event.submitter || form.querySelector('[type="submit"]');
+  if (submit) submit.disabled = true;
+
+  try {
+    switch (type) {
+      case "discovery":
+        await runDiscovery(values);
+        break;
+
+      case "assistant":
+        await handleAssistant(values.message, form);
+        break;
+
+      case "automation-settings":
+        saveAutomationSettings({
+          batchTarget: number(values.batchTarget, 48),
+          price: number(values.price, 500),
+          followUpDays: number(values.followUpDays, 3),
+          stepDelayMs: number(values.stepDelayMs, 220),
+          maxConsecutiveFailures: number(values.maxConsecutiveFailures, 3),
+          niche: values.niche || "",
+          location: values.location || "",
+          autoFollowUp: Boolean(values.autoFollowUp),
+          research: Boolean(values.research),
+        });
+        toast("Settings saved");
+        break;
+
+      case "lead": {
+        const payload = {
+          ...values,
+          has_website: Boolean(values.has_website),
+          website_status: values.has_website ? "Has website" : "No website",
+          lead_score: number(values.lead_score, 80),
+          qualification_score: number(values.lead_score, 80),
+          opportunity_score: number(values.lead_score, 80),
+          deal_value: number(values.deal_value, 500),
+          asking_price: number(values.deal_value, 500),
+          source: id ? findRecord("leads", id)?.source || "manual" : "manual",
+          source_key: id ? findRecord("leads", id)?.source_key || null : `manual-${slugify(values.business_name || uid())}`,
+          discovered_at: id ? findRecord("leads", id)?.discovered_at : new Date().toISOString(),
+        };
+        const saved = id ? await updateRecord("leads", id, payload) : await createRecord("leads", payload);
+        await logActivity(id ? "lead_updated" : "lead_created", id ? "Lead updated" : "Lead added", saved.business_name, { lead_id: saved.id });
+        closeModal();
+        toast(id ? "Lead updated" : "Lead added");
+        break;
+      }
+
+      case "lead-stage":
+        await updatePipeline(id, values.status);
+        closeModal();
+        toast("Stage updated");
+        break;
+
+      case "outreach": {
+        const leadId = values.lead_id || form.dataset.leadId;
+        const status = mode === "draft" ? "draft" : "ready";
+        const { draft } = await createOutreachDraft(leadId, { price: number(values.price, 500), status });
+        const updated = await updateRecord("drafts", draft.id, { subject: values.subject, body: values.body, status });
+        if (mode === "send") {
+          const result = await sendDraft(updated.id);
+          toast(result.sent ? "Email sent" : "Not sent", result.sent ? "" : result.reason, result.sent ? "success" : "info");
+        } else {
+          toast(mode === "draft" ? "Draft saved" : "Marked ready");
+        }
+        break;
+      }
+
+      case "draft": {
+        const status = mode === "draft" ? "draft" : "ready";
+        const updated = await updateRecord("drafts", id, { subject: values.subject, body: values.body, status });
+        closeModal();
+        if (mode === "send") {
+          const result = await sendDraft(updated.id);
+          toast(result.sent ? "Email sent" : "Not sent", result.sent ? "" : result.reason, result.sent ? "success" : "info");
+        } else {
+          toast(mode === "draft" ? "Draft saved" : "Marked ready");
+        }
+        break;
+      }
+
+      case "reply": {
+        const draft = await createRecord("drafts", {
+          lead_id: form.dataset.leadId || null,
+          kind: "reply",
+          subject: `Re: ${findRecord("emailThreads", form.dataset.threadId)?.subject || "Website preview"}`,
+          body: values.body,
+          status: "ready",
+        });
+        await updateRecord("emailThreads", form.dataset.threadId, { is_unread: false });
+        toast("Reply saved as ready", canSend() ? "Send it from Outreach." : "Gmail is not connected yet.");
+        form.reset();
+        if (!draft) break;
+        break;
+      }
+
+      case "followup": {
+        const payload = {
+          lead_id: values.lead_id,
+          sequence_number: number(values.sequence_number, 1),
+          due_at: iso(values.due_at),
+          suggested_text: values.suggested_text || "",
+          status: id ? findRecord("followUps", id)?.status || "scheduled" : "scheduled",
+        };
+        if (id) await updateRecord("followUps", id, payload);
+        else await createRecord("followUps", payload);
+        await updateRecord("leads", values.lead_id, { follow_up_at: payload.due_at });
+        closeModal();
+        toast("Follow-up saved");
+        break;
+      }
+
+      case "build-demo": {
+        const templateRecord = values.template_id ? findRecord("templates", values.template_id) : null;
+        const result = await createOrUpdateDemo(values.lead_id, { templateRecord });
+        closeModal();
+        toast("Demo built", result.reason);
+        navigate("studio", { demo: result.demo.id });
+        break;
+      }
+
+      case "studio-file": {
+        const demo = findRecord("demos", form.dataset.demoId);
+        const file = form.dataset.file;
+        await saveDemoFiles(demo.id, { ...(demo.content?.files || {}), [file]: values.source }, { summary: `Edited ${file}` });
+        toast("File saved");
+        break;
+      }
+
+      case "studio-details": {
+        const demo = findRecord("demos", form.dataset.demoId);
+        const overrides = {
+          business: values.business,
+          phone: values.phone,
+          email: values.email,
+          address: values.address,
+          cta: values.cta,
+          hours: values.hours,
+        };
+        const lead = findRecord("leads", demo.lead_id);
+        const templateRecord = findRecord("templates", demo.template_id);
+        const built = buildBundleForLead(lead, catalogForRecord(templateRecord), { ...(demo.content?.site || {}), ...overrides });
+        await updateRecord("demos", demo.id, {
+          business_info: { ...(demo.business_info || {}), name: overrides.business, phone: overrides.phone, email: overrides.email, address: overrides.address, cta: overrides.cta, hours: overrides.hours },
+          content: { ...(demo.content || {}), site: built.site, files: built.files, custom_edited: false },
+        });
+        closeDrawer();
+        toast("Site updated");
+        break;
+      }
+
+      case "studio-ai": {
+        const message = String(values.message || "").trim();
+        if (!message) break;
+        const messages = [...getState().studio.messages, { role: "user", text: message }];
+        if (providerReady()) {
+          messages.push({ role: "system", text: "The provider is connected but the request layer is not implemented yet." });
+        } else {
+          messages.push({
+            role: "system",
+            blocked: true,
+            text: "No AI provider is connected, so this request was not answered. Use Site details or the file editor for manual changes.",
+          });
+        }
+        setStudio({ messages });
+        form.reset();
+        break;
+      }
+
+      case "client": {
+        const payload = {
+          ...values,
+          agreed_price: number(values.agreed_price, 500),
+          amount_received: number(values.amount_received, 0),
+          payment_status: number(values.amount_received) >= number(values.agreed_price, 500) ? "paid" : "pending",
+        };
+        const saved = id ? await updateRecord("clients", id, payload) : await createRecord("clients", payload);
+        if (!id && values.lead_id) await updateRecord("leads", values.lead_id, { status: "won" });
+        if (!id) await logActivity("client_created", "Client created", saved.contact_name || "", { client_id: saved.id, lead_id: values.lead_id });
+        closeModal();
+        toast("Client saved");
+        break;
+      }
+
+      case "project": {
+        const payload = {
+          ...values,
+          progress: number(values.progress, 0),
+          requested_edits: String(values.requested_edits || "").split("\n").map((line) => line.trim()).filter(Boolean),
+        };
+        if (id) await updateRecord("projects", id, payload);
+        else await createRecord("projects", payload);
+        closeModal();
+        toast("Project saved");
+        break;
+      }
+
+      case "maintenance": {
+        const payload = {
+          ...values,
+          monthly_amount: number(values.monthly_amount, 50),
+          hosting_included: Boolean(values.hosting_included),
+          domain_managed: Boolean(values.domain_managed),
+        };
+        if (id) await updateRecord("maintenanceSubscriptions", id, payload);
+        else await createRecord("maintenanceSubscriptions", payload);
+        if (values.client_id) await updateRecord("clients", values.client_id, { maintenance_status: values.status });
+        closeModal();
+        toast("Plan saved");
+        break;
+      }
+
+      case "payment": {
+        const payload = {
+          ...values,
+          amount: number(values.amount, 0),
+          fee_amount: number(values.fee_amount, 0),
+          paid_at: iso(values.paid_at),
+          source: "manual",
+        };
+        if (id) await updateRecord("payments", id, payload);
+        else await createRecord("payments", payload);
+        closeModal();
+        toast("Payment saved");
+        break;
+      }
+
+      case "expense": {
+        const payload = { ...values, amount: number(values.amount, 0) };
+        if (id) await updateRecord("expenses", id, payload);
+        else await createRecord("expenses", payload);
+        closeModal();
+        toast("Expense saved");
+        break;
+      }
+
+      case "pricing": {
+        const payload = {
+          ...values,
+          offer_amount: number(values.offer_amount, 500),
+          sent_count: number(values.sent_count, 0),
+          reply_count: number(values.reply_count, 0),
+          close_count: number(values.close_count, 0),
+          revenue: number(values.revenue, 0),
+        };
+        if (id) await updateRecord("pricingExperiments", id, payload);
+        else await createRecord("pricingExperiments", payload);
+        closeModal();
+        toast("Experiment saved");
+        break;
+      }
+
+      case "task": {
+        const payload = { ...values, due_at: iso(values.due_at), status: values.status || (id ? findRecord("tasks", id)?.status : "pending") || "pending" };
+        if (id) await updateRecord("tasks", id, payload);
+        else await createRecord("tasks", { ...payload, created_by: "user" });
+        closeModal();
+        toast("Task saved");
+        break;
+      }
+
+      case "note": {
+        const payload = {
+          ...values,
+          tags: String(values.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean),
+          is_pinned: Boolean(values.is_pinned),
+        };
+        if (id) await updateRecord("notes", id, payload);
+        else await createRecord("notes", payload);
+        closeModal();
+        toast("Note saved");
+        break;
+      }
+
+      case "calendar": {
+        const payload = { ...values, starts_at: iso(values.starts_at) };
+        if (id) await updateRecord("calendarEvents", id, payload);
+        else await createRecord("calendarEvents", payload);
+        closeModal();
+        toast("Event saved");
+        break;
+      }
+
+      case "classify":
+        await classifyReply(id, values.classification);
+        closeModal();
+        toast("Reply classified");
+        break;
+
+      case "settings": {
+        await savePreferences({
+          owner_name: values.owner_name,
+          business_name: values.business_name,
+          default_site_price: number(values.default_site_price, 500),
+          maintenance_price: number(values.maintenance_price, 50),
+          default_email: values.default_email,
+          signature: values.signature,
+          batch_target: number(values.batch_target, 48),
+          preview_domain: values.preview_domain,
+          timezone: values.timezone,
+          follow_up_days: String(values.follow_up_days || "")
+            .split(",")
+            .map((part) => number(part.trim()))
+            .filter((day) => day > 0),
+        });
+        saveAutomationSettings({ batchTarget: number(values.batch_target, 48), price: number(values.default_site_price, 500) });
+        toast("Settings saved");
+        break;
+      }
+
+      case "sign-in":
+        await signIn(values.email, values.password);
+        toast("Signed in", "Loading your workspace…");
+        location.reload();
+        break;
+
+      default:
+        break;
+    }
+  } catch (error) {
+    console.error(error);
+    toast("That did not work", error.message || "Try again.", "error");
+  } finally {
+    if (submit) submit.disabled = false;
+  }
 }
 
-export function bindPipelineDrag() {
-  document.querySelectorAll(".pipeline-card[draggable='true']").forEach((card) => {
-    card.addEventListener("dragstart", () => card.classList.add("dragging"));
-    card.addEventListener("dragend", () => card.classList.remove("dragging"));
-  });
-  document.querySelectorAll(".pipeline-column").forEach((column) => {
-    column.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      column.classList.add("is-dragover");
+/* ---------- assistant turn ---------- */
+
+async function handleAssistant(rawMessage, form) {
+  const message = String(rawMessage || "").trim();
+  if (!message) return;
+
+  const messages = [...getState().assistant.messages, { id: uid(), role: "user", text: message, at: new Date().toISOString() }];
+  setAssistant({ messages, pending: true });
+  form.reset();
+  const input = document.getElementById("assistant-input");
+  if (input) input.style.height = "auto";
+
+  const command = matchCommand(message);
+  if (command) {
+    const { result } = await runCommand(command);
+    setAssistant({
+      pending: false,
+      messages: [...messages, {
+        id: uid(),
+        role: "tool",
+        tool: command.tool,
+        result,
+        at: new Date().toISOString(),
+      }],
     });
-    column.addEventListener("dragleave", () => column.classList.remove("is-dragover"));
-    column.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      column.classList.remove("is-dragover");
-      const card = document.querySelector(".pipeline-card.dragging");
-      if (!card) return;
-      const stage = column.dataset.stage;
-      const lead = record("leads", card.dataset.leadId);
-      if (!lead || !PIPELINE_STAGES.some((item) => item.id === stage) || lead.status === stage) return;
-      await run(async () => {
-        await updateRecord("leads", lead.id, { status: stage });
-        await logActivity("pipeline_moved", "Pipeline moved", `${lead.business_name} moved from ${lead.status.replaceAll("_", " ")} to ${stage.replaceAll("_", " ")}.`, { lead_id: lead.id });
-      }, "Pipeline updated", `Moved to ${stage.replaceAll("_", " ")}.`);
-    });
+    return;
+  }
+
+  setAssistant({
+    pending: false,
+    messages: [...messages, {
+      id: uid(),
+      role: "system",
+      blocked: true,
+      who: "Not answered",
+      text: providerReady()
+        ? "A provider is connected but the request layer is not implemented yet."
+        : "No AI provider is connected, so this was not answered. Commands like “go”, “stop”, “status”, “next” and “revenue” work now and run real operations.",
+      at: new Date().toISOString(),
+    }],
   });
 }
 
-async function executeDiscovery(values) {
+/* ---------- discovery ---------- */
+
+async function runDiscovery(values) {
   const apiKey = String(values.api_key || getStoredApiKey() || "").trim();
   if (!apiKey) {
-    setDiscovery({ status: "idle", error: "Add a Google Maps browser API key to run OpenScout.", progress: null });
+    setDiscovery({ status: "idle", error: "Add a Google Maps browser key to search.", progress: null });
     return;
   }
   if (values.api_key) setStoredApiKey(apiKey);
+
   const query = {
     location: values.location,
-    city: values.city || "",
     businessType: values.business_type,
     radiusKm: number(values.radius_km, 15),
     limit: number(values.limit, 50),
-    depth: values.depth,
+    depth: values.depth || "standard",
     minConfidence: number(values.min_confidence, 70),
-    filters: { noWebsite: Boolean(values.no_website), mustHavePhone: Boolean(values.must_have_phone), verify: Boolean(values.verify) },
+    minRating: number(values.min_rating, 0),
+    filters: {
+      noWebsite: values.no_website !== false,
+      mustHavePhone: Boolean(values.must_have_phone),
+      skipKnown: values.skip_known !== false,
+      verify: Boolean(values.verify),
+    },
   };
-  let discoveryRun;
+
+  let runRecord = null;
   try {
-    discoveryRun = await createDiscoveryRun(query);
-    setDiscovery({ status: "running", runId: discoveryRun.id, results: [], selected: [], error: "", progress: { phase: "scan", completed: 0, total: 1, scanned: 0, leads: 0 }, summary: null });
+    runRecord = await createDiscoveryRun(query);
+    setDiscovery({
+      status: "running",
+      runId: runRecord.id,
+      results: [],
+      selected: [],
+      error: "",
+      progress: { phase: "scan", completed: 0, total: 1, scanned: 0, leads: 0 },
+      summary: null,
+    });
+
     const result = await discoverWithOpenScout({
       apiKey,
-      location: values.city || values.location,
+      location: values.location,
       businessType: values.business_type,
-      radiusKm: number(values.radius_km, 15),
-      limit: number(values.limit, 50),
-      depth: values.depth,
-      minConfidence: number(values.min_confidence, 70),
-      verify: Boolean(values.verify),
-      mustHavePhone: Boolean(values.must_have_phone),
+      radiusKm: query.radiusKm,
+      limit: query.limit,
+      depth: query.depth,
+      minConfidence: query.minConfidence,
+      verify: query.filters.verify,
+      mustHavePhone: query.filters.mustHavePhone,
       mustHaveEmail: false,
-      strictlyBlankWebsite: Boolean(values.no_website),
+      strictlyBlankWebsite: query.filters.noWebsite,
     }, (progress) => setDiscovery({ progress }));
-    const stored = await completeDiscoveryRun(discoveryRun.id, result);
+
+    /* Post-filters the engine does not own. */
+    let leads = result.leads;
+    if (query.minRating > 0) {
+      leads = leads.filter((lead) => Number(lead.source_metadata?.openscout?.rating || 0) >= query.minRating);
+    }
+    if (query.filters.skipKnown) {
+      const known = new Set(getState().data.leads.map((lead) => String(lead.source_key || "")));
+      leads = leads.filter((lead) => !known.has(String(lead.source_key || "")));
+    }
+
+    const stored = await completeDiscoveryRun(runRecord.id, { ...result, leads });
     setDiscovery({ status: "completed", results: stored, selected: [], progress: null, summary: result, error: "" });
-    toast("OpenScout search complete", `${stored.length} normalized candidates retained.`);
+    toast("Search finished", `${stored.length} businesses found.`);
   } catch (error) {
     console.error(error);
-    await failDiscoveryRun(discoveryRun?.id, error.message || "Discovery failed.");
-    setDiscovery({ status: "failed", progress: null, error: error.message || "OpenScout could not complete the search." });
+    await failDiscoveryRun(runRecord?.id, error.message || "Search failed.");
+    setDiscovery({ status: "failed", progress: null, error: error.message || "The search could not finish." });
   }
 }
 
 async function saveDiscovery(ids) {
   if (!ids.length) return;
-  const result = await run(() => saveDiscoveryCandidates(ids), "Discovery results saved");
+  const result = await run(() => saveDiscoveryCandidates(ids));
   if (!result) return;
-  const selected = new Set(getState().discovery.selected);
-  ids.forEach((id) => selected.delete(id));
+  const selected = new Set(getState().discovery.selected.map(String));
+  ids.forEach((value) => selected.delete(String(value)));
   setDiscovery({ selected: [...selected] });
-  toast("Leads ready", `${result.saved.length} saved · ${result.duplicates.length} duplicates matched.`);
-  if (document.getElementById("modal-root").innerHTML) closeModal();
+  toast("Saved to leads", `${result.saved.length} added${result.duplicates.length ? `, ${result.duplicates.length} already known` : ""}.`);
+  closeModal();
 }
 
 async function rejectDiscovery(ids) {
   if (!ids.length) return;
-  const result = await run(() => rejectDiscoveryCandidates(ids), "Discovery results rejected");
-  if (!result) return;
-  const selected = new Set(getState().discovery.selected);
-  ids.forEach((id) => selected.delete(id));
+  await run(() => rejectDiscoveryCandidates(ids), "Rejected");
+  const selected = new Set(getState().discovery.selected.map(String));
+  ids.forEach((value) => selected.delete(String(value)));
   setDiscovery({ selected: [...selected] });
-  if (document.getElementById("modal-root").innerHTML) closeModal();
-}
-
-async function saveOutreachDraft(values, mode) {
-  const status = mode === "approval" ? "pending_approval" : "draft";
-  const draft = await createRecord("drafts", {
-    lead_id: values.lead_id,
-    kind: "initial",
-    subject: values.subject,
-    body: values.body,
-    status,
-  });
-  if (status === "pending_approval") await ensureEmailApproval(draft);
-  return draft;
-}
-
-async function ensureEmailApproval(draft, kind = "outreach") {
-  const existing = getState().data.approvals.find((item) => item.entity_id === draft.id && item.status === "pending");
-  if (existing) return existing;
-  const lead = record("leads", draft.lead_id);
-  return createRecord("approvals", {
-    entity_type: "message_draft",
-    entity_id: draft.id,
-    approval_type: kind === "reply" ? "email_send" : draft.kind === "follow_up" ? "follow_up_send" : "email_send",
-    title: `Send ${kind} to ${lead?.business_name || "lead"}`,
-    summary: "Review the recipient, subject, body, offer, and attached demo before sending.",
-    payload: { lead_id: draft.lead_id, subject: draft.subject, draft_id: draft.id },
-    status: "pending",
-    risk_level: "medium",
-    requested_by_agent: "writer",
-  });
-}
-
-async function prepareBatchOutreach() {
-  const { data } = getState();
-  const eligible = data.leads.filter((lead) => {
-    const demo = data.demos.find((item) => item.lead_id === lead.id && ["ready", "sent", "viewed"].includes(item.status));
-    const exists = data.drafts.some((draft) => draft.lead_id === lead.id && draft.kind === "initial");
-    return demo && !exists && lead.status !== "lost";
-  }).slice(0, 20);
-  if (!eligible.length) {
-    toast("No batch candidates", "Candidates need a ready demo and no existing initial draft.", "error");
-    return;
-  }
-  await run(async () => {
-    const rows = eligible.map((lead) => {
-      const demo = data.demos.find((item) => item.lead_id === lead.id);
-      const amount = lead.deal_value || lead.asking_price || 400;
-      return {
-        lead_id: lead.id,
-        kind: "initial",
-        subject: `I made a website for ${lead.business_name}`,
-        body: personalizedOutreach(lead, demo, amount),
-        status: "draft",
-      };
-    });
-    await createRecords("drafts", rows);
-    await logActivity("email_batch_prepared", "Outreach batch prepared", `${rows.length} drafts created.`, { metadata: { lead_ids: eligible.map((lead) => lead.id) } });
-  }, "Batch prepared", `${eligible.length} drafts created; nothing sent.`);
-}
-
-function applyOutreachTemplate(kind) {
-  const form = document.querySelector('form[data-form="outreach-draft"]');
-  if (!form) return;
-  const lead = record("leads", form.elements.lead_id.value);
-  const demo = getState().data.demos.find((item) => item.lead_id === lead?.id);
-  const amount = form.elements.offer_amount.value;
-  if (kind === "short") {
-    form.elements.body.value = `Hey,\n\nI noticed ${lead?.business_name || "[Business Name]"} didn’t have a website, so I made a quick preview:\n\n${demo?.preview_url || "[preview link]"}\n\nIf you want it, I can customize it and launch it for $${amount}. If you don’t like it, you don’t pay.\n\nInterested?\n\nConnor`;
-  } else if (kind === "changes") {
-    form.elements.body.value = `Hey,\n\nI put together a website preview for ${lead?.business_name || "[Business Name]"}:\n\n${demo?.preview_url || "[preview link]"}\n\nEverything is editable—colors, photos, services, wording, and layout. I can make the changes you want, connect your domain, and launch it for $${amount}.\n\nWant me to adjust anything?\n\nConnor`;
-  } else {
-    form.elements.body.value = personalizedOutreach(lead, demo, amount);
-  }
-}
-
-async function resolveApprovalAction(id, status) {
-  const approval = record("approvals", id);
-  if (!approval) return;
-  const resolved = await run(() => resolveApproval(id, status), `Approval ${status}`);
-  if (!resolved) return;
-  if (status === "approved" && approval.approval_type === "record_delete") {
-    const collection = approval.payload?.collection;
-    const recordId = approval.payload?.id;
-    if (SAFE_DELETE_COLLECTIONS.has(collection) && recordId) {
-      await run(() => deleteRecord(collection, recordId), "Approved record deleted", approval.payload?.label || "");
-    }
-  }
   closeModal();
 }
 
-async function copyText(value) {
-  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
-  const input = document.createElement("textarea");
-  input.value = value;
-  document.body.appendChild(input);
-  input.select();
-  document.execCommand("copy");
-  input.remove();
+/* ---------- batch outreach ---------- */
+
+async function prepareBatch() {
+  const { data } = getState();
+  const settings = preferences();
+  const eligible = data.leads.filter((lead) => {
+    const demo = demoForLead(lead.id);
+    const exists = data.drafts.some((draft) => String(draft.lead_id) === String(lead.id) && draft.kind === "initial");
+    return demo && !exists && !["won", "lost"].includes(lead.status);
+  }).slice(0, 25);
+
+  if (!eligible.length) {
+    toast("Nothing to prepare", "Leads need a demo and no existing outreach email.", "info");
+    return;
+  }
+
+  await run(async () => {
+    for (const lead of eligible) {
+      await createOutreachDraft(lead, { price: settings.default_site_price, status: "ready" });
+    }
+    await logActivity("email_batch_prepared", "Outreach batch prepared", `${eligible.length} emails ready to send.`);
+  }, "Batch prepared", `${eligible.length} emails ready.`);
 }
+
+/* ---------- export ---------- */
 
 function exportLeads() {
-  const fields = ["business_name", "contact_name", "email", "phone", "address", "city", "region", "category", "source", "listing_url", "website_url", "website_status", "lead_score", "status", "deal_value", "discovered_at", "follow_up_at", "notes"];
+  const fields = ["business_name", "contact_name", "email", "phone", "address", "city", "region", "category", "website_status", "lead_score", "status", "deal_value", "last_contacted_at", "follow_up_at"];
   const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
-  const csv = [fields.join(","), ...getState().data.leads.map((lead) => fields.map((field) => quote(lead[field])).join(","))].join("\n");
+  const csv = [fields.join(","), ...getState().data.leads.map((lead) => fields.map((key) => quote(lead[key])).join(","))].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `operations-leads-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
   URL.revokeObjectURL(url);
-  toast("Lead export created", "CSV download started.");
+  toast("Export started");
 }
 
-function buttonMarkup(label, action, variant) {
-  return `<button class="button button--${variant}" data-action="${action}">${escapeHtml(label)}</button>`;
+/* ---------- pipeline drag ---------- */
+
+export function bindBoardDrag() {
+  document.querySelectorAll(".deal[draggable='true']").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      card.classList.add("dragging");
+      event.dataTransfer?.setData("text/plain", card.dataset.leadId);
+    });
+    card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  });
+
+  document.querySelectorAll(".board__list").forEach((column) => {
+    column.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      column.classList.add("is-over");
+    });
+    column.addEventListener("dragleave", () => column.classList.remove("is-over"));
+    column.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      column.classList.remove("is-over");
+      const leadId = event.dataTransfer?.getData("text/plain") || document.querySelector(".deal.dragging")?.dataset.leadId;
+      const stage = column.dataset.stage;
+      const lead = findRecord("leads", leadId);
+      if (!lead || !PIPELINE_STAGES.some((item) => item.id === stage) || lead.status === stage) return;
+      await run(() => updatePipeline(lead.id, stage), "Moved", `${lead.business_name} → ${stage.replaceAll("_", " ")}`);
+    });
+  });
 }

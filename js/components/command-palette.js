@@ -1,110 +1,103 @@
 import { NAV_GROUPS } from "../config.js";
-import { icon, hydrateIcons } from "../core/icons.js";
+import { hydrateIcons, icon } from "../core/icons.js";
 import { getState } from "../core/state.js";
 import { escapeHtml } from "../core/utils.js";
 
-export function openCommandPalette() {
-  const root = document.getElementById("command-palette-root");
+let selectedIndex = 0;
+let results = [];
+
+export function openPalette() {
+  const root = document.getElementById("palette-root");
   root.innerHTML = `
-    <div class="command-backdrop" data-action="close-command-palette">
-      <section class="command-palette" role="dialog" aria-modal="true" aria-label="Search workspace">
-        <div class="command-search">${icon("search")}<input id="command-input" autocomplete="off" placeholder="Search pages, prospects, and actions…"><kbd style="color:var(--muted)">Esc</kbd></div>
-        <div id="command-results" class="command-results"></div>
+    <div class="palette-backdrop">
+      <section class="palette" role="dialog" aria-modal="true" aria-label="Search">
+        <div class="palette__search">${icon("search")}<input id="palette-input" autocomplete="off" placeholder="Search pages, leads, clients, demos…"></div>
+        <div class="palette__results" id="palette-results"></div>
       </section>
     </div>
   `;
-  root.querySelector(".command-palette").addEventListener("click", (event) => event.stopPropagation());
-  const input = root.querySelector("#command-input");
-  input.addEventListener("input", () => renderResults(input.value));
-  renderResults("");
+  /* Only the backdrop itself closes; result clicks must reach the delegated
+     action handler. */
+  const backdrop = root.querySelector(".palette-backdrop");
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) closePalette();
+  });
+  const input = root.querySelector("#palette-input");
+  input.addEventListener("input", () => render(input.value));
+  input.addEventListener("keydown", onKeyDown);
+  render("");
   input.focus();
   document.body.style.overflow = "hidden";
   hydrateIcons(root);
 }
 
-export function closeCommandPalette() {
-  document.getElementById("command-palette-root").innerHTML = "";
+export function closePalette() {
+  const root = document.getElementById("palette-root");
+  if (root) root.innerHTML = "";
   document.body.style.overflow = "";
 }
 
-function renderResults(query) {
-  const normalized = query.trim().toLowerCase();
-  const pageResults = NAV_GROUPS.flatMap((group) => group.items.map((item) => ({
-    kind: "Page",
-    title: item.label,
-    subtitle: group.label,
-    icon: item.icon,
-    action: "navigate",
-    route: item.id,
-  })));
-  const data = getState().data;
-  const leadResults = data.leads.map((lead) => ({
-    kind: "Prospect",
-    title: lead.business_name,
-    subtitle: [lead.category, lead.city].filter(Boolean).join(" · "),
-    icon: "building-2",
-    action: "open-lead",
-    id: lead.id,
-  }));
-  const clientResults = data.clients.map((client) => {
-    const lead = data.leads.find((item) => item.id === client.lead_id);
-    return { kind: "Client", title: lead?.business_name || "Client", subtitle: client.contact_name || client.domain || "Client record", icon: "briefcase-business", action: "open-client", id: client.id };
-  });
-  const demoResults = data.demos.map((demo) => ({
-    kind: "Demo",
-    title: demo.name,
-    subtitle: demo.slug || demo.status,
-    icon: "monitor-up",
-    action: "open-demo",
-    id: demo.id,
-  }));
-  const threadResults = data.emailThreads.map((thread) => ({
-    kind: "Email",
-    title: thread.subject || "(no subject)",
-    subtitle: `${thread.sender_name || thread.sender_email || "Unknown"} · ${thread.classification}`,
-    icon: "inbox",
-    action: "open-thread",
-    id: thread.id,
-  }));
-  const projectResults = data.projects.map((project) => ({
-    kind: "Project",
-    title: project.name,
-    subtitle: project.status.replaceAll("_", " "),
-    icon: "clipboard-check",
-    action: "open-project",
-    id: project.id,
-  }));
-  const taskResults = data.tasks.map((task) => ({
-    kind: "Task",
-    title: task.title,
-    subtitle: task.status.replaceAll("_", " "),
-    icon: "clipboard-check",
-    action: "open-task",
-    id: task.id,
-  }));
-  const noteResults = data.notes.filter((note) => !note.is_archived).map((note) => ({
-    kind: "Note",
-    title: note.title,
-    subtitle: note.category,
-    icon: "pencil",
-    action: "open-note",
-    id: note.id,
-  }));
-  const actions = [
-    { kind: "Action", title: "Add a new lead", subtitle: "Manual prospect entry", icon: "plus", action: "new-lead" },
-    { kind: "Action", title: "Compose an outreach draft", subtitle: "Prepare, then approve", icon: "send", action: "new-draft" },
-    { kind: "Action", title: "Queue a manual agent run", subtitle: "No external model call", icon: "bot", action: "queue-agent-run" },
+export function isPaletteOpen() {
+  return Boolean(document.getElementById("palette-root")?.innerHTML);
+}
+
+function onKeyDown(event) {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    selectedIndex = Math.min(results.length - 1, selectedIndex + 1);
+    paint();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    selectedIndex = Math.max(0, selectedIndex - 1);
+    paint();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    document.querySelectorAll(".palette__result")[selectedIndex]?.click();
+  }
+}
+
+function candidates() {
+  const { data } = getState();
+  return [
+    ...NAV_GROUPS.flatMap((group) => group.items.map((item) => ({
+      kind: "Page", title: item.label, sub: group.label, icon: item.icon, action: "navigate", attrs: `data-route-target="${item.id}"`,
+    }))),
+    ...data.leads.map((lead) => ({
+      kind: "Lead", title: lead.business_name, sub: [lead.category, lead.city].filter(Boolean).join(" · "), icon: "building", action: "lead-open", attrs: `data-id="${lead.id}"`,
+    })),
+    ...data.demos.map((demo) => ({
+      kind: "Demo", title: demo.name, sub: demo.status, icon: "monitor", action: "demo-studio", attrs: `data-id="${demo.id}"`,
+    })),
+    ...data.clients.map((client) => ({
+      kind: "Client", title: data.leads.find((lead) => lead.id === client.lead_id)?.business_name || "Client", sub: client.status, icon: "briefcase", action: "client-open", attrs: `data-id="${client.id}"`,
+    })),
+    ...data.notes.filter((note) => !note.is_archived).map((note) => ({
+      kind: "Note", title: note.title, sub: note.category, icon: "note", action: "note-open", attrs: `data-id="${note.id}"`,
+    })),
+    { kind: "Action", title: "Start automation", sub: "Run the outreach batch", icon: "play", action: "automation-start", attrs: "" },
+    { kind: "Action", title: "Add lead", sub: "Manual entry", icon: "plus", action: "lead-new", attrs: "" },
+    { kind: "Action", title: "New task", sub: "", icon: "check-square", action: "task-new", attrs: "" },
   ];
-  const results = [...pageResults, ...leadResults, ...clientResults, ...demoResults, ...threadResults, ...projectResults, ...taskResults, ...noteResults, ...actions]
-    .filter((item) => !normalized || `${item.title} ${item.subtitle} ${item.kind}`.toLowerCase().includes(normalized))
-    .slice(0, 14);
-  const container = document.getElementById("command-results");
+}
+
+function render(query) {
+  const value = query.trim().toLowerCase();
+  results = candidates()
+    .filter((item) => !value || `${item.title} ${item.sub} ${item.kind}`.toLowerCase().includes(value))
+    .slice(0, 12);
+  selectedIndex = 0;
+  paint();
+}
+
+function paint() {
+  const container = document.getElementById("palette-results");
+  if (!container) return;
   container.innerHTML = results.map((item, index) => `
-    <button class="command-result ${index === 0 ? "is-selected" : ""}" data-action="${item.action}" ${item.route ? `data-route-target="${item.route}"` : ""} ${item.id ? `data-id="${item.id}"` : ""}>
-      <span>${icon(item.icon)}</span>
-      <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle || "")}</small></span>
-      <span>${item.kind}</span>
+    <button class="palette__result${index === selectedIndex ? " is-selected" : ""}" type="button" data-action="${item.action}" ${item.attrs}>
+      ${icon(item.icon)}
+      <span><strong>${escapeHtml(item.title)}</strong>${item.sub ? `<small>${escapeHtml(item.sub)}</small>` : ""}</span>
+      <span class="palette__kind">${escapeHtml(item.kind)}</span>
     </button>
-  `).join("") || `<div class="empty-state" style="min-height:150px"><p>No results.</p></div>`;
+  `).join("") || `<p class="faint" style="padding:14px">No matches.</p>`;
   hydrateIcons(container);
 }

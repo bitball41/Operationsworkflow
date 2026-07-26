@@ -1,82 +1,66 @@
-import { NAV_GROUPS, PAGE_META } from "../config.js";
-import { icon, hydrateIcons } from "../core/icons.js";
+import { FULL_BLEED_ROUTES, NAV_GROUPS, PAGE_TITLES } from "../config.js";
+import { hydrateIcons, icon } from "../core/icons.js";
 import { getState } from "../core/state.js";
-import { escapeHtml, initials } from "../core/utils.js";
+import { escapeHtml } from "../core/utils.js";
 
-function countFor(itemId, data) {
+/* Only counts that mean "you have something to do" are shown. */
+function navCount(itemId, state) {
+  const { data, automation } = state;
   if (itemId === "discovery") return data.discoveryResults.filter((item) => item.decision === "pending").length;
-  if (itemId === "follow-ups") return data.followUps.filter((item) => ["due", "overdue"].includes(item.status)).length;
   if (itemId === "inbox") return data.emailThreads.filter((item) => item.is_unread).length;
-  if (itemId === "pipeline") return data.leads.filter((item) => !["won", "lost"].includes(item.status)).length;
-  if (itemId === "tasks") return data.tasks.filter((item) => item.status !== "completed" && new Date(item.due_at || "2999") <= new Date()).length;
+  if (itemId === "follow-ups") {
+    return data.followUps.filter((item) => (
+      !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
+      && item.due_at && new Date(item.due_at) <= new Date()
+    )).length;
+  }
+  if (itemId === "outreach") return data.drafts.filter((item) => ["ready", "approved"].includes(item.status)).length;
+  if (itemId === "tasks") {
+    return data.tasks.filter((item) => !["completed", "cancelled"].includes(item.status) && item.due_at && new Date(item.due_at) <= new Date()).length;
+  }
+  if (itemId === "automation" && (automation.status === "running" || automation.status === "stopping")) return "•";
   return 0;
 }
 
-export function renderShellChrome() {
+export function renderShell() {
   const state = getState();
-  const { route, data, user, mode, sidebarCollapsed } = state;
-  const nav = document.getElementById("primary-nav");
-  nav.innerHTML = NAV_GROUPS.map((group) => `
-    <section class="nav-group">
-      <span class="nav-label">${escapeHtml(group.label)}</span>
+  const { route } = state;
+
+  document.getElementById("nav").innerHTML = NAV_GROUPS.map((group) => `
+    <section class="nav__group">
+      ${group.label ? `<span class="nav__label">${escapeHtml(group.label)}</span>` : ""}
       ${group.items.map((item) => {
-        const count = countFor(item.id, data);
-        return `<a class="nav-item ${route === item.id ? "is-active" : ""}" href="#/${item.id}" data-route="${item.id}" title="${escapeHtml(item.label)}">${icon(item.icon)}<span>${escapeHtml(item.label)}</span>${count ? `<span class="nav-count">${count}</span>` : ""}</a>`;
+        const count = navCount(item.id, state);
+        const alert = item.id === "follow-ups" || item.id === "inbox";
+        return `<a class="nav__item${route === item.id ? " is-active" : ""}" href="#/${item.id}" title="${escapeHtml(item.label)}">
+          ${icon(item.icon)}<span>${escapeHtml(item.label)}</span>
+          ${count ? `<span class="nav__count${alert ? " nav__count--alert" : ""}">${count}</span>` : ""}
+        </a>`;
       }).join("")}
     </section>
   `).join("");
 
-  const dockItems = [
-    ["home", "Home", "layout-dashboard"],
-    ["leads", "Leads", "building-2"],
-    ["pipeline", "Pipeline", "columns-3"],
-    ["tasks", "Tasks", "clipboard-check"],
-  ];
-  document.getElementById("mobile-dock").innerHTML = `
-    ${dockItems.map(([id, label, iconName]) => `<a class="dock-item ${route === id ? "is-active" : ""}" href="#/${id}">${icon(iconName)}<span>${label}</span></a>`).join("")}
-    <button class="dock-item" type="button" data-action="open-mobile-nav">${icon("menu")}<span>More</span></button>
+  document.getElementById("sidebar-foot").innerHTML = `
+    <div class="sidebar__status">
+      ${icon(state.storage === "cloud" ? "globe" : "file")}
+      <span>${state.storage === "cloud" ? "Synced" : "Local data"}</span>
+    </div>
+    ${state.connection.ok ? "" : `<a class="sidebar__status" href="#/settings" style="color:var(--amber)">${icon("alert")}<span>${escapeHtml(state.connection.message)}</span></a>`}
   `;
 
-  const meta = PAGE_META[route] || PAGE_META.home;
-  document.getElementById("page-title").textContent = meta.title;
-  document.getElementById("page-kicker").textContent = meta.kicker;
-  document.title = `${meta.title} · Operations`;
+  const title = PAGE_TITLES[route] || "Operations";
+  document.getElementById("page-title").textContent = title;
+  document.title = `${title} · Operations`;
 
-  const name = data.profile?.full_name || data.profile?.preferences?.owner_name || user?.user_metadata?.full_name || "Owner";
-  document.getElementById("account-name").textContent = name;
-  document.getElementById("account-email").textContent = mode === "preview" ? "Preview workspace" : (user?.email || "Owner workspace");
-  document.getElementById("account-avatar").textContent = initials(name);
-  document.getElementById("top-account-avatar").textContent = initials(name);
+  const page = document.getElementById("page");
+  page.classList.toggle("page--full", FULL_BLEED_ROUTES.includes(route));
 
-  const unread = data.notifications.filter((item) => !item.is_read).length;
-  const notificationBadge = document.getElementById("notification-badge");
-  notificationBadge.textContent = unread;
-  notificationBadge.hidden = !unread;
-
-  const pending = data.approvals.filter((item) => item.status === "pending").length;
-  const approvalBadge = document.getElementById("approval-badge");
-  approvalBadge.textContent = pending;
-  approvalBadge.hidden = !pending;
-
-  const run = data.agentRuns.find((item) => ["running", "paused", "waiting_approval", "queued"].includes(item.status));
-  document.getElementById("orchestrator-compact-status").textContent = run
-    ? `${run.status === "running" ? "Working" : run.status === "waiting_approval" ? "Awaiting approval" : run.status[0].toUpperCase() + run.status.slice(1)} · ${Number(run.progress || 0)}%`
-    : "Idle";
-
-  document.getElementById("app-shell").classList.toggle("is-sidebar-collapsed", sidebarCollapsed);
-  const collapse = document.getElementById("sidebar-collapse");
-  collapse.setAttribute("aria-label", sidebarCollapsed ? "Expand navigation" : "Collapse navigation");
-  collapse.innerHTML = icon(sidebarCollapsed ? "chevron-right" : "panel-right-open");
-  hydrateIcons(document.getElementById("app-shell"));
+  document.getElementById("app").classList.toggle("is-collapsed", state.navCollapsed);
+  hydrateIcons(document.getElementById("app"));
 }
 
-export function setShellVisibility(isVisible) {
-  document.getElementById("app-shell").hidden = !isVisible;
-  document.getElementById("auth-screen").hidden = isVisible;
-  document.getElementById("loading-screen").hidden = true;
-}
-
-export function setMobileNav(open) {
+export function setNav(open) {
   document.getElementById("sidebar").classList.toggle("is-open", open);
-  document.getElementById("sidebar-scrim").hidden = !open;
+  document.getElementById("scrim").hidden = !open;
+  document.body.style.overflow = open && window.innerWidth <= 900 ? "hidden" : "";
 }

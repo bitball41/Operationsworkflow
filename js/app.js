@@ -1,34 +1,34 @@
-import {
-  bindPipelineDrag,
-  handleActionClick,
-  handleControlChange,
-  handleFormSubmit,
-  handleRouteSearch,
-} from "./actions.js";
-import { closeCommandPalette, openCommandPalette } from "./components/command-palette.js";
-import { renderAgentPanel, renderApprovalPanel, renderNotificationPanel } from "./components/panels.js";
-import { renderShellChrome, setMobileNav, setShellVisibility } from "./components/shell.js";
-import { renderInto, toast } from "./components/ui.js";
+/**
+ * Entry point. The dashboard opens straight into the workspace — there is no
+ * sign-in wall. Supabase is used when a session exists; otherwise everything
+ * persists locally and a small warning appears in the sidebar.
+ */
+import { bindBoardDrag, onChange, onClick, onSubmit } from "./actions.js";
+import { closePalette, isPaletteOpen, openPalette } from "./components/command-palette.js";
+import { renderShell, setNav } from "./components/shell.js";
+import { closeDrawer, closeModal, renderInto, toast } from "./components/ui.js";
 import { hydrateIcons } from "./core/icons.js";
-import { initRouter, navigate } from "./core/router.js";
-import { getState, resetData, setState, subscribe } from "./core/state.js";
+import { initRouter } from "./core/router.js";
+import { getState, setState, subscribe } from "./core/state.js";
 import { debounce } from "./core/utils.js";
+import { setParam } from "./core/router.js";
+import { initWorkspace, reloadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
+import { renderAssistant, mountAssistant } from "./pages/assistant.js";
+import { renderAutomation } from "./pages/automation.js";
 import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
 import { renderClients, renderMaintenance, renderProjects } from "./pages/clients.js";
-import { renderFollowUps, renderInbox, renderOutreach } from "./pages/communication.js";
-import { renderActivity, renderCalendar, renderHome, renderTasks } from "./pages/overview.js";
+import { renderHome } from "./pages/home.js";
+import { renderFollowUps, renderInbox, renderOutreach } from "./pages/outreach.js";
 import { renderDiscovery, renderLeads, renderPipeline } from "./pages/sales.js";
+import { renderStudio, mountStudio } from "./pages/studio.js";
 import { renderIntegrations, renderSettings } from "./pages/system.js";
-import { renderDeployments, renderDemos, renderStudio, renderTemplates } from "./pages/websites.js";
-import { renderNotes } from "./pages/workspace.js";
-import { getSession, onAuthChange, signIn, signUp } from "./services/auth.js";
-import { loadPreviewWorkspace, loadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
+import { renderDemos, renderDeployments, renderTemplates } from "./pages/websites.js";
+import { renderActivity, renderCalendar, renderNotes, renderTasks } from "./pages/workspace.js";
 
-const pageRenderers = {
+const PAGES = {
   home: renderHome,
-  activity: renderActivity,
-  tasks: renderTasks,
-  calendar: renderCalendar,
+  assistant: renderAssistant,
+  automation: renderAutomation,
   discovery: renderDiscovery,
   leads: renderLeads,
   pipeline: renderPipeline,
@@ -44,231 +44,111 @@ const pageRenderers = {
   maintenance: renderMaintenance,
   payments: renderPayments,
   analytics: renderAnalytics,
-  pricing: renderPricing,
   costs: renderCosts,
+  pricing: renderPricing,
+  tasks: renderTasks,
+  calendar: renderCalendar,
   notes: renderNotes,
+  activity: renderActivity,
   integrations: renderIntegrations,
   settings: renderSettings,
 };
 
-let authMode = "signin";
-let realtimeCleanup = () => {};
+const MOUNTS = {
+  assistant: mountAssistant,
+  studio: mountStudio,
+  pipeline: bindBoardDrag,
+};
+
 let rendering = false;
 
-function renderApp() {
-  const state = getState();
-  if (!["authenticated", "preview"].includes(state.mode) || rendering) return;
+function render() {
+  if (rendering) return;
   rendering = true;
   try {
-    renderShellChrome();
-    renderAgentPanel();
-    renderApprovalPanel();
-    renderNotificationPanel();
-    const renderer = pageRenderers[state.route] || renderHome;
-    renderInto(document.getElementById("page-content"), renderer());
-    if (state.route === "pipeline" && (state.routeParams.view || "kanban") === "kanban") bindPipelineDrag();
+    const { route } = getState();
+    renderShell();
+    renderInto(document.getElementById("page"), (PAGES[route] || renderHome)());
+    MOUNTS[route]?.();
+  } catch (error) {
+    console.error(error);
+    renderInto(
+      document.getElementById("page"),
+      `<div class="notice notice--error"><div><strong>This view failed to render</strong><span>${error.message}</span></div></div>`,
+    );
   } finally {
     rendering = false;
   }
 }
 
-async function enterAuthenticated(session) {
-  setState({ mode: "loading", session, user: session.user }, { silent: true });
-  document.getElementById("loading-screen").hidden = false;
-  document.getElementById("auth-screen").hidden = true;
-  try {
-    await loadWorkspace(session.user);
-    setState({ mode: "authenticated" }, { silent: true });
-    setShellVisibility(true);
-    renderApp();
-    realtimeCleanup();
-    const reload = debounce(() => loadWorkspace(session.user).catch(console.error), 500);
-    realtimeCleanup = subscribeToWorkspaceChanges(reload);
-  } catch (error) {
-    console.error(error);
-    setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
-    setShellVisibility(false);
-    showAuthMessage("The workspace could not load. Please try signing in again.");
-  }
-}
+const searchInput = debounce((value) => setParam("q", value.trim()), 260);
 
-function enterPreview() {
-  localStorage.setItem("operations-preview", "true");
-  resetData();
-  loadPreviewWorkspace();
-  setState({
-    mode: "preview",
-    session: null,
-    user: { id: "preview", email: "preview@operations.local", user_metadata: { full_name: "Connor" } },
-  }, { silent: true });
-  setShellVisibility(true);
-  renderApp();
-}
-
-function showAuthMessage(message, tone = "error") {
-  const element = document.getElementById("auth-message");
-  element.textContent = message;
-  element.style.color = tone === "success" ? "var(--green)" : "var(--red)";
-}
-
-function updateAuthMode() {
-  const signUpMode = authMode === "signup";
-  document.getElementById("auth-title").textContent = signUpMode ? "Create owner account" : "Welcome back";
-  document.getElementById("auth-subtitle").textContent = signUpMode
-    ? "Your data is private to this Supabase user."
-    : "Sign in to your private operations workspace.";
-  document.getElementById("auth-submit").textContent = signUpMode ? "Create account" : "Sign in";
-  document.getElementById("auth-switch").textContent = signUpMode ? "Back to sign in" : "Create owner account";
-  document.getElementById("auth-password").autocomplete = signUpMode ? "new-password" : "current-password";
-  showAuthMessage("");
-}
-
-async function handleAuthSubmit(event) {
-  event.preventDefault();
-  const submit = document.getElementById("auth-submit");
-  const email = document.getElementById("auth-email").value.trim();
-  const password = document.getElementById("auth-password").value;
-  submit.disabled = true;
-  showAuthMessage("");
-  try {
-    if (authMode === "signup") {
-      const data = await signUp(email, password);
-      if (data.session) {
-        await enterAuthenticated(data.session);
-      } else {
-        showAuthMessage("Account created. Check your email to confirm it, then sign in.", "success");
-        authMode = "signin";
-        updateAuthMode();
-      }
-    } else {
-      const data = await signIn(email, password);
-      await enterAuthenticated(data.session);
-    }
-  } catch (error) {
-    showAuthMessage(error.message || "Authentication failed.");
-  } finally {
-    submit.disabled = false;
-  }
-}
-
-function closeOverlays() {
-  closeCommandPalette();
-  document.getElementById("modal-root").innerHTML = "";
-  document.body.style.overflow = "";
-  setState({
-    agentPanelOpen: false,
-    approvalPanelOpen: false,
-    notificationPanelOpen: false,
-    mobileNavOpen: false,
-  });
-  setMobileNav(false);
-}
-
-const routeSearch = debounce((value) => handleRouteSearch(value), 320);
-
-function bindStaticEvents() {
-  document.addEventListener("click", handleActionClick);
-  document.addEventListener("submit", handleFormSubmit);
-  document.addEventListener("change", handleControlChange);
+function bindEvents() {
+  document.addEventListener("click", onClick);
+  document.addEventListener("submit", onSubmit);
+  document.addEventListener("change", onChange);
   document.addEventListener("input", (event) => {
-    if (event.target.matches("[data-route-search]")) routeSearch(event.target.value);
+    if (event.target.matches("[data-route-search]")) searchInput(event.target.value);
   });
 
-  document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
-  document.getElementById("auth-switch").addEventListener("click", () => {
-    authMode = authMode === "signin" ? "signup" : "signin";
-    updateAuthMode();
-  });
-  document.getElementById("preview-button").addEventListener("click", enterPreview);
-
-  document.getElementById("global-search").addEventListener("click", openCommandPalette);
-  document.getElementById("agent-panel-button").addEventListener("click", () => {
-    const open = !getState().agentPanelOpen;
-    setState({ agentPanelOpen: open, approvalPanelOpen: false, notificationPanelOpen: false });
-  });
-  document.getElementById("approvals-button").addEventListener("click", () => {
-    const open = !getState().approvalPanelOpen;
-    setState({ approvalPanelOpen: open, agentPanelOpen: false, notificationPanelOpen: false });
-  });
-  document.getElementById("notifications-button").addEventListener("click", () => {
-    const open = !getState().notificationPanelOpen;
-    setState({ notificationPanelOpen: open, agentPanelOpen: false, approvalPanelOpen: false });
-  });
-  document.getElementById("account-button").addEventListener("click", () => navigate("settings"));
-  document.getElementById("top-account-button").addEventListener("click", () => navigate("settings"));
+  document.getElementById("menu-open").addEventListener("click", () => setNav(true));
+  document.getElementById("sidebar-close").addEventListener("click", () => setNav(false));
+  document.getElementById("scrim").addEventListener("click", () => setNav(false));
+  document.getElementById("palette-open").addEventListener("click", openPalette);
   document.getElementById("sidebar-collapse").addEventListener("click", () => {
-    const collapsed = !getState().sidebarCollapsed;
-    localStorage.setItem("operations.sidebarCollapsed", String(collapsed));
-    setState({ sidebarCollapsed: collapsed });
-  });
-  document.getElementById("sidebar-open").addEventListener("click", () => {
-    setState({ mobileNavOpen: true });
-    setMobileNav(true);
-  });
-  document.getElementById("sidebar-close").addEventListener("click", () => {
-    setState({ mobileNavOpen: false });
-    setMobileNav(false);
-  });
-  document.getElementById("sidebar-scrim").addEventListener("click", () => {
-    setState({ mobileNavOpen: false });
-    setMobileNav(false);
+    const collapsed = !getState().navCollapsed;
+    try {
+      localStorage.setItem("operations.navCollapsed", JSON.stringify(collapsed));
+    } catch {
+      /* ignore */
+    }
+    setState({ navCollapsed: collapsed });
   });
 
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      openCommandPalette();
+      if (isPaletteOpen()) closePalette();
+      else openPalette();
+      return;
     }
-    if (event.key === "Escape") closeOverlays();
+    if (event.key === "Escape") {
+      closePalette();
+      closeModal();
+      closeDrawer();
+      setNav(false);
+    }
   });
+
+  window.addEventListener("resize", debounce(() => {
+    if (window.innerWidth > 900) setNav(false);
+  }, 200));
 }
 
 async function init() {
   hydrateIcons();
-  bindStaticEvents();
-  subscribe(renderApp);
+  bindEvents();
+  subscribe(render);
+
   initRouter(() => {
-    setMobileNav(false);
-    renderApp();
-    document.getElementById("page-content")?.focus({ preventScroll: true });
-    window.scrollTo({ top: 0, behavior: "auto" });
+    setNav(false);
+    render();
+    document.getElementById("page")?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
   });
-
-  onAuthChange((event) => {
-    if (event === "SIGNED_OUT") {
-      realtimeCleanup();
-      realtimeCleanup = () => {};
-      localStorage.removeItem("operations-preview");
-      resetData();
-      setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
-      setShellVisibility(false);
-    }
-  });
-
-  if (localStorage.getItem("operations-preview") === "true") {
-    enterPreview();
-    return;
-  }
 
   try {
-    const session = await getSession();
-    if (session) {
-      await enterAuthenticated(session);
-    } else {
-      setState({ mode: "unauthenticated" }, { silent: true });
-      setShellVisibility(false);
+    const storage = await initWorkspace();
+    render();
+    if (storage === "cloud") {
+      const reload = debounce(() => reloadWorkspace().catch(console.error), 600);
+      subscribeToWorkspaceChanges(reload);
     }
   } catch (error) {
     console.error(error);
-    setState({ mode: "unauthenticated" }, { silent: true });
-    setShellVisibility(false);
-    showAuthMessage("Could not reach Supabase. You can still open the preview workspace.");
+    setState({ connection: { ok: false, message: "Could not load the workspace. Working from local data." } });
+    toast("Workspace could not load", error.message || "Working from local data.", "error");
   }
 }
 
-init().catch((error) => {
-  console.error(error);
-  document.getElementById("loading-screen").hidden = true;
-  document.getElementById("auth-screen").hidden = false;
-  toast("Initialization failed", error.message || "Reload the page.", "error");
-});
+init();
