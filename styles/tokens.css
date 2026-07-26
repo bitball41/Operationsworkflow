@@ -1,39 +1,55 @@
+/* Design tokens. One calm neutral dark theme, one restrained accent,
+   semantic colour only for success / warning / problem. */
 :root {
   color-scheme: dark;
-  --bg: #07090e;
-  --bg-soft: #0a0d14;
-  --sidebar: #090c12;
-  --surface: #0e121a;
-  --surface-2: #121722;
-  --surface-3: #171d29;
-  --surface-hover: #1a2130;
-  --border: #212938;
-  --border-soft: #171e2a;
-  --text: #f4f6fb;
-  --text-soft: #a5adbd;
-  --muted: #737d90;
-  --accent: #7c5cff;
-  --accent-2: #9c83ff;
-  --accent-soft: rgba(124, 92, 255, 0.14);
-  --blue: #4c8dff;
-  --blue-soft: rgba(76, 141, 255, 0.13);
-  --green: #37d690;
-  --green-soft: rgba(55, 214, 144, 0.12);
-  --yellow: #f1bf5a;
-  --yellow-soft: rgba(241, 191, 90, 0.12);
-  --red: #f06c75;
-  --red-soft: rgba(240, 108, 117, 0.12);
-  --cyan: #43c9d7;
-  --cyan-soft: rgba(67, 201, 215, 0.12);
-  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.16);
-  --shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.4);
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 17px;
-  --radius-xl: 24px;
-  --sidebar-width: 244px;
-  --topbar-height: 75px;
-  --panel-width: 390px;
-  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --bg: #0e0e11;
+  --bg-raised: #131317;
+  --surface: #17171c;
+  --surface-2: #1d1d23;
+  --surface-3: #24242c;
+  --line: #27272f;
+  --line-soft: #1f1f26;
+
+  --text: #ecedef;
+  --text-2: #a6a7b0;
+  --text-3: #75757f;
+
+  --accent: #5b83f0;
+  --accent-quiet: rgba(91, 131, 240, 0.14);
+  --accent-line: rgba(91, 131, 240, 0.4);
+
+  --green: #5eb98a;
+  --green-quiet: rgba(94, 185, 138, 0.13);
+  --amber: #d8a24c;
+  --amber-quiet: rgba(216, 162, 76, 0.13);
+  --red: #d97169;
+  --red-quiet: rgba(217, 113, 105, 0.13);
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  --sidebar-w: 238px;
+  --topbar-h: 56px;
+  --gutter: 28px;
+  --stack: 28px;
+
+  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
+@media (max-width: 900px) {
+  :root {
+    --gutter: 18px;
+    --stack: 22px;
+  }
+}

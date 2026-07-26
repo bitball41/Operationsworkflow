@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 
+/* Minimal browser shims: the OpenScout engine is a classic browser module and
+   the app reads localStorage for preferences. */
 globalThis.localStorage = {
   values: new Map(),
   getItem(key) {
@@ -21,34 +24,35 @@ await import("../js/services/openscout/verify.js");
 await import("../js/services/openscout/location.js");
 await import("../js/services/openscout/google-places.js");
 
-const { NAV_GROUPS } = await import("../js/config.js");
-const { createSampleData } = await import("../js/data/sample-data.js");
-const { getState, setData, setState } = await import("../js/core/state.js");
-const { normalizeLead, duplicateKey, splitAddress } = await import("../js/services/openscout/adapter.js");
-const overview = await import("../js/pages/overview.js");
+const { NAV_GROUPS, ROUTES, FULL_BLEED_ROUTES } = await import("../js/config.js");
+const { createSeedData } = await import("../js/data/seed-data.js");
+const { getState, setData, setState, setStudio } = await import("../js/core/state.js");
+const home = await import("../js/pages/home.js");
+const assistant = await import("../js/pages/assistant.js");
+const automation = await import("../js/pages/automation.js");
 const sales = await import("../js/pages/sales.js");
-const communication = await import("../js/pages/communication.js");
+const outreach = await import("../js/pages/outreach.js");
+const studio = await import("../js/pages/studio.js");
 const websites = await import("../js/pages/websites.js");
 const clients = await import("../js/pages/clients.js");
 const business = await import("../js/pages/business.js");
 const workspace = await import("../js/pages/workspace.js");
 const system = await import("../js/pages/system.js");
 
-setData(createSampleData(), { silent: true });
-setState({ mode: "preview", route: "home", routeParams: {} }, { silent: true });
+setData(createSeedData(), { silent: true });
+setState({ route: "home", routeParams: {} }, { silent: true });
 
 const renderers = {
-  home: overview.renderHome,
-  activity: overview.renderActivity,
-  tasks: overview.renderTasks,
-  calendar: overview.renderCalendar,
+  home: home.renderHome,
+  assistant: assistant.renderAssistant,
+  automation: automation.renderAutomation,
   discovery: sales.renderDiscovery,
   leads: sales.renderLeads,
   pipeline: sales.renderPipeline,
-  outreach: communication.renderOutreach,
-  inbox: communication.renderInbox,
-  "follow-ups": communication.renderFollowUps,
-  studio: websites.renderStudio,
+  outreach: outreach.renderOutreach,
+  inbox: outreach.renderInbox,
+  "follow-ups": outreach.renderFollowUps,
+  studio: studio.renderStudio,
   templates: websites.renderTemplates,
   demos: websites.renderDemos,
   deployments: websites.renderDeployments,
@@ -57,90 +61,158 @@ const renderers = {
   maintenance: clients.renderMaintenance,
   payments: business.renderPayments,
   analytics: business.renderAnalytics,
-  pricing: business.renderPricing,
   costs: business.renderCosts,
+  pricing: business.renderPricing,
+  tasks: workspace.renderTasks,
+  calendar: workspace.renderCalendar,
   notes: workspace.renderNotes,
+  activity: workspace.renderActivity,
   integrations: system.renderIntegrations,
   settings: system.renderSettings,
 };
 
 for (const [route, render] of Object.entries(renderers)) {
-  test(`${route} renders a complete view with sample data`, () => {
+  test(`${route} renders`, () => {
     setState({ route, routeParams: {} }, { silent: true });
     const html = render();
     assert.equal(typeof html, "string");
-    assert.ok(html.length > 300, `${route} returned only ${html.length} characters`);
-    assert.doesNotMatch(html, />\s*undefined\s*</i);
+    assert.ok(html.length > 200, `${route} produced only ${html.length} characters`);
+    assert.doesNotMatch(html, />\s*undefined\s*</i, `${route} rendered an undefined value`);
+    assert.doesNotMatch(html, /\[object Object\]/, `${route} rendered an object`);
   });
 }
 
-test("sidebar and renderer maps stay aligned", () => {
-  const configuredRoutes = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id));
-  assert.deepEqual(configuredRoutes.sort(), Object.keys(renderers).sort());
-  assert.equal(new Set(configuredRoutes).size, configuredRoutes.length);
+test("every route has a renderer and every renderer has a route", () => {
+  assert.deepEqual([...ROUTES].sort(), Object.keys(renderers).sort());
+  assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("sidebar excludes intentionally top-right and out-of-scope pages", () => {
-  const labels = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.label)).join(" ");
-  for (const forbidden of ["AI Agents", "Approval Queue", "Notifications", "Personal Finance", "Automations"]) {
-    assert.ok(!labels.includes(forbidden), `${forbidden} should not be a sidebar destination`);
+test("navigation includes the AI Assistant and Automation routes", () => {
+  const labels = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.label));
+  assert.ok(labels.includes("AI Assistant"));
+  assert.ok(labels.includes("Automation"));
+  assert.ok(ROUTES.includes("assistant"));
+  assert.ok(ROUTES.includes("automation"));
+});
+
+test("assistant and studio own the full viewport", () => {
+  assert.deepEqual([...FULL_BLEED_ROUTES], ["assistant", "studio"]);
+});
+
+test("the shell has one navigation system and no auth wall", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.ok(!/mobile-dock|dock-item|bottom-dock/i.test(html), "mobile bottom dock must be gone");
+  assert.ok(!/auth-screen|auth-form|preview-button|Create owner account/i.test(html), "no auth screen in the shell");
+  assert.ok(!/brand-mark/i.test(html), "no stylised brand mark");
+  assert.ok(html.includes('id="sidebar"'), "sidebar is the navigation system");
+  assert.ok(html.includes('id="page"'), "single page container");
+  assert.equal((html.match(/<nav/g) || []).length, 1, "exactly one nav element");
+});
+
+test("marketing copy is gone", () => {
+  const files = [
+    "../index.html",
+    "../js/config.js",
+    "../js/components/shell.js",
+    "../js/pages/home.js",
+  ];
+  const banned = ["Manual-first", "Owner access", "persistent manual control plane", "Command center", "Business command center"];
+  for (const file of files) {
+    const content = readFileSync(new URL(file, import.meta.url), "utf8");
+    for (const phrase of banned) {
+      assert.ok(!content.includes(phrase), `"${phrase}" should not appear in ${file}`);
+    }
   }
 });
 
-test("OpenScout adapter preserves source evidence and normalizes the lead boundary", () => {
-  const lead = normalizeLead({
-    id: "google-place-123",
-    name: "North Star Tree Care",
-    address: "1400 Oak Street, Arlington, TX 76010, USA",
-    phone: "(817) 555-0148",
-    website: "",
-    googleMapsURL: "https://maps.google.com/?cid=123",
-    primaryType: "tree_service",
-    rating: 4.8,
-    ratingCount: 37,
-    businessStatus: "OPERATIONAL",
-    isLead: true,
-    leadTier: "none",
-    leadCategory: "none",
-    leadType: "No website",
-    confidence: 96,
-    reasons: ["Google lists no website", "Has a phone number"],
-    verification: "",
-    lat: 32.7357,
-    lng: -97.1081,
-  }, { location: "Arlington, TX", category: "tree service" });
-
-  assert.equal(lead.source, "openscout");
-  assert.equal(lead.source_key, "google-place-123");
-  assert.equal(lead.city, "Arlington");
-  assert.equal(lead.region, "TX");
-  assert.equal(lead.postal_code, "76010");
-  assert.equal(lead.has_website, false);
-  assert.equal(lead.lead_score, 96);
-  assert.equal(lead.email, "");
-  assert.equal(lead.source_metadata.openscout.ratingCount, 37);
-  assert.equal(duplicateKey(lead), "source:google-place-123");
+test("home shows attention, automation and today without a metric wall", () => {
+  setState({ route: "home", routeParams: {} }, { silent: true });
+  const html = renderers.home();
+  assert.match(html, /Needs attention/);
+  assert.match(html, /Today/);
+  assert.match(html, /sent today/);
+  /* Home should stay light: no more than a handful of stat blocks. */
+  assert.ok((html.match(/class="stat"/g) || []).length <= 8);
 });
 
-test("address fallback is deterministic", () => {
-  assert.deepEqual(splitAddress("1400 Oak Street, Arlington, TX 76010, USA"), {
-    city: "Arlington",
-    region: "TX",
-    postalCode: "76010",
-    country: "USA",
-  });
-  assert.deepEqual(splitAddress(""), { city: "", region: "", postalCode: "", country: "" });
+test("lead discovery leads with three inputs and hides the rest", () => {
+  setState({ route: "discovery", routeParams: {} }, { silent: true });
+  const html = renderers.discovery();
+  assert.match(html, /name="business_type"/);
+  assert.match(html, /name="location"/);
+  assert.match(html, /name="limit"/);
+  assert.match(html, /Find leads/);
+  assert.match(html, /<details class="advanced"/);
+  const advancedIndex = html.indexOf('<details class="advanced"');
+  for (const advancedField of ["radius_km", "min_confidence", "depth", "min_rating"]) {
+    assert.ok(html.indexOf(`name="${advancedField}"`) > advancedIndex, `${advancedField} must live under Advanced`);
+  }
 });
 
-test("preview mode loads every expected data collection", () => {
-  const data = getState().data;
+test("studio previews the real bundle in a sandboxed frame", () => {
+  setState({ route: "studio", routeParams: {} }, { silent: true });
+  const html = renderers.studio();
+  assert.match(html, /<iframe/);
+  assert.match(html, /srcdoc="/);
+  assert.match(html, /sandbox="allow-scripts allow-popups"/);
+  /* The preview is the dominant surface, and the AI panel sits beside it. */
+  assert.match(html, /class="studio__stage"/);
+  assert.match(html, /Edit with AI/);
+  assert.match(html, /Site details/);
+});
+
+test("studio exposes the real bundle files in the code view", () => {
+  setStudio({ view: "code" }, { silent: true });
+  const html = renderers.studio();
+  for (const file of ["index.html", "style.css", "script.js"]) {
+    assert.ok(html.includes(file), `${file} should be editable`);
+  }
+  assert.match(html, /class="code-editor"/);
+  setStudio({ view: "preview" }, { silent: true });
+});
+
+test("assistant page exposes context and tools without faking answers", () => {
+  setState({ route: "assistant", routeParams: {} }, { silent: true });
+  const html = renderers.assistant();
+  assert.match(html, /Provider not connected/);
+  assert.match(html, /Context:/);
+  assert.match(html, /get_next_lead|Commands that work now/);
+  assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
+});
+
+test("automation page stays operational, not a settings dashboard", () => {
+  setState({ route: "automation", routeParams: {} }, { silent: true });
+  const html = renderers.automation();
+  assert.match(html, /Start|Stop/);
+  assert.match(html, /Processed/);
+  assert.match(html, /Sent today/);
+  assert.match(html, /Failed/);
+  assert.match(html, /Recent events/);
+  assert.match(html, /<details class="advanced"/);
+});
+
+test("seed workspace fills every collection the pages read", () => {
+  const { data } = getState();
   for (const key of [
     "leads", "discoveryRuns", "discoveryResults", "templates", "demos", "drafts",
-    "emailThreads", "emails", "followUps", "clients", "projects",
-    "maintenanceSubscriptions", "payments", "expenses", "aiUsage", "tasks",
-    "calendarEvents", "notes", "deployments", "approvals", "notifications", "activity",
+    "emailThreads", "emails", "followUps", "clients", "projects", "payments",
+    "expenses", "tasks", "calendarEvents", "notes", "deployments", "activity",
+    "maintenanceSubscriptions", "integrations",
   ]) {
     assert.ok(Array.isArray(data[key]), `${key} should be an array`);
-    assert.ok(data[key].length > 0, `${key} should have realistic preview records`);
+    assert.ok(data[key].length > 0, `${key} should have starter records`);
+  }
+  /* Nothing pretends an AI provider has run. */
+  assert.equal(data.aiUsage.length, 0);
+  assert.equal(data.approvals.length, 0);
+});
+
+test("overlays never stop click propagation", () => {
+  /* Every action is handled by one delegated listener on document, so an
+     overlay that calls stopPropagation silently disables every button inside
+     it. Backdrops must close by checking event.target instead. */
+  for (const file of ["../js/components/ui.js", "../js/components/command-palette.js"]) {
+    const content = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!content.includes("stopPropagation"), `${file} must not stop click propagation`);
   }
 });

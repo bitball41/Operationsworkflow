@@ -1,10 +1,10 @@
 {
   "name": "operations-workflow",
   "private": true,
-  "version": "2.0.0",
-  "description": "Plain JavaScript operating system for a website-selling business.",
+  "version": "3.0.0",
+  "description": "Personal operations system for a website-selling business. Plain HTML, CSS and JavaScript.",
   "scripts": {
-    "test": "node tests/openscout-engine.test.cjs && node --test tests/render-smoke.test.mjs",
+    "test": "node tests/openscout-engine.test.cjs && node --test tests/render-smoke.test.mjs tests/operations.test.mjs",
     "check": "npm test"
   }
 }

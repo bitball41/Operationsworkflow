@@ -1,9 +1,11 @@
-import { getState, setData } from "../core/state.js";
-import { uid, slugify } from "../core/utils.js";
-import { createSampleData } from "../data/sample-data.js";
 import { CONFIG } from "../config.js";
+import { getState, setData, setState } from "../core/state.js";
+import { debounce, slugify, uid } from "../core/utils.js";
+import { createSeedData } from "../data/seed-data.js";
 import { duplicateKey, toDiscoveryResult } from "./openscout/adapter.js";
-import { supabase } from "./supabase.js";
+import { getSession, getSupabase, hasStoredSession, isConfigured } from "./supabase.js";
+
+const LOCAL_KEY = "operations.data.v2";
 
 export const COLLECTIONS = Object.freeze({
   leads: "leads",
@@ -73,39 +75,119 @@ const ORDER_BY = Object.freeze({
   integrations: ["provider", true],
 });
 
-const SEED_ORDER = [
-  "templates", "leads", "discoveryRuns", "discoveryResults", "demos",
-  "demoVersions", "drafts", "emailThreads", "emails", "followUps",
-  "clients", "clientSites", "projects", "projectTasks",
-  "maintenanceSubscriptions", "maintenanceRequests", "payments", "expenses",
-  "aiUsage", "pricingExperiments", "agentRuns", "agentEvents", "approvals",
-  "notifications", "activity", "tasks", "calendarEvents", "notes",
-  "deployments", "settings", "integrations",
-];
+const COLLECTION_KEYS = Object.keys(COLLECTIONS);
+
+function isCloud() {
+  return getState().storage === "cloud";
+}
 
 function userId() {
-  return getState().user?.id;
+  return getState().user?.id || "local";
 }
 
-function isPreview() {
-  return getState().mode === "preview";
+function compare(key) {
+  const [column, ascending] = ORDER_BY[key] || ["created_at", false];
+  return (a, b) => {
+    const left = a?.[column];
+    const right = b?.[column];
+    if (left === right) return 0;
+    if (left === null || left === undefined) return 1;
+    if (right === null || right === undefined) return -1;
+    const result = typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left).localeCompare(String(right));
+    return ascending ? result : -result;
+  };
 }
 
-export async function ensureProfile(user) {
-  const fullName = user.user_metadata?.full_name || user.email?.split("@")[0] || "Owner";
-  const { data, error } = await supabase
-    .from("profiles")
-    .upsert({ id: user.id, full_name: fullName }, { onConflict: "id" })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+/* ---------- local persistence ---------- */
+
+const persist = debounce(() => {
+  try {
+    const snapshot = { profile: getState().data.profile };
+    COLLECTION_KEYS.forEach((key) => { snapshot[key] = getState().data[key]; });
+    globalThis.localStorage?.setItem(LOCAL_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    setState({ connection: { ok: false, message: "Local storage is full — recent changes may not survive a reload." } });
+    console.error(error);
+  }
+}, 350);
+
+function afterLocalWrite() {
+  if (!isCloud()) persist();
 }
 
-async function fetchCollection(key) {
+function readLocal() {
+  try {
+    const raw = globalThis.localStorage?.getItem(LOCAL_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function hasLocalWorkspace() {
+  return Boolean(readLocal());
+}
+
+export function clearLocalWorkspace() {
+  globalThis.localStorage?.removeItem(LOCAL_KEY);
+}
+
+/* ---------- boot ---------- */
+
+/**
+ * Opens the workspace. Supabase is used when a session already exists; there is
+ * never a sign-in wall. Any failure falls back to local storage and records a
+ * non-blocking warning.
+ */
+export async function initWorkspace() {
+  let session = null;
+  if (isConfigured() && hasStoredSession()) {
+    try {
+      session = await getSession();
+    } catch (error) {
+      console.warn("Supabase session unavailable", error);
+      setState({ connection: { ok: false, message: "Could not reach Supabase. Working from local data." } }, { silent: true });
+    }
+  }
+
+  if (session?.user) {
+    setState({ storage: "cloud", user: session.user }, { silent: true });
+    try {
+      await loadCloudWorkspace(session.user);
+      setState({ connection: { ok: true, message: "" } }, { silent: true });
+      return "cloud";
+    } catch (error) {
+      console.error(error);
+      setState({
+        storage: "local",
+        connection: { ok: false, message: "Signed in, but the database could not be read. Working from local data." },
+      }, { silent: true });
+    }
+  }
+
+  loadLocalWorkspace();
+  return "local";
+}
+
+export function loadLocalWorkspace() {
+  const stored = readLocal();
+  const data = stored || createSeedData();
+  const next = { profile: data.profile || null };
+  COLLECTION_KEYS.forEach((key) => {
+    next[key] = Array.isArray(data[key]) ? [...data[key]].sort(compare(key)) : [];
+  });
+  setState({ storage: "local" }, { silent: true });
+  setData(next, { silent: true });
+  if (!stored) persist();
+  return next;
+}
+
+async function fetchCollection(client, key) {
   const [column, ascending] = ORDER_BY[key];
   const limit = ["agentEvents", "activity", "emails", "discoveryResults"].includes(key) ? 500 : 750;
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from(COLLECTIONS[key])
     .select("*")
     .order(column, { ascending, nullsFirst: false })
@@ -114,20 +196,34 @@ async function fetchCollection(key) {
   return data || [];
 }
 
-export async function loadWorkspace(user) {
-  const keys = Object.keys(COLLECTIONS);
-  const results = await Promise.all([ensureProfile(user), ...keys.map(fetchCollection)]);
+async function ensureProfile(client, user) {
+  const fullName = user.user_metadata?.full_name || user.email?.split("@")[0] || CONFIG.owner;
+  const { data, error } = await client
+    .from("profiles")
+    .upsert({ id: user.id, full_name: fullName }, { onConflict: "id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function loadCloudWorkspace(user = getState().user) {
+  const client = await getSupabase();
+  const results = await Promise.all([
+    ensureProfile(client, user),
+    ...COLLECTION_KEYS.map((key) => fetchCollection(client, key)),
+  ]);
   const next = { profile: results[0] };
-  keys.forEach((key, index) => { next[key] = results[index + 1]; });
+  COLLECTION_KEYS.forEach((key, index) => { next[key] = results[index + 1]; });
   setData(next);
   return next;
 }
 
-export function loadPreviewWorkspace() {
-  const sample = createSampleData();
-  setData(sample);
-  return sample;
+export async function reloadWorkspace() {
+  return isCloud() ? loadCloudWorkspace() : loadLocalWorkspace();
 }
+
+/* ---------- CRUD ---------- */
 
 export async function createRecord(collection, values) {
   const [record] = await createRecords(collection, [values]);
@@ -137,7 +233,8 @@ export async function createRecord(collection, values) {
 export async function createRecords(collection, values) {
   if (!values.length) return [];
   const now = new Date().toISOString();
-  if (isPreview()) {
+
+  if (!isCloud()) {
     const records = values.map((value) => ({
       ...value,
       id: value.id || uid(),
@@ -146,64 +243,97 @@ export async function createRecords(collection, values) {
       updated_at: value.updated_at || now,
     }));
     setData({ [collection]: [...records, ...getState().data[collection]] });
+    afterLocalWrite();
     return records;
   }
 
-  const records = values.map((value) => ({ ...value, user_id: userId() }));
-  const { data, error } = await supabase.from(COLLECTIONS[collection]).insert(records).select();
+  const client = await getSupabase();
+  const payload = values.map((value) => ({ ...value, user_id: userId() }));
+  const { data, error } = await client.from(COLLECTIONS[collection]).insert(payload).select();
   if (error) throw error;
   setData({ [collection]: [...(data || []), ...getState().data[collection]] });
   return data || [];
 }
 
 export async function updateRecord(collection, id, patch) {
-  if (isPreview()) {
-    const updated = getState().data[collection].map((item) => (
-      item.id === id ? { ...item, ...patch, updated_at: new Date().toISOString() } : item
-    ));
-    setData({ [collection]: updated });
-    return updated.find((item) => item.id === id);
+  if (!isCloud()) {
+    let updated = null;
+    const next = getState().data[collection].map((item) => {
+      if (String(item.id) !== String(id)) return item;
+      updated = { ...item, ...patch, updated_at: new Date().toISOString() };
+      return updated;
+    });
+    setData({ [collection]: next });
+    afterLocalWrite();
+    return updated;
   }
 
-  const { data, error } = await supabase
+  const client = await getSupabase();
+  const { data, error } = await client
     .from(COLLECTIONS[collection])
     .update(patch)
     .eq("id", id)
     .select()
     .single();
   if (error) throw error;
-  setData({
-    [collection]: getState().data[collection].map((item) => item.id === id ? data : item),
-  });
+  setData({ [collection]: getState().data[collection].map((item) => (String(item.id) === String(id) ? data : item)) });
   return data;
 }
 
 export async function deleteRecord(collection, id) {
-  if (!isPreview()) {
-    const { error } = await supabase.from(COLLECTIONS[collection]).delete().eq("id", id);
+  if (isCloud()) {
+    const client = await getSupabase();
+    const { error } = await client.from(COLLECTIONS[collection]).delete().eq("id", id);
     if (error) throw error;
   }
-  setData({ [collection]: getState().data[collection].filter((item) => item.id !== id) });
+  setData({ [collection]: getState().data[collection].filter((item) => String(item.id) !== String(id)) });
+  afterLocalWrite();
 }
 
-export async function updateProfilePreferences(patch) {
-  const profile = getState().data.profile;
-  const preferences = { ...(profile?.preferences || {}), ...patch };
-  if (isPreview()) {
-    const next = { ...profile, preferences };
-    setData({ profile: next });
-    return next;
-  }
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ preferences })
-    .eq("id", userId())
-    .select()
-    .single();
-  if (error) throw error;
-  setData({ profile: data });
-  return data;
+export function findRecord(collection, id) {
+  return getState().data[collection]?.find((item) => String(item.id) === String(id)) || null;
 }
+
+/* ---------- preferences ---------- */
+
+export function preferences() {
+  const { data } = getState();
+  return {
+    owner_name: CONFIG.owner,
+    default_site_price: CONFIG.defaultPrice,
+    maintenance_price: 50,
+    preview_domain: CONFIG.previewDomain,
+    follow_up_days: [3, 7, 14],
+    ...(data.settings.find((item) => item.key === "workspace")?.value || {}),
+    ...(data.profile?.preferences || {}),
+  };
+}
+
+export async function savePreferences(patch) {
+  const merged = { ...(getState().data.profile?.preferences || {}), ...patch };
+
+  if (isCloud()) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from("profiles")
+      .update({ preferences: merged })
+      .eq("id", userId())
+      .select()
+      .single();
+    if (error) throw error;
+    setData({ profile: data });
+  } else {
+    setData({ profile: { ...(getState().data.profile || { id: "local", full_name: CONFIG.owner }), preferences: merged } });
+    afterLocalWrite();
+  }
+
+  const existing = getState().data.settings.find((item) => item.key === "workspace");
+  if (existing) await updateRecord("settings", existing.id, { value: merged });
+  else await createRecord("settings", { key: "workspace", value: merged });
+  return merged;
+}
+
+/* ---------- activity ---------- */
 
 export async function logActivity(type, title, detail = "", relations = {}, actorType = "user") {
   return createRecord("activity", {
@@ -217,6 +347,8 @@ export async function logActivity(type, title, detail = "", relations = {}, acto
     metadata: relations.metadata || {},
   });
 }
+
+/* ---------- discovery ---------- */
 
 export async function createDiscoveryRun(query) {
   return createRecord("discoveryRuns", {
@@ -243,7 +375,6 @@ export async function completeDiscoveryRun(runId, result) {
       excludedChains: result.excludedChains,
       hiddenLowConfidence: result.hiddenLowConfidence,
       estimatedAccuracy: result.estimatedAccuracy,
-      estimatedMistakeRate: result.estimatedMistakeRate,
       verified: result.verified,
       radiusKm: result.radiusKm,
     },
@@ -251,8 +382,8 @@ export async function completeDiscoveryRun(runId, result) {
   });
   await logActivity(
     "lead_discovery",
-    "OpenScout discovery completed",
-    `${result.scanned || 0} businesses scanned; ${stored.length} candidates retained.`,
+    "Lead search finished",
+    `${result.scanned || 0} businesses scanned, ${stored.length} kept.`,
     { metadata: { run_id: runId } },
     "system",
   );
@@ -269,8 +400,8 @@ export async function failDiscoveryRun(runId, message) {
 }
 
 export async function saveDiscoveryCandidates(resultIds) {
-  const wanted = new Set(resultIds);
-  const candidates = getState().data.discoveryResults.filter((item) => wanted.has(item.id));
+  const wanted = new Set(resultIds.map(String));
+  const candidates = getState().data.discoveryResults.filter((item) => wanted.has(String(item.id)));
   const known = new Map(getState().data.leads.map((lead) => [duplicateKey(lead), lead]));
   const saved = [];
   const duplicates = [];
@@ -283,12 +414,11 @@ export async function saveDiscoveryCandidates(resultIds) {
       await updateRecord("discoveryResults", result.id, {
         decision: "duplicate",
         duplicate_of_lead_id: existing.id,
-        decision_reason: "Matched an existing lead",
+        decision_reason: "Already in leads",
         decided_at: new Date().toISOString(),
       });
       continue;
     }
-
     const lead = await createRecord("leads", normalized);
     known.set(duplicateKey(lead), lead);
     saved.push(lead);
@@ -297,7 +427,10 @@ export async function saveDiscoveryCandidates(resultIds) {
       lead_id: lead.id,
       decided_at: new Date().toISOString(),
     });
-    await logActivity("lead_saved", "Lead saved", `${lead.business_name} entered the New pipeline stage.`, { lead_id: lead.id });
+  }
+
+  if (saved.length) {
+    await logActivity("lead_saved", `${saved.length} lead${saved.length === 1 ? "" : "s"} saved`, saved.map((lead) => lead.business_name).join(", "));
   }
 
   const runIds = [...new Set(candidates.map((item) => item.run_id))];
@@ -312,9 +445,9 @@ export async function saveDiscoveryCandidates(resultIds) {
   return { saved, duplicates };
 }
 
-export async function rejectDiscoveryCandidates(resultIds, reason = "Rejected by operator") {
-  const wanted = new Set(resultIds);
-  const targets = getState().data.discoveryResults.filter((item) => wanted.has(item.id));
+export async function rejectDiscoveryCandidates(resultIds, reason = "Rejected") {
+  const wanted = new Set(resultIds.map(String));
+  const targets = getState().data.discoveryResults.filter((item) => wanted.has(String(item.id)));
   for (const result of targets) {
     await updateRecord("discoveryResults", result.id, {
       decision: "rejected",
@@ -325,80 +458,26 @@ export async function rejectDiscoveryCandidates(resultIds, reason = "Rejected by
   return targets;
 }
 
-export async function resolveApproval(id, status) {
-  const resolved = await updateRecord("approvals", id, {
-    status,
-    resolved_at: new Date().toISOString(),
-  });
+/* ---------- storage uploads ---------- */
 
-  if (status === "approved" && resolved.entity_id) {
-    if (["email_send", "follow_up_send"].includes(resolved.approval_type)) {
-      const draft = getState().data.drafts.find((item) => item.id === resolved.entity_id);
-      if (draft) await updateRecord("drafts", resolved.entity_id, { status: "approved" });
-    }
-  }
-  await logActivity(`approval_${status}`, `Approval ${status}`, resolved.title, {}, "system");
-  return resolved;
-}
+export async function uploadDemoAsset(demoId, file) {
+  const versionNumber = getState().data.demoVersions.filter((item) => item.demo_id === demoId).length + 1;
 
-export async function startManualRun(title = "Review priority pipeline") {
-  const run = await createRecord("agentRuns", {
-    agent_type: "orchestrator",
-    title,
-    objective: title,
-    status: "queued",
-    current_step: "Queued in manual mode",
-    progress: 0,
-    estimated_cost: 0,
-    context: { manual_mode: true },
-    completed_steps: [],
-    upcoming_steps: ["Inspect records", "Prepare recommendation", "Await approval"],
-    messages: [],
-  });
-  await createRecord("agentEvents", {
-    run_id: run.id,
-    agent_type: "orchestrator",
-    event_type: "run_queued",
-    title: "Manual workflow queued",
-    detail: "No external model call was made.",
-  });
-  return run;
-}
-
-export async function markNotificationsRead() {
-  const unread = getState().data.notifications.filter((item) => !item.is_read);
-  if (!unread.length) return;
-  if (!isPreview()) {
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", userId())
-      .eq("is_read", false);
-    if (error) throw error;
-  }
-  setData({
-    notifications: getState().data.notifications.map((item) => ({ ...item, is_read: true })),
-  });
-}
-
-export async function uploadDemoBundle(demoId, file) {
-  if (isPreview()) {
+  if (!isCloud()) {
     return createRecord("demoVersions", {
       demo_id: demoId,
-      version_number: getState().data.demoVersions.filter((item) => item.demo_id === demoId).length + 1,
-      storage_path: `preview/${file.name}`,
-      change_summary: "Preview upload",
+      version_number: versionNumber,
+      storage_path: `local/${file.name}`,
+      change_summary: `Recorded ${file.name} locally (sign in to upload to storage)`,
       is_current: true,
     });
   }
 
-  const versionNumber = getState().data.demoVersions.filter((item) => item.demo_id === demoId).length + 1;
+  const client = await getSupabase();
   const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
   const path = `${userId()}/demos/${demoId}/v${versionNumber}-${slugify(file.name.replace(/\.[^.]+$/, ""))}.${extension}`;
-  const { error: uploadError } = await supabase.storage
-    .from(CONFIG.storageBucket)
-    .upload(path, file, { upsert: false, cacheControl: "3600" });
-  if (uploadError) throw uploadError;
+  const { error } = await client.storage.from(CONFIG.storageBucket).upload(path, file, { upsert: false, cacheControl: "3600" });
+  if (error) throw error;
 
   const current = getState().data.demoVersions.filter((item) => item.demo_id === demoId && item.is_current);
   await Promise.all(current.map((item) => updateRecord("demoVersions", item.id, { is_current: false })));
@@ -411,59 +490,65 @@ export async function uploadDemoBundle(demoId, file) {
   });
 }
 
-export async function seedWorkspace() {
-  if (isPreview()) return loadPreviewWorkspace();
-  if (getState().data.leads.length) return false;
+/* ---------- seeding ---------- */
 
-  const sample = createSampleData();
+export async function loadSampleWorkspace() {
+  if (!isCloud()) {
+    const seed = createSeedData();
+    const next = { profile: seed.profile };
+    COLLECTION_KEYS.forEach((key) => { next[key] = seed[key] || []; });
+    setData(next);
+    persist();
+    return true;
+  }
+
+  const seed = createSeedData();
   const idMap = new Map();
-  SEED_ORDER.forEach((collection) => {
-    sample[collection].forEach((item) => {
-      if (item.id) idMap.set(item.id, uid());
-    });
-  });
+  COLLECTION_KEYS.forEach((key) => (seed[key] || []).forEach((item) => {
+    if (item.id) idMap.set(item.id, uid());
+  }));
 
-  for (const collection of SEED_ORDER) {
-    const table = COLLECTIONS[collection];
-    const rows = sample[collection].map((item) => {
+  for (const key of COLLECTION_KEYS) {
+    const rows = (seed[key] || []).map((item) => {
       const record = structuredClone(item);
-      if (collection === "agentEvents") {
-        delete record.id;
-      } else if (record.id) {
-        record.id = idMap.get(record.id);
-      }
-      Object.entries(record).forEach(([key, value]) => {
-        if ((key.endsWith("_id") || key === "entity_id") && typeof value === "string" && idMap.has(value)) {
-          record[key] = idMap.get(value);
+      if (record.id) record.id = idMap.get(record.id);
+      Object.entries(record).forEach(([field, value]) => {
+        if ((field.endsWith("_id") || field === "entity_id") && typeof value === "string" && idMap.has(value)) {
+          record[field] = idMap.get(value);
         }
       });
       record.user_id = userId();
       return record;
     });
     if (!rows.length) continue;
-    const { error } = await supabase.from(table).insert(rows);
+    const client = await getSupabase();
+    const { error } = await client.from(COLLECTIONS[key]).insert(rows);
     if (error) throw error;
   }
-
-  await loadWorkspace(getState().user);
+  await loadCloudWorkspace();
   return true;
 }
 
-let realtimeChannel;
+/* ---------- realtime ---------- */
+
+let channel = null;
 
 export function subscribeToWorkspaceChanges(onChange) {
-  if (isPreview() || !userId()) return () => {};
-  realtimeChannel = supabase
-    .channel(`operations-${userId()}`)
-    .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId()}` }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "approvals", filter: `user_id=eq.${userId()}` }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "agent_runs", filter: `user_id=eq.${userId()}` }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "activity_log", filter: `user_id=eq.${userId()}` }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${userId()}` }, onChange)
-    .subscribe();
+  if (!isCloud()) return () => {};
+  const id = userId();
+  getSupabase().then((client) => {
+    channel = client
+      .channel(`operations-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${id}` }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "email_threads", filter: `user_id=eq.${id}` }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "activity_log", filter: `user_id=eq.${id}` }, onChange)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${id}` }, onChange)
+      .subscribe();
+  }).catch((error) => console.warn("Realtime unavailable", error));
 
   return () => {
-    if (realtimeChannel) supabase.removeChannel(realtimeChannel);
-    realtimeChannel = null;
+    if (!channel) return;
+    getSupabase().then((client) => client.removeChannel(channel)).catch(() => {});
+    channel = null;
   };
 }
