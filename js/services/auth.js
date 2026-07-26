@@ -18,6 +18,17 @@ async function api(path, options = {}) {
     throw new Error("Could not reach the sign-in service. Is the Worker deployed?");
   }
 
+  // A deployment without the Worker serves index.html for /api/*. Left alone
+  // that parses as an empty payload and looks identical to "nothing is
+  // configured", which sends you hunting for the wrong problem.
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `/api${path} returned ${response.status} ${contentType.split(";")[0] || "with no content type"} instead of JSON. `
+      + "The Worker that handles sign-in is not live on this deployment.",
+    );
+  }
+
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `Sign-in failed (${response.status}).`);
   return payload;

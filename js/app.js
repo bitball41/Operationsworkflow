@@ -106,7 +106,7 @@ function lock(status = null) {
   setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
   setShellVisibility(false);
   if (status && !status.passwordConfigured) {
-    showAuthMessage("No password is set on this Worker yet. Run: npx wrangler secret put DASHBOARD_PASSWORD", "warning");
+    showAuthMessage("This Worker has no DASHBOARD_PASSWORD secret at runtime. Bind it as a runtime secret under the Worker's Settings -> Variables and Bindings (build variables are not visible at runtime), or run: npx wrangler secret put DASHBOARD_PASSWORD", "warning");
   }
 }
 
