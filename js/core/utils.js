@@ -46,10 +46,10 @@ export function statusLabel(status) {
 }
 
 export function statusTone(status) {
-  if (["won", "completed", "approved", "sent", "production", "connected", "active"].includes(status)) return "green";
-  if (["pending", "pending_approval", "qualified", "ready", "ready_to_contact", "deployed", "running"].includes(status)) return "purple";
-  if (["contacted", "follow_up", "scheduled", "due", "waiting_approval", "onboarding"].includes(status)) return "yellow";
-  if (["rejected", "failed", "lost", "cancelled", "error"].includes(status)) return "red";
+  if (["won", "completed", "approved", "sent", "production", "connected", "active", "available", "healthy", "live", "paid"].includes(status)) return "green";
+  if (["pending", "pending_approval", "qualified", "ready", "ready_to_contact", "deployed", "running", "interested", "high"].includes(status)) return "purple";
+  if (["contacted", "follow_up", "scheduled", "due", "waiting_approval", "onboarding", "warning", "overdue", "urgent"].includes(status)) return "yellow";
+  if (["rejected", "failed", "lost", "cancelled", "error", "dead"].includes(status)) return "red";
   if (["replied", "analyzed", "building", "demo_building", "qa"].includes(status)) return "blue";
   return "muted";
 }
@@ -107,4 +107,3 @@ export function debounce(fn, wait = 200) {
     timeout = setTimeout(() => fn(...args), wait);
   };
 }
-
