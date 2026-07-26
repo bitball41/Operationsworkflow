@@ -201,7 +201,7 @@ select {
 }
 
 .mobile-only {
-  display: none;
+  display: none !important;
 }
 
 .visually-hidden {
@@ -212,4 +212,3 @@ select {
   clip: rect(0, 0, 0, 0) !important;
   white-space: nowrap !important;
 }
-
