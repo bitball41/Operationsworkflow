@@ -15,7 +15,7 @@ export function renderActivity() {
       button("Queue manual run", { action: "queue-agent-run", iconName: "plus", variant: "primary" }),
     )}
     <section class="grid grid--3">
-      ${metricCard({ label: "Active runs", value: running.length, iconName: "bot", foot: "Queued, running, or waiting", tone: "purple" })}
+      ${metricCard({ label: "Active runs", value: running.length, iconName: "bot", foot: "Queued, running, or waiting", tone: "accent" })}
       ${metricCard({ label: "Waiting approval", value: data.agentRuns.filter((run) => run.status === "waiting_approval").length, iconName: "shield-check", foot: "Human decision required", tone: "yellow" })}
       ${metricCard({ label: "Estimated run cost", value: formatCurrency(totalCost, 2), iconName: "activity", foot: "Stored against runs", tone: "blue" })}
     </section>
@@ -25,7 +25,7 @@ export function renderActivity() {
         <header class="card__head"><div><h3>Event stream</h3><p>Newest event first</p></div><span class="badge badge--muted">${data.agentEvents.length} events</span></header>
         ${data.agentEvents.length ? `<div class="card__body"><div class="timeline">${data.agentEvents.map((event) => `
           <div class="timeline-item">
-            <span class="timeline-icon" style="${event.agent_type === "designer" ? "color:var(--blue)" : event.agent_type === "writer" ? "color:var(--green)" : event.agent_type === "orchestrator" ? "color:var(--accent-2)" : ""}">${icon(event.agent_type === "system" ? "activity" : event.agent_type === "designer" ? "wand-sparkles" : event.agent_type === "writer" ? "pencil" : "bot")}</span>
+            <span class="timeline-icon" style="${event.agent_type === "designer" ? "color:var(--blue)" : event.agent_type === "writer" ? "color:var(--green)" : event.agent_type === "orchestrator" ? "color:var(--accent)" : ""}">${icon(event.agent_type === "system" ? "activity" : event.agent_type === "designer" ? "wand-sparkles" : event.agent_type === "writer" ? "pencil" : "bot")}</span>
             <div><strong>${escapeHtml(event.title)}</strong><p>${escapeHtml(event.detail || event.event_type.replaceAll("_", " "))}</p><span class="badge badge--muted" style="margin-top:6px">${escapeHtml(event.agent_type)}</span></div>
             <time>${relativeTime(event.created_at)}</time>
           </div>

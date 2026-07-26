@@ -1,5 +1,5 @@
 import { navigate } from "./core/router.js";
-import { getState, setState } from "./core/state.js";
+import { getState, resetData, setState } from "./core/state.js";
 import { escapeHtml, uid } from "./core/utils.js";
 import {
   createRecord,
@@ -32,7 +32,7 @@ import {
   openTransactionForm,
   openUploadForm,
 } from "./components/forms.js";
-import { setMobileNav } from "./components/shell.js";
+import { setMobileNav, setShellVisibility } from "./components/shell.js";
 import { closeModal, formDataObject, openModal, toast } from "./components/ui.js";
 
 const demoProgression = {
@@ -82,9 +82,9 @@ export async function handleActionClick(event) {
     case "prospect-filter":
       navigate("prospects", target.dataset.status === "all" ? {} : { status: target.dataset.status });
       break;
-    case "open-mobile-nav":
-      setState({ mobileNavOpen: true });
-      setMobileNav(true);
+    case "toggle-agent-panel":
+      setState({ agentPanelOpen: !getState().agentPanelOpen, notificationPanelOpen: false, mobileNavOpen: false });
+      setMobileNav(false);
       break;
     case "close-modal":
       closeModal();
@@ -207,7 +207,7 @@ export async function handleActionClick(event) {
       openModal({
         title: message.subject || "Inbound reply",
         subtitle: lead?.business_name || "Unknown prospect",
-        body: `<div class="message-preview">${escapeHtml(message.body_preview || "No preview")}</div><div class="approval-card__meta" style="margin-top:12px"><span class="badge badge--green">${escapeHtml(message.sentiment || "unknown")}</span><span class="badge badge--purple">${escapeHtml((message.reply_classification || "unclassified").replaceAll("_", " "))}</span></div>`,
+        body: `<div class="message-preview">${escapeHtml(message.body_preview || "No preview")}</div><div class="approval-card__meta" style="margin-top:12px"><span class="badge badge--green">${escapeHtml(message.sentiment || "unknown")}</span><span class="badge badge--accent">${escapeHtml((message.reply_classification || "unclassified").replaceAll("_", " "))}</span></div>`,
         footer: `${lead ? `<button class="button button--secondary" data-action="new-draft" data-lead-id="${lead.id}">Draft response</button>` : ""}<button class="button button--primary" data-action="close-modal">Close</button>`,
       });
       break;
@@ -280,13 +280,16 @@ export async function handleActionClick(event) {
       exportLeads();
       break;
     case "sign-out":
+    case "exit-preview": {
       closeModal();
-      await run(signOut, "Signed out");
-      break;
-    case "exit-preview":
+      closePanels();
       localStorage.removeItem("operations-preview");
-      location.reload();
+      await run(signOut, "Signed out", "The workspace is locked again.");
+      resetData();
+      setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
+      setShellVisibility(false);
       break;
+    }
     default:
       break;
   }

@@ -26,20 +26,20 @@ export function badge(status, label = statusLabel(status)) {
   return `<span class="badge badge--${statusTone(status)}">${escapeHtml(label)}</span>`;
 }
 
-export function scoreBar(value = 0, color = "#7c5cff") {
+export function scoreBar(value = 0, color = "var(--accent)") {
   const score = Math.max(0, Math.min(100, Number(value) || 0));
   return `<div class="score"><div class="score__bar"><i style="width:${score}%;--score-color:${color}"></i></div><span>${score}</span></div>`;
 }
 
-export function metricCard({ label, value, iconName, foot, tone = "purple", trend = "" }) {
+export function metricCard({ label, value, iconName, foot, tone = "accent", trend = "" }) {
   const colors = {
-    purple: ["#9c83ff", "rgba(124,92,255,.14)"],
-    green: ["#37d690", "rgba(55,214,144,.12)"],
-    blue: ["#4c8dff", "rgba(76,141,255,.13)"],
-    yellow: ["#f1bf5a", "rgba(241,191,90,.12)"],
-    red: ["#f06c75", "rgba(240,108,117,.12)"],
+    accent: ["var(--accent)", "var(--accent-soft)"],
+    green: ["var(--green)", "var(--green-soft)"],
+    blue: ["var(--blue)", "var(--blue-soft)"],
+    yellow: ["var(--yellow)", "var(--yellow-soft)"],
+    red: ["var(--red)", "var(--red-soft)"],
   };
-  const [color, soft] = colors[tone] || colors.purple;
+  const [color, soft] = colors[tone] || colors.accent;
   return `
     <article class="card metric-card" style="--metric-color:${color};--metric-soft:${soft};--metric-glow:${soft}">
       <div class="metric-card__top"><span>${escapeHtml(label)}</span><span class="metric-icon">${icon(iconName)}</span></div>
@@ -88,8 +88,14 @@ export function toast(title, message = "", tone = "success") {
   const root = document.getElementById("toast-region");
   const element = document.createElement("div");
   element.className = "toast";
+  const tones = {
+    error: ["var(--red-soft)", "var(--red)", "circle-alert"],
+    warning: ["var(--yellow-soft)", "var(--yellow)", "circle-alert"],
+    success: ["var(--green-soft)", "var(--green)", "check"],
+  };
+  const [background, color, iconName] = tones[tone] || tones.success;
   element.innerHTML = `
-    <span style="${tone === "error" ? "background:var(--red-soft);color:var(--red)" : ""}">${icon(tone === "error" ? "circle-alert" : "check")}</span>
+    <span style="background:${background};color:${color}">${icon(iconName)}</span>
     <div><strong>${escapeHtml(title)}</strong>${message ? `<p>${escapeHtml(message)}</p>` : ""}</div>
   `;
   root.appendChild(element);

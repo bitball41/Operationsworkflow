@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#080b12">
+    <meta name="theme-color" content="#000000">
     <meta name="description" content="Operations Workflow — sales and website fulfillment command system">
     <title>Operations Workflow</title>
     <link rel="stylesheet" href="./styles/tokens.css">
@@ -39,20 +39,15 @@
         <form id="auth-form" class="auth-card">
           <div>
             <span class="eyebrow">Owner access</span>
-            <h2 id="auth-title">Welcome back</h2>
-            <p id="auth-subtitle">Sign in to your private operations workspace.</p>
+            <h2>Enter your password</h2>
+            <p>One password for the whole workspace, held as a Cloudflare Worker secret.</p>
           </div>
           <label class="field">
-            <span>Email</span>
-            <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com" required>
-          </label>
-          <label class="field">
             <span>Password</span>
-            <input id="auth-password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" required>
+            <input id="auth-password" type="password" autocomplete="current-password" placeholder="Owner password" required autofocus>
           </label>
           <p id="auth-message" class="form-message" role="status"></p>
-          <button id="auth-submit" class="button button--primary button--wide" type="submit">Sign in</button>
-          <button id="auth-switch" class="button button--ghost button--wide" type="button">Create owner account</button>
+          <button id="auth-submit" class="button button--primary button--wide" type="submit">Unlock workspace</button>
           <div class="divider"><span>or inspect the UI</span></div>
           <button id="preview-button" class="button button--secondary button--wide" type="button">Open preview workspace</button>
           <p class="auth-note">Preview mode never writes to your database.</p>
@@ -75,11 +70,19 @@
             <span class="status-pulse"></span>
             <div><strong>Manual mode</strong><span>Approvals enforced</span></div>
           </div>
-          <button id="account-button" class="account-button" type="button">
-            <span id="account-avatar" class="avatar">CO</span>
-            <span><strong id="account-name">Connor</strong><small id="account-email">Preview workspace</small></span>
-            <span data-icon="more-horizontal"></span>
+          <button class="sidebar-agent" type="button" data-action="toggle-agent-panel">
+            <span class="agent-orb"><i></i></span>
+            <span><small>Orchestrator</small><strong>Manual control</strong></span>
+            <span data-icon="panel-right-open"></span>
           </button>
+          <div class="account-row">
+            <button id="account-button" class="account-button" type="button">
+              <span id="account-avatar" class="avatar">CO</span>
+              <span><strong id="account-name">Connor</strong><small id="account-email">Preview workspace</small></span>
+              <span data-icon="more-horizontal"></span>
+            </button>
+            <button id="sign-out-button" class="icon-button icon-button--sm" type="button" data-action="sign-out" aria-label="Sign out" title="Sign out" data-icon="log-out"></button>
+          </div>
         </div>
       </aside>
 
@@ -117,8 +120,6 @@
 
       <aside id="agent-panel" class="side-panel agent-panel" aria-label="Orchestration agent" aria-hidden="true"></aside>
       <aside id="notification-panel" class="side-panel notification-panel" aria-label="Notifications" aria-hidden="true"></aside>
-
-      <nav id="mobile-dock" class="mobile-dock" aria-label="Mobile navigation"></nav>
     </div>
 
     <div id="modal-root"></div>

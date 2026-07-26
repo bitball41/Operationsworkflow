@@ -45,7 +45,7 @@ export function renderPipeline() {
                       <span>${formatCurrency(lead.asking_price || 400)}</span>
                     </div>
                   </div>
-                `).join("") || `<div style="padding:18px 8px;color:#535d6e;font-size:9px;text-align:center">Drop prospect here</div>`}
+                `).join("") || `<div style="padding:18px 8px;color:var(--faint);font-size:9px;text-align:center">Drop prospect here</div>`}
               </div>
             </article>
           `;
@@ -92,7 +92,7 @@ export function renderDiscovery() {
                 <td><div class="cell-primary"><strong>${escapeHtml(lead.business_name)}</strong><span>${escapeHtml(lead.category || "Uncategorized")}</span></div></td>
                 <td>${escapeHtml([lead.city, lead.region].filter(Boolean).join(", ") || "—")}</td>
                 <td>${badge(lead.website_url ? "analyzed" : "pending", lead.website_url ? "Website found" : "No website")}</td>
-                <td>${scoreBar(lead.qualification_score, "#4c8dff")}</td>
+                <td>${scoreBar(lead.qualification_score, "var(--blue)")}</td>
                 <td>${escapeHtml(lead.source || "Manual")}</td>
                 <td><button class="button button--secondary" data-action="qualify-lead" data-id="${lead.id}">Qualify</button></td>
               </tr>
@@ -151,8 +151,8 @@ export function renderProspects() {
           <tr data-action="open-lead" data-id="${lead.id}">
             <td><div class="cell-primary"><strong>${escapeHtml(lead.business_name)}</strong><span>${escapeHtml(lead.category || "Uncategorized")} · ${escapeHtml(lead.city || "No city")}</span></div></td>
             <td>${badge(lead.status)}</td>
-            <td>${scoreBar(lead.qualification_score, "#4c8dff")}</td>
-            <td>${scoreBar(lead.opportunity_score, "#9c83ff")}</td>
+            <td>${scoreBar(lead.qualification_score, "var(--blue)")}</td>
+            <td>${scoreBar(lead.opportunity_score, "var(--accent)")}</td>
             <td>${formatCurrency(lead.asking_price || 400)}</td>
             <td>${escapeHtml(lead.next_action || "—")}</td>
             <td>${relativeTime(lead.updated_at)}</td>

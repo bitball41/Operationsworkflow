@@ -21,7 +21,7 @@ export function renderOutreach() {
     <section class="grid grid--3">
       ${metricCard({ label: "In progress", value: draftCount, iconName: "pencil", foot: "Not yet submitted", tone: "blue" })}
       ${metricCard({ label: "Needs approval", value: waitingCount, iconName: "shield-check", foot: "External sends are blocked", tone: waitingCount ? "yellow" : "green" })}
-      ${metricCard({ label: "Approved to send", value: approvedCount, iconName: "mail-check", foot: "Gmail adapter not connected", tone: "purple" })}
+      ${metricCard({ label: "Approved to send", value: approvedCount, iconName: "mail-check", foot: "Gmail adapter not connected", tone: "accent" })}
     </section>
     <article class="card" style="margin-top:14px">
       <header class="card__head">
@@ -116,7 +116,7 @@ export function renderFollowUps() {
   return `
     ${pageHead("Follow-ups", "Simple sequences tied to real outreach. No separate calendar.", button("Schedule follow-up", { action: "new-follow-up", iconName: "plus", variant: "primary" }))}
     <section class="grid grid--3">
-      ${metricCard({ label: "Scheduled", value: scheduled.length, iconName: "timer-reset", foot: "Active sequence steps", tone: "purple" })}
+      ${metricCard({ label: "Scheduled", value: scheduled.length, iconName: "timer-reset", foot: "Active sequence steps", tone: "accent" })}
       ${metricCard({ label: "Due now", value: overdue.length, iconName: "circle-alert", foot: overdue.length ? "Needs attention" : "Nothing overdue", tone: overdue.length ? "red" : "green" })}
       ${metricCard({ label: "Sent", value: data.followUps.filter((item) => item.status === "sent").length, iconName: "mail-check", foot: "Completed follow-ups", tone: "blue" })}
     </section>
@@ -168,7 +168,7 @@ export function renderApprovals() {
               ${badge(approval.risk_level === "high" ? "rejected" : approval.risk_level === "medium" ? "pending" : "active", `${approval.risk_level} risk`)}
             </div>
             <div class="approval-card__meta">
-              <span class="badge badge--purple">${escapeHtml(approval.requested_by_agent || "system")}</span>
+              <span class="badge badge--accent">${escapeHtml(approval.requested_by_agent || "system")}</span>
               <span class="badge badge--muted">${escapeHtml(approval.approval_type.replaceAll("_", " "))}</span>
               ${lead ? `<span class="badge badge--muted">${escapeHtml(lead.business_name)}</span>` : ""}
               <span class="badge badge--muted">${relativeTime(approval.created_at)}</span>

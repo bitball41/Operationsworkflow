@@ -47,10 +47,10 @@ export function statusLabel(status) {
 
 export function statusTone(status) {
   if (["won", "completed", "approved", "sent", "production", "connected", "active"].includes(status)) return "green";
-  if (["pending", "pending_approval", "qualified", "ready", "ready_to_contact", "deployed", "running"].includes(status)) return "purple";
-  if (["contacted", "follow_up", "scheduled", "due", "waiting_approval", "onboarding"].includes(status)) return "yellow";
   if (["rejected", "failed", "lost", "cancelled", "error"].includes(status)) return "red";
-  if (["replied", "analyzed", "building", "demo_building", "qa"].includes(status)) return "blue";
+  if (["pending", "pending_approval", "waiting_approval", "scheduled", "queued", "contacted", "follow_up", "onboarding"].includes(status)) return "yellow";
+  if (["ready", "ready_to_contact", "due"].includes(status)) return "accent";
+  if (["qualified", "analyzed", "building", "demo_building", "qa", "replied", "deployed", "running", "draft"].includes(status)) return "blue";
   return "muted";
 }
 

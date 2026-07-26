@@ -23,20 +23,50 @@
   }
 }
 
+/* ------------------------------------------------------------------
+   Tablet and phone: the sidebar is the only navigation surface.
+   It slides in over the workspace; there is no bottom dock.
+   ------------------------------------------------------------------ */
 @media (max-width: 980px) {
-  .mobile-only {
+  .mobile-only,
+  .icon-button.mobile-only {
     display: inline-grid;
   }
 
   .sidebar {
-    width: min(286px, 86vw);
+    width: min(300px, 88vw);
+    padding-left: env(safe-area-inset-left);
     box-shadow: var(--shadow-lg);
     transform: translateX(-103%);
-    transition: transform 220ms var(--ease);
+    transition: transform 240ms var(--ease);
   }
 
   .sidebar.is-open {
     transform: translateX(0);
+  }
+
+  .sidebar__head {
+    min-height: 64px;
+  }
+
+  .nav-list {
+    overscroll-behavior: contain;
+    padding: 12px 12px 28px;
+  }
+
+  /* Comfortable touch targets in the drawer */
+  .nav-item {
+    min-height: 44px;
+    font-size: 13px;
+  }
+
+  .nav-item svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .nav-label {
+    font-size: 10px;
   }
 
   .workspace {
@@ -44,59 +74,17 @@
   }
 
   .topbar {
-    padding-right: 18px;
-    padding-left: 18px;
+    padding-right: max(18px, env(safe-area-inset-right));
+    padding-left: max(18px, env(safe-area-inset-left));
   }
 
   .page-content {
-    padding: 22px 20px 92px;
+    padding: 22px max(20px, env(safe-area-inset-left)) calc(40px + env(safe-area-inset-bottom));
   }
 
   .grid--wide,
   .grid--sidebar {
-    grid-template-columns: 1fr;
-  }
-
-  .mobile-dock {
-    position: fixed;
-    z-index: 25;
-    right: 12px;
-    bottom: calc(10px + env(safe-area-inset-bottom));
-    left: 12px;
-    display: flex;
-    height: 60px;
-    align-items: center;
-    justify-content: space-around;
-    padding: 5px 7px;
-    border: 1px solid rgba(57, 68, 87, 0.85);
-    border-radius: 18px;
-    background: rgba(13, 17, 25, 0.93);
-    box-shadow: 0 16px 45px rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(20px);
-  }
-
-  .dock-item {
-    position: relative;
-    display: grid;
-    min-width: 50px;
-    height: 49px;
-    place-items: center;
-    border-radius: 13px;
-    background: transparent;
-    color: #7d8798;
-    font-size: 8px;
-    font-weight: 680;
-  }
-
-  .dock-item svg {
-    width: 17px;
-    height: 17px;
-    margin-bottom: -5px;
-  }
-
-  .dock-item.is-active {
-    background: var(--accent-soft);
-    color: #c4b8ff;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auth-screen {
@@ -114,7 +102,7 @@
 
 @media (max-width: 720px) {
   :root {
-    --topbar-height: 66px;
+    --topbar-height: 62px;
   }
 
   body {
@@ -123,8 +111,8 @@
 
   .topbar {
     gap: 8px;
-    padding-right: 12px;
-    padding-left: 12px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left: max(12px, env(safe-area-inset-left));
   }
 
   .topbar__left {
@@ -153,26 +141,17 @@
     padding: 0;
   }
 
+  /* The orchestrator panel moves into the sidebar footer on phones */
   .agent-trigger {
-    width: 38px;
-    height: 38px;
-    justify-content: center;
-    padding: 0;
-    border-color: var(--border);
-    background: rgba(16, 21, 30, 0.86);
-  }
-
-  .agent-trigger .agent-orb {
-    width: 25px;
-    height: 25px;
-  }
-
-  .agent-trigger > svg {
     display: none;
   }
 
+  .sidebar-agent {
+    display: flex;
+  }
+
   .page-content {
-    padding: 18px 12px 92px;
+    padding: 16px max(12px, env(safe-area-inset-left)) calc(36px + env(safe-area-inset-bottom));
   }
 
   .page-head {
@@ -182,30 +161,45 @@
     margin-bottom: 16px;
   }
 
+  /* The sticky topbar already names the page */
   .page-head h2 {
-    font-size: 21px;
+    display: none;
   }
 
   .page-head p {
     font-size: 11px;
   }
 
+  .card__head {
+    flex-wrap: wrap;
+    padding: 10px 14px;
+  }
+
+  .system-status {
+    display: none;
+  }
+
   .page-actions {
     overflow-x: auto;
+    padding-bottom: 2px;
   }
 
   .grid--2,
   .grid--3,
   .grid--4 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .metric-grid-mobile {
+  /* Metric tiles read better two-up on phones, whichever grid they sit in */
+  .metric-grid-mobile,
+  .grid--2:has(> .metric-card),
+  .grid--3:has(> .metric-card),
+  .grid--4:has(> .metric-card) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .metric-card {
-    min-height: 115px;
+    min-height: 112px;
     padding: 13px;
   }
 
@@ -220,11 +214,17 @@
 
   .toolbar__group {
     overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .filter-button {
+    min-height: 38px;
+    flex: 0 0 auto;
   }
 
   .template-grid,
   .integration-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .template-preview {
@@ -232,8 +232,17 @@
   }
 
   .field-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0;
+  }
+
+  /* One pipeline stage at a time, snapped */
+  .pipeline {
+    grid-auto-columns: minmax(84vw, 1fr);
+  }
+
+  .pipeline-column {
+    min-height: 300px;
   }
 
   .data-table {
@@ -265,13 +274,18 @@
     border-radius: 18px 18px 0 0;
   }
 
+  .modal__foot {
+    padding-bottom: calc(13px + env(safe-area-inset-bottom));
+  }
+
   .side-panel {
     width: 100vw;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .toast-region {
     right: 12px;
-    bottom: calc(82px + env(safe-area-inset-bottom));
+    bottom: calc(16px + env(safe-area-inset-bottom));
     width: calc(100vw - 24px);
   }
 }
@@ -282,18 +296,14 @@
   }
 
   .metric-card__top > span:first-child {
-    max-width: 76px;
+    max-width: 120px;
+    line-height: 1.25;
   }
 
   .metric-foot {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .notification-panel,
-  .agent-panel {
-    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

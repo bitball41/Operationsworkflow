@@ -1,34 +1,75 @@
 import { supabase } from "./supabase.js";
 
-export async function getSession() {
+/**
+ * Authentication is a single owner password held as a Cloudflare Worker secret.
+ * The Worker verifies it, sets a signed HttpOnly cookie, and hands back a real
+ * Supabase session so row level security keeps working exactly as before.
+ */
+
+async function api(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(`/api${path}`, {
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+  } catch {
+    throw new Error("Could not reach the sign-in service. Is the Worker deployed?");
+  }
+
+  // A deployment without the Worker serves index.html for /api/*. Left alone
+  // that parses as an empty payload and looks identical to "nothing is
+  // configured", which sends you hunting for the wrong problem.
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `/api${path} returned ${response.status} ${contentType.split(";")[0] || "with no content type"} instead of JSON. `
+      + "The Worker that handles sign-in is not live on this deployment.",
+    );
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `Sign-in failed (${response.status}).`);
+  return payload;
+}
+
+/** What the Worker thinks of this browser: unlocked? Supabase wired up? */
+export function getGateStatus() {
+  return api("/session");
+}
+
+/** Verify a password against the Worker secret. Resolves with Supabase tokens when available. */
+export function unlock(password) {
+  return api("/login", { method: "POST", body: JSON.stringify({ password }) });
+}
+
+/** Re-issue Supabase tokens for a browser that still holds a valid gate cookie. */
+export function requestSupabaseSession() {
+  return api("/supabase-session", { method: "POST" });
+}
+
+export async function getSupabaseSession() {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   return data.session;
 }
 
-export async function signIn(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  return data;
-}
-
-export async function signUp(email, password) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { data: { full_name: "Connor" } },
+export async function applySupabaseSession(tokens) {
+  const { data, error } = await supabase.auth.setSession({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
   });
   if (error) throw error;
-  return data;
+  return data.session;
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  await api("/logout", { method: "POST" }).catch(() => {});
+  await supabase.auth.signOut().catch(() => {});
 }
 
 export function onAuthChange(callback) {
   const { data } = supabase.auth.onAuthStateChange((event, session) => callback(event, session));
   return () => data.subscription.unsubscribe();
 }
-

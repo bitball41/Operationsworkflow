@@ -46,7 +46,7 @@ export function renderAgentPanel() {
     <section class="panel-section">
       <div class="panel-label"><span>Agent roles</span></div>
       <div class="settings-list">
-        <div class="settings-row"><div><strong>Orchestrator</strong><p>Routing and decisions</p></div><span class="badge badge--purple">Control</span></div>
+        <div class="settings-row"><div><strong>Orchestrator</strong><p>Routing and decisions</p></div><span class="badge badge--accent">Control</span></div>
         <div class="settings-row"><div><strong>Designer</strong><p>Template, demo, QA</p></div><span class="badge badge--blue">Build</span></div>
         <div class="settings-row"><div><strong>Writer</strong><p>Email and replies</p></div><span class="badge badge--green">Copy</span></div>
       </div>

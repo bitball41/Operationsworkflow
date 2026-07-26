@@ -1,10 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "operationsworkflow",
+  "main": "worker/index.js",
   "compatibility_date": "2026-07-26",
   "assets": {
     "directory": ".",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    // "none" keeps /api/* out of the asset router so the Worker can handle it.
+    // The Worker itself falls back to index.html for unknown paths.
+    "not_found_handling": "none"
   },
   "observability": {
     "enabled": true
