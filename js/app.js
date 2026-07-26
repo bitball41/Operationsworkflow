@@ -1,37 +1,53 @@
-import { handleActionClick, handleFormSubmit, bindPipelineDrag } from "./actions.js";
-import { openCommandPalette, closeCommandPalette } from "./components/command-palette.js";
-import { openLeadForm } from "./components/forms.js";
-import { renderAgentPanel, renderNotificationPanel } from "./components/panels.js";
+import {
+  bindPipelineDrag,
+  handleActionClick,
+  handleControlChange,
+  handleFormSubmit,
+  handleRouteSearch,
+} from "./actions.js";
+import { closeCommandPalette, openCommandPalette } from "./components/command-palette.js";
+import { renderAgentPanel, renderApprovalPanel, renderNotificationPanel } from "./components/panels.js";
 import { renderShellChrome, setMobileNav, setShellVisibility } from "./components/shell.js";
+import { renderInto, toast } from "./components/ui.js";
 import { hydrateIcons } from "./core/icons.js";
 import { initRouter, navigate } from "./core/router.js";
 import { getState, resetData, setState, subscribe } from "./core/state.js";
 import { debounce } from "./core/utils.js";
+import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
+import { renderClients, renderMaintenance, renderProjects } from "./pages/clients.js";
+import { renderFollowUps, renderInbox, renderOutreach } from "./pages/communication.js";
+import { renderActivity, renderCalendar, renderHome, renderTasks } from "./pages/overview.js";
+import { renderDiscovery, renderLeads, renderPipeline } from "./pages/sales.js";
+import { renderIntegrations, renderSettings } from "./pages/system.js";
+import { renderDeployments, renderDemos, renderStudio, renderTemplates } from "./pages/websites.js";
+import { renderNotes } from "./pages/workspace.js";
 import { getSession, onAuthChange, signIn, signUp } from "./services/auth.js";
 import { loadPreviewWorkspace, loadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
-import { renderInto, toast } from "./components/ui.js";
-import { renderAnalytics, renderCommandCenter, renderFinance } from "./pages/dashboard.js";
-import { renderAnalysis, renderDiscovery, renderPipeline, renderProspects } from "./pages/sales.js";
-import { renderClients, renderDemos, renderTemplates } from "./pages/delivery.js";
-import { renderApprovals, renderFollowUps, renderInbox, renderOutreach } from "./pages/communication.js";
-import { renderActivity, renderSettings } from "./pages/system.js";
 
 const pageRenderers = {
-  "command-center": renderCommandCenter,
-  pipeline: renderPipeline,
+  home: renderHome,
+  activity: renderActivity,
+  tasks: renderTasks,
+  calendar: renderCalendar,
   discovery: renderDiscovery,
-  prospects: renderProspects,
-  analysis: renderAnalysis,
-  templates: renderTemplates,
-  demos: renderDemos,
+  leads: renderLeads,
+  pipeline: renderPipeline,
   outreach: renderOutreach,
   inbox: renderInbox,
   "follow-ups": renderFollowUps,
-  approvals: renderApprovals,
+  studio: renderStudio,
+  templates: renderTemplates,
+  demos: renderDemos,
+  deployments: renderDeployments,
   clients: renderClients,
+  projects: renderProjects,
+  maintenance: renderMaintenance,
+  payments: renderPayments,
   analytics: renderAnalytics,
-  finance: renderFinance,
-  activity: renderActivity,
+  pricing: renderPricing,
+  costs: renderCosts,
+  notes: renderNotes,
+  integrations: renderIntegrations,
   settings: renderSettings,
 };
 
@@ -46,10 +62,11 @@ function renderApp() {
   try {
     renderShellChrome();
     renderAgentPanel();
+    renderApprovalPanel();
     renderNotificationPanel();
-    const renderer = pageRenderers[state.route] || renderCommandCenter;
+    const renderer = pageRenderers[state.route] || renderHome;
     renderInto(document.getElementById("page-content"), renderer());
-    if (state.route === "pipeline") bindPipelineDrag();
+    if (state.route === "pipeline" && (state.routeParams.view || "kanban") === "kanban") bindPipelineDrag();
   } finally {
     rendering = false;
   }
@@ -108,10 +125,10 @@ function updateAuthMode() {
 
 async function handleAuthSubmit(event) {
   event.preventDefault();
-  const button = document.getElementById("auth-submit");
+  const submit = document.getElementById("auth-submit");
   const email = document.getElementById("auth-email").value.trim();
   const password = document.getElementById("auth-password").value;
-  button.disabled = true;
+  submit.disabled = true;
   showAuthMessage("");
   try {
     if (authMode === "signup") {
@@ -130,7 +147,7 @@ async function handleAuthSubmit(event) {
   } catch (error) {
     showAuthMessage(error.message || "Authentication failed.");
   } finally {
-    button.disabled = false;
+    submit.disabled = false;
   }
 }
 
@@ -138,13 +155,24 @@ function closeOverlays() {
   closeCommandPalette();
   document.getElementById("modal-root").innerHTML = "";
   document.body.style.overflow = "";
-  setState({ agentPanelOpen: false, notificationPanelOpen: false, mobileNavOpen: false });
+  setState({
+    agentPanelOpen: false,
+    approvalPanelOpen: false,
+    notificationPanelOpen: false,
+    mobileNavOpen: false,
+  });
   setMobileNav(false);
 }
+
+const routeSearch = debounce((value) => handleRouteSearch(value), 320);
 
 function bindStaticEvents() {
   document.addEventListener("click", handleActionClick);
   document.addEventListener("submit", handleFormSubmit);
+  document.addEventListener("change", handleControlChange);
+  document.addEventListener("input", (event) => {
+    if (event.target.matches("[data-route-search]")) routeSearch(event.target.value);
+  });
 
   document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
   document.getElementById("auth-switch").addEventListener("click", () => {
@@ -154,16 +182,25 @@ function bindStaticEvents() {
   document.getElementById("preview-button").addEventListener("click", enterPreview);
 
   document.getElementById("global-search").addEventListener("click", openCommandPalette);
-  document.getElementById("add-lead-button").addEventListener("click", () => openLeadForm());
   document.getElementById("agent-panel-button").addEventListener("click", () => {
     const open = !getState().agentPanelOpen;
-    setState({ agentPanelOpen: open, notificationPanelOpen: false });
+    setState({ agentPanelOpen: open, approvalPanelOpen: false, notificationPanelOpen: false });
+  });
+  document.getElementById("approvals-button").addEventListener("click", () => {
+    const open = !getState().approvalPanelOpen;
+    setState({ approvalPanelOpen: open, agentPanelOpen: false, notificationPanelOpen: false });
   });
   document.getElementById("notifications-button").addEventListener("click", () => {
     const open = !getState().notificationPanelOpen;
-    setState({ notificationPanelOpen: open, agentPanelOpen: false });
+    setState({ notificationPanelOpen: open, agentPanelOpen: false, approvalPanelOpen: false });
   });
   document.getElementById("account-button").addEventListener("click", () => navigate("settings"));
+  document.getElementById("top-account-button").addEventListener("click", () => navigate("settings"));
+  document.getElementById("sidebar-collapse").addEventListener("click", () => {
+    const collapsed = !getState().sidebarCollapsed;
+    localStorage.setItem("operations.sidebarCollapsed", String(collapsed));
+    setState({ sidebarCollapsed: collapsed });
+  });
   document.getElementById("sidebar-open").addEventListener("click", () => {
     setState({ mobileNavOpen: true });
     setMobileNav(true);
@@ -197,7 +234,7 @@ async function init() {
     window.scrollTo({ top: 0, behavior: "auto" });
   });
 
-  onAuthChange(async (event, session) => {
+  onAuthChange((event) => {
     if (event === "SIGNED_OUT") {
       realtimeCleanup();
       realtimeCleanup = () => {};

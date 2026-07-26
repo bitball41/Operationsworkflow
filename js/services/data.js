@@ -2,48 +2,86 @@ import { getState, setData } from "../core/state.js";
 import { uid, slugify } from "../core/utils.js";
 import { createSampleData } from "../data/sample-data.js";
 import { CONFIG } from "../config.js";
+import { duplicateKey, toDiscoveryResult } from "./openscout/adapter.js";
 import { supabase } from "./supabase.js";
 
-const collections = {
-  analyses: "lead_analyses",
+export const COLLECTIONS = Object.freeze({
+  leads: "leads",
+  discoveryRuns: "lead_discovery_runs",
+  discoveryResults: "lead_discovery_results",
   templates: "site_templates",
   demos: "demos",
   demoVersions: "demo_versions",
   drafts: "message_drafts",
-  communications: "communications",
+  emailThreads: "email_threads",
+  emails: "emails",
   followUps: "follow_ups",
   approvals: "approvals",
   agentRuns: "agent_runs",
   agentEvents: "agent_events",
   notifications: "notifications",
   clients: "clients",
-  costEvents: "cost_events",
+  clientSites: "client_sites",
+  projects: "projects",
+  projectTasks: "project_tasks",
+  maintenanceSubscriptions: "maintenance_subscriptions",
+  maintenanceRequests: "maintenance_requests",
+  payments: "payments",
+  expenses: "expenses",
+  aiUsage: "ai_usage",
   pricingExperiments: "pricing_experiments",
-  financeTransactions: "finance_transactions",
-  financeGoals: "finance_goals",
+  activity: "activity_log",
+  tasks: "tasks",
+  calendarEvents: "calendar_events",
+  notes: "notes",
+  deployments: "deployments",
+  settings: "settings",
   integrations: "integration_connections",
-};
+});
 
-const orderBy = {
+const ORDER_BY = Object.freeze({
   leads: ["updated_at", false],
-  analyses: ["updated_at", false],
+  discoveryRuns: ["created_at", false],
+  discoveryResults: ["created_at", false],
   templates: ["updated_at", false],
   demos: ["updated_at", false],
   demoVersions: ["created_at", false],
   drafts: ["updated_at", false],
-  communications: ["occurred_at", false],
+  emailThreads: ["last_message_at", false],
+  emails: ["created_at", false],
   followUps: ["due_at", true],
   approvals: ["created_at", false],
   agentRuns: ["created_at", false],
   agentEvents: ["created_at", false],
   notifications: ["created_at", false],
   clients: ["updated_at", false],
-  costEvents: ["occurred_at", false],
+  clientSites: ["updated_at", false],
+  projects: ["updated_at", false],
+  projectTasks: ["sort_order", true],
+  maintenanceSubscriptions: ["updated_at", false],
+  maintenanceRequests: ["created_at", false],
+  payments: ["created_at", false],
+  expenses: ["occurred_on", false],
+  aiUsage: ["occurred_at", false],
   pricingExperiments: ["created_at", false],
-  financeTransactions: ["occurred_on", false],
-  financeGoals: ["priority", true],
+  activity: ["created_at", false],
+  tasks: ["due_at", true],
+  calendarEvents: ["starts_at", true],
+  notes: ["updated_at", false],
+  deployments: ["updated_at", false],
+  settings: ["key", true],
   integrations: ["provider", true],
-};
+});
+
+const SEED_ORDER = [
+  "templates", "leads", "discoveryRuns", "discoveryResults", "demos",
+  "demoVersions", "drafts", "emailThreads", "emails", "followUps",
+  "clients", "clientSites", "projects", "projectTasks",
+  "maintenanceSubscriptions", "maintenanceRequests", "payments", "expenses",
+  "aiUsage", "pricingExperiments", "agentRuns", "agentEvents", "approvals",
+  "notifications", "activity", "tasks", "calendarEvents", "notes",
+  "deployments", "settings", "integrations",
+];
 
 function userId() {
   return getState().user?.id;
@@ -65,21 +103,20 @@ export async function ensureProfile(user) {
 }
 
 async function fetchCollection(key) {
-  const table = key === "leads" ? "leads" : collections[key];
-  const [column, ascending] = orderBy[key];
+  const [column, ascending] = ORDER_BY[key];
+  const limit = ["agentEvents", "activity", "emails", "discoveryResults"].includes(key) ? 500 : 750;
   const { data, error } = await supabase
-    .from(table)
+    .from(COLLECTIONS[key])
     .select("*")
-    .order(column, { ascending })
-    .limit(key === "agentEvents" ? 100 : 500);
+    .order(column, { ascending, nullsFirst: false })
+    .limit(limit);
   if (error) throw error;
   return data || [];
 }
 
 export async function loadWorkspace(user) {
-  const profilePromise = ensureProfile(user);
-  const keys = ["leads", ...Object.keys(collections)];
-  const results = await Promise.all([profilePromise, ...keys.map(fetchCollection)]);
+  const keys = Object.keys(COLLECTIONS);
+  const results = await Promise.all([ensureProfile(user), ...keys.map(fetchCollection)]);
   const next = { profile: results[0] };
   keys.forEach((key, index) => { next[key] = results[index + 1]; });
   setData(next);
@@ -93,18 +130,30 @@ export function loadPreviewWorkspace() {
 }
 
 export async function createRecord(collection, values) {
+  const [record] = await createRecords(collection, [values]);
+  return record;
+}
+
+export async function createRecords(collection, values) {
+  if (!values.length) return [];
+  const now = new Date().toISOString();
   if (isPreview()) {
-    const record = { ...values, id: values.id || uid(), user_id: userId() };
-    setData({ [collection]: [record, ...getState().data[collection]] });
-    return record;
+    const records = values.map((value) => ({
+      ...value,
+      id: value.id || uid(),
+      user_id: userId(),
+      created_at: value.created_at || now,
+      updated_at: value.updated_at || now,
+    }));
+    setData({ [collection]: [...records, ...getState().data[collection]] });
+    return records;
   }
 
-  const table = collection === "leads" ? "leads" : collections[collection];
-  const record = { ...values, user_id: userId() };
-  const { data, error } = await supabase.from(table).insert(record).select().single();
+  const records = values.map((value) => ({ ...value, user_id: userId() }));
+  const { data, error } = await supabase.from(COLLECTIONS[collection]).insert(records).select();
   if (error) throw error;
-  setData({ [collection]: [data, ...getState().data[collection]] });
-  return data;
+  setData({ [collection]: [...(data || []), ...getState().data[collection]] });
+  return data || [];
 }
 
 export async function updateRecord(collection, id, patch) {
@@ -116,9 +165,8 @@ export async function updateRecord(collection, id, patch) {
     return updated.find((item) => item.id === id);
   }
 
-  const table = collection === "leads" ? "leads" : collections[collection];
   const { data, error } = await supabase
-    .from(table)
+    .from(COLLECTIONS[collection])
     .update(patch)
     .eq("id", id)
     .select()
@@ -132,8 +180,7 @@ export async function updateRecord(collection, id, patch) {
 
 export async function deleteRecord(collection, id) {
   if (!isPreview()) {
-    const table = collection === "leads" ? "leads" : collections[collection];
-    const { error } = await supabase.from(table).delete().eq("id", id);
+    const { error } = await supabase.from(COLLECTIONS[collection]).delete().eq("id", id);
     if (error) throw error;
   }
   setData({ [collection]: getState().data[collection].filter((item) => item.id !== id) });
@@ -158,25 +205,139 @@ export async function updateProfilePreferences(patch) {
   return data;
 }
 
+export async function logActivity(type, title, detail = "", relations = {}, actorType = "user") {
+  return createRecord("activity", {
+    type,
+    title,
+    detail,
+    actor_type: actorType,
+    lead_id: relations.lead_id || null,
+    client_id: relations.client_id || null,
+    project_id: relations.project_id || null,
+    metadata: relations.metadata || {},
+  });
+}
+
+export async function createDiscoveryRun(query) {
+  return createRecord("discoveryRuns", {
+    source: "openscout",
+    engine_version: "openscout-2026-07-25",
+    query,
+    status: "running",
+    started_at: new Date().toISOString(),
+  });
+}
+
+export async function completeDiscoveryRun(runId, result) {
+  const rows = result.leads.map((lead) => toDiscoveryResult(lead, runId));
+  const stored = await createRecords("discoveryResults", rows);
+  await updateRecord("discoveryRuns", runId, {
+    status: result.failedTiles ? "partial" : "completed",
+    scanned_count: result.scanned || 0,
+    result_count: result.leads.length,
+    duplicate_count: result.mergedDuplicates || 0,
+    summary: {
+      query: result.query,
+      tiles: result.tiles,
+      failedTiles: result.failedTiles,
+      excludedChains: result.excludedChains,
+      hiddenLowConfidence: result.hiddenLowConfidence,
+      estimatedAccuracy: result.estimatedAccuracy,
+      estimatedMistakeRate: result.estimatedMistakeRate,
+      verified: result.verified,
+      radiusKm: result.radiusKm,
+    },
+    completed_at: new Date().toISOString(),
+  });
+  await logActivity(
+    "lead_discovery",
+    "OpenScout discovery completed",
+    `${result.scanned || 0} businesses scanned; ${stored.length} candidates retained.`,
+    { metadata: { run_id: runId } },
+    "system",
+  );
+  return stored;
+}
+
+export async function failDiscoveryRun(runId, message) {
+  if (!runId) return;
+  await updateRecord("discoveryRuns", runId, {
+    status: "failed",
+    error_message: message,
+    completed_at: new Date().toISOString(),
+  });
+}
+
+export async function saveDiscoveryCandidates(resultIds) {
+  const wanted = new Set(resultIds);
+  const candidates = getState().data.discoveryResults.filter((item) => wanted.has(item.id));
+  const known = new Map(getState().data.leads.map((lead) => [duplicateKey(lead), lead]));
+  const saved = [];
+  const duplicates = [];
+
+  for (const result of candidates) {
+    const normalized = result.normalized_data;
+    const existing = known.get(duplicateKey(normalized));
+    if (existing) {
+      duplicates.push(existing);
+      await updateRecord("discoveryResults", result.id, {
+        decision: "duplicate",
+        duplicate_of_lead_id: existing.id,
+        decision_reason: "Matched an existing lead",
+        decided_at: new Date().toISOString(),
+      });
+      continue;
+    }
+
+    const lead = await createRecord("leads", normalized);
+    known.set(duplicateKey(lead), lead);
+    saved.push(lead);
+    await updateRecord("discoveryResults", result.id, {
+      decision: "saved",
+      lead_id: lead.id,
+      decided_at: new Date().toISOString(),
+    });
+    await logActivity("lead_saved", "Lead saved", `${lead.business_name} entered the New pipeline stage.`, { lead_id: lead.id });
+  }
+
+  const runIds = [...new Set(candidates.map((item) => item.run_id))];
+  for (const runId of runIds) {
+    const runResults = getState().data.discoveryResults.filter((item) => item.run_id === runId);
+    await updateRecord("discoveryRuns", runId, {
+      saved_count: runResults.filter((item) => item.decision === "saved").length,
+      duplicate_count: runResults.filter((item) => item.decision === "duplicate").length,
+      rejected_count: runResults.filter((item) => item.decision === "rejected").length,
+    });
+  }
+  return { saved, duplicates };
+}
+
+export async function rejectDiscoveryCandidates(resultIds, reason = "Rejected by operator") {
+  const wanted = new Set(resultIds);
+  const targets = getState().data.discoveryResults.filter((item) => wanted.has(item.id));
+  for (const result of targets) {
+    await updateRecord("discoveryResults", result.id, {
+      decision: "rejected",
+      decision_reason: reason,
+      decided_at: new Date().toISOString(),
+    });
+  }
+  return targets;
+}
+
 export async function resolveApproval(id, status) {
   const resolved = await updateRecord("approvals", id, {
     status,
     resolved_at: new Date().toISOString(),
   });
 
-  if (status === "approved") {
-    if (resolved.approval_type === "email_send" && resolved.entity_id) {
-      await updateRecord("drafts", resolved.entity_id, { status: "approved" });
+  if (status === "approved" && resolved.entity_id) {
+    if (["email_send", "follow_up_send"].includes(resolved.approval_type)) {
+      const draft = getState().data.drafts.find((item) => item.id === resolved.entity_id);
+      if (draft) await updateRecord("drafts", resolved.entity_id, { status: "approved" });
     }
   }
-
-  await createRecord("agentEvents", {
-    agent_type: "system",
-    event_type: `approval_${status}`,
-    title: `Approval ${status.replace("_", " ")}`,
-    detail: resolved.title,
-  });
-
+  await logActivity(`approval_${status}`, `Approval ${status}`, resolved.title, {}, "system");
   return resolved;
 }
 
@@ -184,17 +345,21 @@ export async function startManualRun(title = "Review priority pipeline") {
   const run = await createRecord("agentRuns", {
     agent_type: "orchestrator",
     title,
+    objective: title,
     status: "queued",
     current_step: "Queued in manual mode",
     progress: 0,
     estimated_cost: 0,
     context: { manual_mode: true },
+    completed_steps: [],
+    upcoming_steps: ["Inspect records", "Prepare recommendation", "Await approval"],
+    messages: [],
   });
   await createRecord("agentEvents", {
     run_id: run.id,
     agent_type: "orchestrator",
     event_type: "run_queued",
-    title: "Manual run queued",
+    title: "Manual workflow queued",
     detail: "No external model call was made.",
   });
   return run;
@@ -228,14 +393,15 @@ export async function uploadDemoBundle(demoId, file) {
   }
 
   const versionNumber = getState().data.demoVersions.filter((item) => item.demo_id === demoId).length + 1;
-  const path = `${userId()}/demos/${demoId}/v${versionNumber}-${slugify(file.name.replace(/\.[^.]+$/, ""))}.${file.name.split(".").pop()}`;
+  const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+  const path = `${userId()}/demos/${demoId}/v${versionNumber}-${slugify(file.name.replace(/\.[^.]+$/, ""))}.${extension}`;
   const { error: uploadError } = await supabase.storage
     .from(CONFIG.storageBucket)
     .upload(path, file, { upsert: false, cacheControl: "3600" });
   if (uploadError) throw uploadError;
 
-  const existing = getState().data.demoVersions.filter((item) => item.demo_id === demoId && item.is_current);
-  await Promise.all(existing.map((item) => updateRecord("demoVersions", item.id, { is_current: false })));
+  const current = getState().data.demoVersions.filter((item) => item.demo_id === demoId && item.is_current);
+  await Promise.all(current.map((item) => updateRecord("demoVersions", item.id, { is_current: false })));
   return createRecord("demoVersions", {
     demo_id: demoId,
     version_number: versionNumber,
@@ -251,73 +417,30 @@ export async function seedWorkspace() {
 
   const sample = createSampleData();
   const idMap = new Map();
-  const remap = (oldId) => {
-    if (!oldId) return null;
-    if (!idMap.has(oldId)) idMap.set(oldId, uid());
-    return idMap.get(oldId);
-  };
+  SEED_ORDER.forEach((collection) => {
+    sample[collection].forEach((item) => {
+      if (item.id) idMap.set(item.id, uid());
+    });
+  });
 
-  const templates = sample.templates.map((item) => ({
-    ...item,
-    id: remap(item.id),
-    user_id: userId(),
-  }));
-  const leads = sample.leads.map((item) => ({
-    ...item,
-    id: remap(item.id),
-    user_id: userId(),
-    is_sample: true,
-  }));
-
-  const { error: templateError } = await supabase.from("site_templates").insert(templates);
-  if (templateError) throw templateError;
-  const { error: leadError } = await supabase.from("leads").insert(leads);
-  if (leadError) throw leadError;
-
-  const related = [
-    ["lead_analyses", sample.analyses.map((item) => ({ ...item, id: uid(), user_id: userId(), lead_id: remap(item.lead_id) }))],
-    ["demos", sample.demos.map((item) => ({ ...item, id: remap(item.id), user_id: userId(), lead_id: remap(item.lead_id), template_id: remap(item.template_id) }))],
-    ["message_drafts", sample.drafts.map((item) => ({ ...item, id: remap(item.id), user_id: userId(), lead_id: remap(item.lead_id) }))],
-    ["communications", sample.communications.map((item) => ({ ...item, id: uid(), user_id: userId(), lead_id: remap(item.lead_id), draft_id: item.draft_id ? remap(item.draft_id) : null }))],
-    ["follow_ups", sample.followUps.map((item) => ({ ...item, id: uid(), user_id: userId(), lead_id: remap(item.lead_id), draft_id: item.draft_id ? remap(item.draft_id) : null }))],
-    ["agent_runs", sample.agentRuns.map((item) => ({ ...item, id: remap(item.id), user_id: userId() }))],
-    ["notifications", sample.notifications.map((item) => ({ ...item, id: uid(), user_id: userId() }))],
-    ["clients", sample.clients.map((item) => ({ ...item, id: uid(), user_id: userId(), lead_id: remap(item.lead_id) }))],
-    ["pricing_experiments", sample.pricingExperiments.map((item) => ({ ...item, id: uid(), user_id: userId() }))],
-    ["finance_transactions", sample.financeTransactions.map((item) => ({ ...item, id: uid(), user_id: userId() }))],
-    ["finance_goals", sample.financeGoals.map((item) => ({ ...item, id: uid(), user_id: userId() }))],
-  ];
-
-  for (const [table, rows] of related) {
+  for (const collection of SEED_ORDER) {
+    const table = COLLECTIONS[collection];
+    const rows = sample[collection].map((item) => {
+      const record = structuredClone(item);
+      if (collection === "agentEvents") {
+        delete record.id;
+      } else if (record.id) {
+        record.id = idMap.get(record.id);
+      }
+      Object.entries(record).forEach(([key, value]) => {
+        if ((key.endsWith("_id") || key === "entity_id") && typeof value === "string" && idMap.has(value)) {
+          record[key] = idMap.get(value);
+        }
+      });
+      record.user_id = userId();
+      return record;
+    });
     if (!rows.length) continue;
-    const { error } = await supabase.from(table).insert(rows);
-    if (error) throw error;
-  }
-
-  const approvals = sample.approvals.map((item) => ({
-    ...item,
-    id: uid(),
-    user_id: userId(),
-    entity_id: remap(item.entity_id),
-  }));
-  const events = sample.agentEvents.map((item) => ({
-    user_id: userId(),
-    run_id: item.run_id ? remap(item.run_id) : null,
-    agent_type: item.agent_type,
-    event_type: item.event_type,
-    title: item.title,
-    detail: item.detail,
-    created_at: item.created_at,
-  }));
-  const costs = sample.costEvents.map((item) => ({
-    ...item,
-    id: uid(),
-    user_id: userId(),
-    lead_id: item.lead_id ? remap(item.lead_id) : null,
-    run_id: item.run_id ? remap(item.run_id) : null,
-  }));
-
-  for (const [table, rows] of [["approvals", approvals], ["agent_events", events], ["cost_events", costs]]) {
     const { error } = await supabase.from(table).insert(rows);
     if (error) throw error;
   }
@@ -335,7 +458,8 @@ export function subscribeToWorkspaceChanges(onChange) {
     .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId()}` }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "approvals", filter: `user_id=eq.${userId()}` }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "agent_runs", filter: `user_id=eq.${userId()}` }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "agent_events", filter: `user_id=eq.${userId()}` }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "activity_log", filter: `user_id=eq.${userId()}` }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${userId()}` }, onChange)
     .subscribe();
 
   return () => {
