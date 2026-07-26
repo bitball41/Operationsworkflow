@@ -21,7 +21,7 @@ export function renderTemplates() {
       button("New template", { action: "new-template", iconName: "plus", variant: "primary" }),
     )}
     <section class="grid grid--3" style="margin-bottom:14px">
-      ${metricCard({ label: "Active templates", value: data.templates.filter((item) => item.is_active).length, iconName: "panels-top-left", foot: `${data.templates.length} total`, tone: "purple" })}
+      ${metricCard({ label: "Active templates", value: data.templates.filter((item) => item.is_active).length, iconName: "panels-top-left", foot: `${data.templates.length} total`, tone: "accent" })}
       ${metricCard({ label: "Times selected", value: totalUses, iconName: "mouse-pointer-click", foot: "Across demo briefs", tone: "blue" })}
       ${metricCard({ label: "Reuse rate", value: data.demos.length ? `${Math.round(data.demos.filter((demo) => demo.template_id).length / data.demos.length * 100)}%` : "0%", iconName: "refresh-cw", foot: "Demos using a base", tone: "green" })}
     </section>
@@ -29,7 +29,7 @@ export function renderTemplates() {
       <section class="template-grid">
         ${data.templates.map((template) => `
           <article class="card template-card">
-            <div class="template-preview" style="--template-color:${escapeHtml(template.accent_color || "#7c5cff")}"></div>
+            <div class="template-preview" style="--template-color:${escapeHtml(template.accent_color || "#ff7a18")}"></div>
             <div class="template-card__body">
               <div><div><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.description || "Reusable website template")}</p></div>${badge(template.is_active ? "active" : "paused", template.is_active ? "Active" : "Paused")}</div>
               <div class="template-meta"><span>${escapeHtml(template.category)}</span><span>${template.use_count || 0} uses</span></div>
@@ -54,7 +54,7 @@ export function renderDemos() {
       button("Create demo", { action: "new-demo", iconName: "plus", variant: "primary" }),
     )}
     <section class="grid grid--3">
-      ${metricCard({ label: "Active demos", value: data.demos.filter((demo) => !["production", "archived"].includes(demo.status)).length, iconName: "monitor-up", foot: `${ready} ready or deployed`, tone: "purple" })}
+      ${metricCard({ label: "Active demos", value: data.demos.filter((demo) => !["production", "archived"].includes(demo.status)).length, iconName: "monitor-up", foot: `${ready} ready or deployed`, tone: "accent" })}
       ${metricCard({ label: "In QA", value: inQa, iconName: "clipboard-check", foot: inQa ? "Needs review" : "Queue is clear", tone: inQa ? "yellow" : "green" })}
       ${metricCard({ label: "Stored versions", value: versions, iconName: "archive", foot: "Private Storage objects", tone: "blue" })}
     </section>
@@ -75,7 +75,7 @@ export function renderDemos() {
             </header>
             <div class="card__body">
               <div style="display:grid;grid-template-columns:90px 1fr;gap:14px">
-                <div class="template-preview" style="height:80px;border:1px solid var(--border);border-radius:8px;--template-color:${escapeHtml(template?.accent_color || "#7c5cff")}"></div>
+                <div class="template-preview" style="height:80px;border:1px solid var(--border);border-radius:8px;--template-color:${escapeHtml(template?.accent_color || "#ff7a18")}"></div>
                 <div>
                   <div style="display:flex;justify-content:space-between;color:var(--text-soft);font-size:10px"><span>QA progress</span><strong>${checks}/${total}</strong></div>
                   <div class="progress" style="margin-top:7px"><i style="width:${checks / total * 100}%"></i></div>
@@ -112,7 +112,7 @@ export function renderClients() {
       wonWithoutClient.length ? button("Convert won lead", { action: "new-client", iconName: "plus", variant: "primary" }) : "",
     )}
     <section class="grid grid--3">
-      ${metricCard({ label: "Active clients", value: data.clients.filter((item) => item.status !== "completed").length, iconName: "briefcase-business", foot: `${data.clients.filter((item) => item.status === "completed").length} completed`, tone: "purple" })}
+      ${metricCard({ label: "Active clients", value: data.clients.filter((item) => item.status !== "completed").length, iconName: "briefcase-business", foot: `${data.clients.filter((item) => item.status === "completed").length} completed`, tone: "accent" })}
       ${metricCard({ label: "Contracted", value: formatCurrency(contracted), iconName: "circle-dollar-sign", foot: "Total agreed project value", tone: "green" })}
       ${metricCard({ label: "Received", value: formatCurrency(received), iconName: "wallet-cards", foot: `${formatCurrency(contracted - received)} outstanding`, tone: "yellow" })}
     </section>

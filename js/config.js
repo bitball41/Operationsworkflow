@@ -8,12 +8,12 @@ export const CONFIG = Object.freeze({
 });
 
 export const INTEGRATIONS = Object.freeze([
-  { provider: "supabase", name: "Supabase", short: "SB", color: "#37d690", status: "connected", detail: "Database, auth & storage" },
-  { provider: "openscout", name: "OpenScout", short: "OS", color: "#4c8dff", status: "planned", detail: "Lead discovery adapter" },
-  { provider: "gmail", name: "Gmail", short: "GM", color: "#f06c75", status: "planned", detail: "Send & reply sync" },
-  { provider: "whop", name: "Whop", short: "WH", color: "#f1bf5a", status: "planned", detail: "Revenue & payment events" },
-  { provider: "cloudflare", name: "Cloudflare", short: "CF", color: "#f0a04c", status: "planned", detail: "Preview deployments" },
-  { provider: "models", name: "Model APIs", short: "AI", color: "#9c83ff", status: "planned", detail: "Three-agent execution" },
+  { provider: "supabase", name: "Supabase", short: "SB", color: "var(--green)", status: "connected", detail: "Database, auth & storage" },
+  { provider: "openscout", name: "OpenScout", short: "OS", color: "var(--muted)", status: "planned", detail: "Lead discovery adapter" },
+  { provider: "gmail", name: "Gmail", short: "GM", color: "var(--muted)", status: "planned", detail: "Send & reply sync" },
+  { provider: "whop", name: "Whop", short: "WH", color: "var(--muted)", status: "planned", detail: "Revenue & payment events" },
+  { provider: "cloudflare", name: "Cloudflare", short: "CF", color: "var(--accent)", status: "connected", detail: "Hosting & password gate" },
+  { provider: "models", name: "Model APIs", short: "AI", color: "var(--muted)", status: "planned", detail: "Three-agent execution" },
 ]);
 
 export const NAV_GROUPS = Object.freeze([
@@ -68,13 +68,13 @@ export const PAGE_META = Object.freeze(Object.fromEntries(
 ));
 
 export const PIPELINE_STAGES = Object.freeze([
-  { id: "discovered", label: "New", color: "#737d90" },
-  { id: "qualified", label: "Qualified", color: "#4c8dff" },
-  { id: "demo_building", label: "Demo", color: "#9c83ff", includes: ["analyzed", "demo_building", "qa"] },
-  { id: "ready_to_contact", label: "Ready", color: "#43c9d7" },
-  { id: "contacted", label: "Contacted", color: "#f1bf5a", includes: ["contacted", "follow_up"] },
-  { id: "replied", label: "Replied", color: "#f08a5d" },
-  { id: "won", label: "Won", color: "#37d690" },
+  { id: "discovered", label: "New", color: "var(--muted)" },
+  { id: "qualified", label: "Qualified", color: "var(--blue)" },
+  { id: "demo_building", label: "Demo", color: "var(--accent)", includes: ["analyzed", "demo_building", "qa"] },
+  { id: "ready_to_contact", label: "Ready", color: "var(--accent-2)" },
+  { id: "contacted", label: "Contacted", color: "var(--yellow)" },
+  { id: "replied", label: "Replied", color: "var(--blue)", includes: ["replied"] },
+  { id: "won", label: "Won", color: "var(--green)" },
 ]);
 
 export const STATUS_LABELS = Object.freeze({

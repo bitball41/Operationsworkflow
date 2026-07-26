@@ -30,9 +30,9 @@ export function createSampleData() {
   ];
 
   const templates = [
-    { id: ids.template1, name: "Local Service Pro", category: "Home services", description: "High-trust hero, service grid, reviews, and fast quote CTA.", accent_color: "#7c5cff", layout_key: "service-pro", is_active: true, use_count: 8, created_at: isoOffset({ days: -20 }) },
-    { id: ids.template2, name: "Clean Craft", category: "Personal services", description: "Editorial layout built for portfolios, pricing, and local proof.", accent_color: "#43c9d7", layout_key: "clean-craft", is_active: true, use_count: 4, created_at: isoOffset({ days: -17 }) },
-    { id: ids.template3, name: "Fieldwork", category: "Outdoor services", description: "Bold imagery, urgent booking flow, and coverage-area content.", accent_color: "#f1bf5a", layout_key: "fieldwork", is_active: true, use_count: 6, created_at: isoOffset({ days: -12 }) },
+    { id: ids.template1, name: "Local Service Pro", category: "Home services", description: "High-trust hero, service grid, reviews, and fast quote CTA.", accent_color: "#ff7a18", layout_key: "service-pro", is_active: true, use_count: 8, created_at: isoOffset({ days: -20 }) },
+    { id: ids.template2, name: "Clean Craft", category: "Personal services", description: "Editorial layout built for portfolios, pricing, and local proof.", accent_color: "#60a5fa", layout_key: "clean-craft", is_active: true, use_count: 4, created_at: isoOffset({ days: -17 }) },
+    { id: ids.template3, name: "Fieldwork", category: "Outdoor services", description: "Bold imagery, urgent booking flow, and coverage-area content.", accent_color: "#fbbf24", layout_key: "fieldwork", is_active: true, use_count: 6, created_at: isoOffset({ days: -12 }) },
   ];
 
   return {
@@ -102,9 +102,9 @@ export function createSampleData() {
       { id: "tx-3", scope: "personal", kind: "expense", category: "Software", description: "ChatGPT Plus", amount: 20, occurred_on: isoOffset({ days: -8 }).slice(0, 10), source: "manual" },
     ],
     financeGoals: [
-      { id: "goal-1", name: "MacBook Air", target_amount: 1200, current_amount: 470, target_date: null, priority: 1, color: "#7c5cff", is_complete: false },
-      { id: "goal-2", name: "Business tools buffer", target_amount: 200, current_amount: 80, target_date: null, priority: 2, color: "#43c9d7", is_complete: false },
-      { id: "goal-3", name: "Dream PC", target_amount: 5500, current_amount: 0, target_date: null, priority: 3, color: "#f1bf5a", is_complete: false },
+      { id: "goal-1", name: "MacBook Air", target_amount: 1200, current_amount: 470, target_date: null, priority: 1, color: "var(--accent)", is_complete: false },
+      { id: "goal-2", name: "Business tools buffer", target_amount: 200, current_amount: 80, target_date: null, priority: 2, color: "var(--blue)", is_complete: false },
+      { id: "goal-3", name: "Dream PC", target_amount: 5500, current_amount: 0, target_date: null, priority: 3, color: "var(--yellow)", is_complete: false },
     ],
     integrations: [],
   };

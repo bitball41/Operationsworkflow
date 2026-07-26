@@ -7,7 +7,14 @@ import { hydrateIcons } from "./core/icons.js";
 import { initRouter, navigate } from "./core/router.js";
 import { getState, resetData, setState, subscribe } from "./core/state.js";
 import { debounce } from "./core/utils.js";
-import { getSession, onAuthChange, signIn, signUp } from "./services/auth.js";
+import {
+  applySupabaseSession,
+  getGateStatus,
+  getSupabaseSession,
+  onAuthChange,
+  requestSupabaseSession,
+  unlock,
+} from "./services/auth.js";
 import { loadPreviewWorkspace, loadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
 import { renderInto, toast } from "./components/ui.js";
 import { renderAnalytics, renderCommandCenter, renderFinance } from "./pages/dashboard.js";
@@ -35,7 +42,8 @@ const pageRenderers = {
   settings: renderSettings,
 };
 
-let authMode = "signin";
+const LOCAL_DATA_NOTICE = "Supabase owner credentials are not set on the Worker, so this session uses local sample data.";
+
 let realtimeCleanup = () => {};
 let rendering = false;
 
@@ -69,14 +77,17 @@ async function enterAuthenticated(session) {
     realtimeCleanup = subscribeToWorkspaceChanges(reload);
   } catch (error) {
     console.error(error);
-    setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
-    setShellVisibility(false);
-    showAuthMessage("The workspace could not load. Please try signing in again.");
+    lock();
+    showAuthMessage("The workspace could not load. Sign in again to retry.");
   }
 }
 
-function enterPreview() {
-  localStorage.setItem("operations-preview", "true");
+/**
+ * Sample-data workspace. Used both for the explicit preview button and as the
+ * fallback when the password is correct but Supabase is not wired up yet.
+ */
+function enterPreview({ persist = true, notice = "" } = {}) {
+  if (persist) localStorage.setItem("operations-preview", "true");
   resetData();
   loadPreviewWorkspace();
   setState({
@@ -86,49 +97,41 @@ function enterPreview() {
   }, { silent: true });
   setShellVisibility(true);
   renderApp();
+  if (notice) toast("Local sample data", notice, "warning");
+}
+
+function lock(status = null) {
+  realtimeCleanup();
+  realtimeCleanup = () => {};
+  setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
+  setShellVisibility(false);
+  if (status && !status.passwordConfigured) {
+    showAuthMessage("No password is set on this Worker yet. Run: npx wrangler secret put DASHBOARD_PASSWORD", "warning");
+  }
 }
 
 function showAuthMessage(message, tone = "error") {
   const element = document.getElementById("auth-message");
   element.textContent = message;
-  element.style.color = tone === "success" ? "var(--green)" : "var(--red)";
-}
-
-function updateAuthMode() {
-  const signUpMode = authMode === "signup";
-  document.getElementById("auth-title").textContent = signUpMode ? "Create owner account" : "Welcome back";
-  document.getElementById("auth-subtitle").textContent = signUpMode
-    ? "Your data is private to this Supabase user."
-    : "Sign in to your private operations workspace.";
-  document.getElementById("auth-submit").textContent = signUpMode ? "Create account" : "Sign in";
-  document.getElementById("auth-switch").textContent = signUpMode ? "Back to sign in" : "Create owner account";
-  document.getElementById("auth-password").autocomplete = signUpMode ? "new-password" : "current-password";
-  showAuthMessage("");
+  element.style.color = tone === "success" ? "var(--green)" : tone === "warning" ? "var(--yellow)" : "var(--red)";
 }
 
 async function handleAuthSubmit(event) {
   event.preventDefault();
   const button = document.getElementById("auth-submit");
-  const email = document.getElementById("auth-email").value.trim();
-  const password = document.getElementById("auth-password").value;
+  const input = document.getElementById("auth-password");
   button.disabled = true;
   showAuthMessage("");
   try {
-    if (authMode === "signup") {
-      const data = await signUp(email, password);
-      if (data.session) {
-        await enterAuthenticated(data.session);
-      } else {
-        showAuthMessage("Account created. Check your email to confirm it, then sign in.", "success");
-        authMode = "signin";
-        updateAuthMode();
-      }
+    const result = await unlock(input.value);
+    input.value = "";
+    if (result.supabase) {
+      await enterAuthenticated(await applySupabaseSession(result.supabase));
     } else {
-      const data = await signIn(email, password);
-      await enterAuthenticated(data.session);
+      enterPreview({ persist: false, notice: result.notice || LOCAL_DATA_NOTICE });
     }
   } catch (error) {
-    showAuthMessage(error.message || "Authentication failed.");
+    showAuthMessage(error.message || "Sign-in failed.");
   } finally {
     button.disabled = false;
   }
@@ -147,11 +150,7 @@ function bindStaticEvents() {
   document.addEventListener("submit", handleFormSubmit);
 
   document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
-  document.getElementById("auth-switch").addEventListener("click", () => {
-    authMode = authMode === "signin" ? "signup" : "signin";
-    updateAuthMode();
-  });
-  document.getElementById("preview-button").addEventListener("click", enterPreview);
+  document.getElementById("preview-button").addEventListener("click", () => enterPreview());
 
   document.getElementById("global-search").addEventListener("click", openCommandPalette);
   document.getElementById("add-lead-button").addEventListener("click", () => openLeadForm());
@@ -186,6 +185,50 @@ function bindStaticEvents() {
   });
 }
 
+/**
+ * Reload order: a Supabase session already in this browser, then the Worker gate
+ * cookie, then the password screen.
+ */
+async function restoreSession() {
+  try {
+    const session = await getSupabaseSession();
+    if (session) {
+      await enterAuthenticated(session);
+      return;
+    }
+  } catch (error) {
+    console.error(error);
+  }
+
+  let status;
+  try {
+    status = await getGateStatus();
+  } catch (error) {
+    console.error(error);
+    lock();
+    showAuthMessage(error.message, "warning");
+    return;
+  }
+
+  if (!status.authenticated) {
+    lock(status);
+    return;
+  }
+
+  if (!status.supabaseConfigured) {
+    enterPreview({ persist: false, notice: LOCAL_DATA_NOTICE });
+    return;
+  }
+
+  try {
+    const { supabase: tokens } = await requestSupabaseSession();
+    await enterAuthenticated(await applySupabaseSession(tokens));
+  } catch (error) {
+    console.error(error);
+    enterPreview({ persist: false, notice: error.message || "Could not restore the Supabase session." });
+  }
+}
+
 async function init() {
   hydrateIcons();
   bindStaticEvents();
@@ -197,14 +240,11 @@ async function init() {
     window.scrollTo({ top: 0, behavior: "auto" });
   });
 
-  onAuthChange(async (event, session) => {
+  onAuthChange((event) => {
     if (event === "SIGNED_OUT") {
-      realtimeCleanup();
-      realtimeCleanup = () => {};
       localStorage.removeItem("operations-preview");
       resetData();
-      setState({ mode: "unauthenticated", session: null, user: null }, { silent: true });
-      setShellVisibility(false);
+      lock();
     }
   });
 
@@ -213,20 +253,7 @@ async function init() {
     return;
   }
 
-  try {
-    const session = await getSession();
-    if (session) {
-      await enterAuthenticated(session);
-    } else {
-      setState({ mode: "unauthenticated" }, { silent: true });
-      setShellVisibility(false);
-    }
-  } catch (error) {
-    console.error(error);
-    setState({ mode: "unauthenticated" }, { silent: true });
-    setShellVisibility(false);
-    showAuthMessage("Could not reach Supabase. You can still open the preview workspace.");
-  }
+  await restoreSession();
 }
 
 init().catch((error) => {

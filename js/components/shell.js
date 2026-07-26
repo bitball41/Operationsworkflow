@@ -24,17 +24,6 @@ export function renderShellChrome() {
     </section>
   `).join("");
 
-  const dockItems = [
-    ["command-center", "Home", "layout-dashboard"],
-    ["pipeline", "Pipeline", "columns-3"],
-    ["prospects", "Leads", "building-2"],
-    ["approvals", "Approvals", "shield-check"],
-  ];
-  document.getElementById("mobile-dock").innerHTML = `
-    ${dockItems.map(([id, label, iconName]) => `<a class="dock-item ${route === id ? "is-active" : ""}" href="#/${id}">${icon(iconName)}<span>${label}</span></a>`).join("")}
-    <button class="dock-item" type="button" data-action="open-mobile-nav">${icon("menu")}<span>More</span></button>
-  `;
-
   const meta = PAGE_META[route] || PAGE_META["command-center"];
   document.getElementById("page-title").textContent = meta.title;
   document.getElementById("page-kicker").textContent = meta.kicker;
@@ -44,6 +33,11 @@ export function renderShellChrome() {
   document.getElementById("account-name").textContent = name;
   document.getElementById("account-email").textContent = mode === "preview" ? "Preview workspace" : (user?.email || "Owner workspace");
   document.getElementById("account-avatar").textContent = initials(name);
+
+  const signOutButton = document.getElementById("sign-out-button");
+  const signOutLabel = mode === "preview" ? "Exit preview" : "Sign out";
+  signOutButton.setAttribute("aria-label", signOutLabel);
+  signOutButton.title = signOutLabel;
 
   const unread = data.notifications.filter((item) => !item.is_read).length;
   const badge = document.getElementById("notification-badge");

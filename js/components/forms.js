@@ -124,7 +124,7 @@ export function openTemplateForm(template = null) {
         <label class="field"><span>Category *</span><input name="category" required value="${escapeHtml(template?.category || "")}" placeholder="Home services"></label>
         <label class="field"><span>Description</span><textarea name="description" placeholder="What makes this template useful?">${escapeHtml(template?.description || "")}</textarea></label>
         <div class="field-row">
-          <label class="field"><span>Accent color</span><input name="accent_color" type="color" value="${escapeHtml(template?.accent_color || "#7c5cff")}"></label>
+          <label class="field"><span>Accent color</span><input name="accent_color" type="color" value="${escapeHtml(template?.accent_color || "#ff7a18")}"></label>
           <label class="field"><span>Layout key</span><input name="layout_key" value="${escapeHtml(template?.layout_key || "standard")}"></label>
         </div>
         <label class="field"><span>Preview URL</span><input name="preview_url" type="url" value="${escapeHtml(template?.preview_url || "")}" placeholder="https://…"></label>
@@ -314,7 +314,7 @@ export function openGoalForm() {
         </div>
         <div class="field-row">
           <label class="field"><span>Target date</span><input name="target_date" type="date"></label>
-          <label class="field"><span>Color</span><input name="color" type="color" value="#7c5cff"></label>
+          <label class="field"><span>Color</span><input name="color" type="color" value="#ff7a18"></label>
         </div>
       </form>
     `,

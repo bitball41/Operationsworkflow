@@ -1,0 +1,13 @@
+# Local development values for `npx wrangler dev`.
+# Copy to `.dev.vars` (git-ignored) and fill in. In production these are secrets:
+#   npx wrangler secret put DASHBOARD_PASSWORD
+#   npx wrangler secret put SUPABASE_OWNER_EMAIL
+#   npx wrangler secret put SUPABASE_OWNER_PASSWORD
+
+# The single password that unlocks the dashboard. Required.
+DASHBOARD_PASSWORD="choose-a-long-password"
+
+# Supabase account that owns the workspace rows. Optional — without these the
+# dashboard opens on local sample data instead of live Supabase data.
+SUPABASE_OWNER_EMAIL=""
+SUPABASE_OWNER_PASSWORD=""

@@ -6,7 +6,10 @@
 **/node_modules/**
 supabase
 supabase/**
+worker
+worker/**
 README.md
 wrangler.jsonc
 .gitignore
 .assetsignore
+.dev.vars.example

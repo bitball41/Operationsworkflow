@@ -72,7 +72,7 @@ export function renderCommandCenter() {
       mode === "preview" ? badge("pending", "Preview data") : badge("connected", "Supabase live"),
     )}
     <section class="grid grid--4 metric-grid-mobile">
-      ${metricCard({ label: "Active prospects", value: activeLeads.length, iconName: "users", foot: `${data.leads.filter((lead) => lead.status === "replied").length} replied`, tone: "purple" })}
+      ${metricCard({ label: "Active prospects", value: activeLeads.length, iconName: "users", foot: `${data.leads.filter((lead) => lead.status === "replied").length} replied`, tone: "accent" })}
       ${metricCard({ label: "Needs approval", value: pendingApprovals.length, iconName: "shield-check", foot: pendingApprovals.length ? "Blocking external actions" : "Queue is clear", tone: pendingApprovals.length ? "yellow" : "green" })}
       ${metricCard({ label: "Pipeline value", value: formatCurrency(pipelineValue), iconName: "circle-dollar-sign", foot: "At current offer prices", tone: "green" })}
       ${metricCard({ label: "Cost today", value: formatCurrency(spentToday, 2), iconName: "activity", foot: `of ${formatCurrency(dailyLimit, 2)} guardrail`, tone: spentToday > dailyLimit * 0.8 ? "red" : "blue" })}
@@ -170,7 +170,7 @@ export function renderAnalytics() {
     <section class="grid grid--4 metric-grid-mobile">
       ${metricCard({ label: "Reply rate", value: `${responseRate}%`, iconName: "inbox", foot: `${replies} replies from ${sent || 0} tracked sends`, tone: "blue" })}
       ${metricCard({ label: "Close rate", value: `${closeRate}%`, iconName: "badge-dollar-sign", foot: `${wins} client${wins === 1 ? "" : "s"} won`, tone: "green" })}
-      ${metricCard({ label: "Cost / prospect", value: formatCurrency(data.leads.length ? totalCost / data.leads.length : 0, 2), iconName: "activity", foot: `${formatCurrency(totalCost, 2)} total recorded`, tone: "purple" })}
+      ${metricCard({ label: "Cost / prospect", value: formatCurrency(data.leads.length ? totalCost / data.leads.length : 0, 2), iconName: "activity", foot: `${formatCurrency(totalCost, 2)} total recorded`, tone: "accent" })}
       ${metricCard({ label: "Revenue", value: formatCurrency(sum(data.clients, (client) => client.agreed_price)), iconName: "circle-dollar-sign", foot: "Closed contract value", tone: "yellow" })}
     </section>
 
@@ -238,7 +238,7 @@ export function renderFinance() {
     <section class="grid grid--3">
       ${metricCard({ label: scope === "business" ? "Revenue" : "Money in", value: formatCurrency(income, 2), iconName: "trending-up", foot: "Recorded transactions", tone: "green" })}
       ${metricCard({ label: "Expenses", value: formatCurrency(expenses, 2), iconName: "wallet-cards", foot: "Recorded transactions", tone: "red" })}
-      ${metricCard({ label: "Net cash flow", value: formatCurrency(income - expenses, 2), iconName: "circle-dollar-sign", foot: scope === "business" ? "Before tax treatment" : "Available after tracked spending", tone: income - expenses >= 0 ? "purple" : "red" })}
+      ${metricCard({ label: "Net cash flow", value: formatCurrency(income - expenses, 2), iconName: "circle-dollar-sign", foot: scope === "business" ? "Before tax treatment" : "Available after tracked spending", tone: income - expenses >= 0 ? "green" : "red" })}
     </section>
 
     <section class="grid ${scope === "personal" ? "grid--wide" : "grid--2"}" style="margin-top:14px">
