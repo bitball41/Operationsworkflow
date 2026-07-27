@@ -8,6 +8,7 @@
 #   wrangler secret put MICROSOFT_CLIENT_ID
 #   wrangler secret put MICROSOFT_CLIENT_SECRET
 #   wrangler secret put OUTLOOK_TOKEN_ENCRYPTION_KEY
+#   wrangler secret put MCP_API_TOKEN
 #
 # Never commit real values. Every key below is read only inside the Worker.
 
@@ -45,3 +46,9 @@ MICROSOFT_TENANT=common
 # Any high-entropy value of at least 32 characters. The Worker derives an
 # AES-GCM key from it before storing OAuth tokens in OUTLOOK_TOKENS KV.
 OUTLOOK_TOKEN_ENCRYPTION_KEY=
+
+# MCP — bearer token for https://operations.conno.fun/mcp. Cloudflare Access
+# should protect the host too; this token keeps the endpoint closed if an Access
+# policy is ever detached. Generate a random value and never put it in browser
+# code or source.
+MCP_API_TOKEN=

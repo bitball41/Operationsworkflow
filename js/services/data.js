@@ -6,6 +6,7 @@ import { duplicateKey, toDiscoveryResult } from "./openscout/adapter.js";
 import { getSession, getSupabase, hasStoredSession, isConfigured } from "./supabase.js";
 
 const LOCAL_KEY = "operations.data.v2";
+const LOCAL_CLOUD_SYNC_KEY = "operations.data.v2.cloud-signature";
 
 /* Records written by the old starter workspace all carry this id prefix. The
    sample workspace no longer exists, so any of them still sitting in a browser
@@ -29,6 +30,7 @@ export const COLLECTIONS = Object.freeze({
   emails: "emails",
   followUps: "follow_ups",
   approvals: "approvals",
+  assistantConversations: "assistant_conversations",
   agentRuns: "agent_runs",
   agentEvents: "agent_events",
   notifications: "notifications",
@@ -63,6 +65,7 @@ const ORDER_BY = Object.freeze({
   emails: ["created_at", false],
   followUps: ["due_at", true],
   approvals: ["created_at", false],
+  assistantConversations: ["last_message_at", false],
   agentRuns: ["created_at", false],
   agentEvents: ["created_at", false],
   notifications: ["created_at", false],
@@ -140,6 +143,38 @@ export function hasLocalWorkspace() {
   return Boolean(readLocal());
 }
 
+function localWorkspaceSignature(local = readLocal()) {
+  if (!local) return "";
+  const input = JSON.stringify(local);
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${input.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function localWorkspaceNeedsCloudMerge() {
+  const signature = localWorkspaceSignature();
+  if (!signature) return false;
+  try {
+    return globalThis.localStorage?.getItem(LOCAL_CLOUD_SYNC_KEY) !== signature;
+  } catch {
+    return true;
+  }
+}
+
+function markLocalWorkspaceMerged() {
+  const signature = localWorkspaceSignature();
+  if (!signature) return;
+  try {
+    globalThis.localStorage?.setItem(LOCAL_CLOUD_SYNC_KEY, signature);
+  } catch {
+    /* The cloud copy succeeded. A full localStorage quota must not turn that
+       success into a failed migration; the next boot may simply retry it. */
+  }
+}
+
 export function clearLocalWorkspace() {
   globalThis.localStorage?.removeItem(LOCAL_KEY);
 }
@@ -168,6 +203,29 @@ export async function initWorkspace() {
       /* loadCloudWorkspace sets `connection` itself: it can succeed with some
          tables unreadable, and that partial state must survive to the UI. */
       await loadCloudWorkspace(session.user);
+      if (localWorkspaceNeedsCloudMerge()) {
+        const cloudHasRecords = COLLECTION_KEYS.some((key) => (
+          !DERIVED_COLLECTIONS.has(key) && (getState().data[key] || []).length > 0
+        ));
+        if (cloudHasRecords) {
+          setState({
+            connection: {
+              ok: false,
+              message: "Supabase is connected. This browser also has an older local workspace; it was not auto-merged because the cloud already contains records.",
+            },
+          }, { silent: true });
+        } else {
+          const result = await pushLocalWorkspaceToCloud();
+          if (result.skipped.length) {
+            setState({
+              connection: {
+                ok: false,
+                message: `Supabase is connected, but some local records could not be merged: ${result.skipped.slice(0, 3).join(", ")}.`,
+              },
+            }, { silent: true });
+          }
+        }
+      }
       return "cloud";
     } catch (error) {
       console.error(error);
@@ -285,6 +343,9 @@ export async function pushLocalWorkspaceToCloud() {
 
   const local = readLocal();
   if (!local) return { uploaded: 0, collections: [], skipped: [] };
+  if (!localWorkspaceNeedsCloudMerge()) {
+    return { uploaded: 0, collections: [], skipped: [], alreadyMerged: true };
+  }
 
   const client = await getSupabase();
   const idMap = new Map();
@@ -296,7 +357,8 @@ export async function pushLocalWorkspaceToCloud() {
      assigned to its parent, so order is the whole correctness argument here. */
   const ORDER = [
     "leads", "templates", "clients", "projects", "demos", "discoveryRuns", "discoveryResults",
-    "demoVersions", "drafts", "emailThreads", "emails", "followUps", "approvals", "agentRuns",
+    "demoVersions", "drafts", "emailThreads", "emails", "followUps", "approvals",
+    "assistantConversations", "agentRuns",
     "agentEvents", "notifications", "clientSites", "projectTasks", "maintenanceSubscriptions",
     "maintenanceRequests", "payments", "expenses", "pricingExperiments", "activity", "tasks",
     "calendarEvents", "notes", "deployments",
@@ -353,6 +415,7 @@ export async function pushLocalWorkspaceToCloud() {
   }
 
   await loadCloudWorkspace();
+  if (!skipped.length) markLocalWorkspaceMerged();
   return { uploaded, collections: uploadedPer, skipped };
 }
 
@@ -636,17 +699,27 @@ let channel = null;
 export function subscribeToWorkspaceChanges(onChange) {
   if (!isCloud()) return () => {};
   const id = userId();
+  let cancelled = false;
   getSupabase().then((client) => {
-    channel = client
-      .channel(`operations-${id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${id}` }, onChange)
-      .on("postgres_changes", { event: "*", schema: "public", table: "email_threads", filter: `user_id=eq.${id}` }, onChange)
-      .on("postgres_changes", { event: "*", schema: "public", table: "activity_log", filter: `user_id=eq.${id}` }, onChange)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${id}` }, onChange)
-      .subscribe();
+    if (cancelled) return;
+    let next = client.channel(`operations-${id}`);
+    COLLECTION_KEYS.forEach((key) => {
+      next = next.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: COLLECTIONS[key],
+          filter: `user_id=eq.${id}`,
+        },
+        onChange,
+      );
+    });
+    channel = next.subscribe();
   }).catch((error) => console.warn("Realtime unavailable", error));
 
   return () => {
+    cancelled = true;
     if (!channel) return;
     getSupabase().then((client) => client.removeChannel(channel)).catch(() => {});
     channel = null;

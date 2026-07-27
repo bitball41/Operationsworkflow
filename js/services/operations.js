@@ -19,7 +19,7 @@ import {
 import { TEMPLATE_CATALOG } from "../data/site-templates.js";
 import { draftFollowUp, draftOutreach, isEmailAddress, replyToMessage, sendEmail } from "./email/outreach.js";
 import { NotConnectedError } from "./integrations.js";
-import { buildBundleForLead, catalogForRecord, chooseTemplate } from "./sites/bundle.js";
+import { buildBundleForTemplateRecord, catalogForRecord, chooseTemplate } from "./sites/bundle.js";
 import { publishBundle } from "./sites/publish.js";
 
 const OPEN_STATUSES = ["new", "qualified", "demo_ready"];
@@ -83,12 +83,18 @@ export function searchLeads({ query = "", status = "", limit = 25 } = {}) {
 /** Creates the catalogue templates the first time they are needed. */
 export async function ensureTemplateRecords() {
   const existing = data().templates;
-  if (existing.length) return existing;
+  const installed = new Set(
+    existing
+      .filter((template) => template.source_kind !== "custom")
+      .map((template) => template.layout_key),
+  );
   for (const entry of TEMPLATE_CATALOG) {
+    if (installed.has(entry.key)) continue;
     await createRecord("templates", {
       name: entry.name,
       category: entry.category,
       description: entry.description,
+      source_kind: "catalog",
       layout_key: entry.key,
       accent_color: entry.theme.accent,
       status: "active",
@@ -128,7 +134,7 @@ export async function createOrUpdateDemo(leadOrId, { templateRecord, overrides =
   const existing = demoForLead(lead.id);
   const previousSite = existing?.content?.site || {};
   const site = { ...previousSite, ...overrides };
-  const built = buildBundleForLead(lead, choice.entry, site);
+  const built = buildBundleForTemplateRecord(lead, choice.record, site);
   const files = keepEdits && existing?.content?.files ? existing.content.files : built.files;
 
   const payload = {
@@ -150,6 +156,7 @@ export async function createOrUpdateDemo(leadOrId, { templateRecord, overrides =
       site: built.site,
       files,
       layout_key: choice.entry.key,
+      assets: choice.record.asset_manifest || [],
       publish: existing?.content?.publish || null,
       custom_edited: keepEdits ? Boolean(existing?.content?.custom_edited) : false,
     },

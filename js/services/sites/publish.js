@@ -1,23 +1,23 @@
 /**
  * Publish boundary for demo sites.
  *
- * Hosting is not connected yet, so publishing marks the demo as ready and
- * records exactly what happened. The bundle itself is always openable in a real
- * browser tab from the stored files, so a preview link is never a lie about
- * rendering — only about being hosted on a public domain.
+ * Connected workspaces upload immutable versions to the Worker's R2 binding.
+ * Unconnected workspaces still record exactly what happened and keep the
+ * bundle openable in a real browser tab from the stored files.
  */
 import { slugify } from "../../core/utils.js";
-import { isConnected } from "../integrations.js";
+import { getState } from "../../core/state.js";
+import { publishDemoBundle } from "../api.js";
 import { composeDocument } from "./bundle.js";
+import { downloadTemplateAssets } from "./templates.js";
 
 export function previewSlug(demo, lead) {
   return demo?.slug || slugify(lead?.business_name || demo?.name || "demo");
 }
 
 /**
- * Builds the preview link for a demo. With no preview domain configured it
- * falls back to the origin the app is actually served from, so the URL is never
- * a domain nobody owns.
+ * Builds the preview link for a demo. Without a configured domain it falls back
+ * to the app origin's /p route, which the same Worker can serve.
  */
 export function previewUrl(slug, previewDomain) {
   const configured = String(previewDomain || "").replace(/^https?:\/\//, "").replace(/\/+$/, "").trim();
@@ -27,7 +27,7 @@ export function previewUrl(slug, previewDomain) {
 }
 
 export function hostingConnected() {
-  return isConnected("cloudflare");
+  return getState().services?.hosting?.configured === true;
 }
 
 /**
@@ -36,7 +36,10 @@ export function hostingConnected() {
  */
 export async function publishBundle({ demo, lead, files, previewDomain }) {
   const slug = previewSlug(demo, lead);
-  const url = previewUrl(slug, previewDomain);
+  const publicNumber = demo?.public_number;
+  const url = publicNumber
+    ? previewUrl(publicNumber, previewDomain || getState().services?.hosting?.domain)
+    : previewUrl(slug, previewDomain);
 
   if (!hostingConnected()) {
     return {
@@ -51,15 +54,27 @@ export async function publishBundle({ demo, lead, files, previewDomain }) {
     };
   }
 
-  /* Reserved for the Cloudflare deployment call. */
+  if (!publicNumber) {
+    throw new Error("This demo has no public number. Apply the latest Supabase migration and reload the workspace.");
+  }
+
+  const assets = await downloadTemplateAssets(demo?.content?.assets || []);
+  const published = await publishDemoBundle({
+    demoId: demo.id,
+    publicNumber,
+    files,
+    assets,
+  });
   return {
-    slug,
-    url,
-    hosted: false,
-    state: "provider_not_implemented",
-    at: new Date().toISOString(),
-    provider: "cloudflare",
-    note: "Cloudflare is marked connected but the deploy call is not implemented yet.",
+    slug: String(publicNumber),
+    url: published.url,
+    hosted: true,
+    state: "published",
+    at: published.published_at || new Date().toISOString(),
+    provider: published.provider || "cloudflare-r2",
+    version: published.version,
+    bytes: published.bytes,
+    note: "Published to Cloudflare R2.",
   };
 }
 

@@ -13,6 +13,7 @@ const EMPTY_DATA = {
   emails: [],
   followUps: [],
   approvals: [],
+  assistantConversations: [],
   agentRuns: [],
   agentEvents: [],
   notifications: [],
@@ -79,8 +80,18 @@ const state = {
      /api/status; every provider stays false when the Worker is not there. */
   services: {
     reachable: false,
-    providers: { outlook: false, anthropic: false, openai: false, whop: false, google_maps: false },
+    providers: {
+      outlook: false,
+      anthropic: false,
+      openai: false,
+      whop: false,
+      google_maps: false,
+      cloudflare: false,
+      research: false,
+      mcp: false,
+    },
     outlook: { configured: false, connected: false, signed_in: false, missing: [], account: "", can_read_mail: false },
+    hosting: { configured: false, domain: "demos.conno.fun", missing: ["DEMO_SITES"] },
   },
   user: null,
   route: "home",
@@ -91,6 +102,7 @@ const state = {
   automation: { ...INITIAL_AUTOMATION },
   automationSettings: null,
   assistant: {
+    activeConversationId: null,
     messages: [],
     pending: false,
     contextOpen: false,

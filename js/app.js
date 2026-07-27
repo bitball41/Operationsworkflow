@@ -14,6 +14,8 @@ import { debounce } from "./core/utils.js";
 import { setParam } from "./core/router.js";
 import { fetchServiceStatus } from "./services/api.js";
 import { initWorkspace, reloadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
+import { hydrateAssistantHistory } from "./services/ai/history.js";
+import { startWhopAutoSync } from "./services/payments/whop.js";
 import { renderAssistant, mountAssistant } from "./pages/assistant.js";
 import { renderAutomation } from "./pages/automation.js";
 import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
@@ -132,6 +134,9 @@ async function init() {
   subscribe(render);
 
   initRouter(() => {
+    closePalette();
+    closeModal();
+    closeDrawer();
     setNav(false);
     render();
     document.getElementById("page")?.focus({ preventScroll: true });
@@ -140,15 +145,21 @@ async function init() {
 
   /* Which API keys the Worker holds. Not awaited with the workspace: the
      dashboard must open at the same speed whether or not the Worker answers. */
-  fetchServiceStatus().then((services) => setState({ services }));
+  const servicesReady = fetchServiceStatus().then((services) => {
+    setState({ services });
+    return services;
+  });
 
   try {
     const storage = await initWorkspace();
+    hydrateAssistantHistory();
     render();
     if (storage === "cloud") {
       const reload = debounce(() => reloadWorkspace().catch(console.error), 600);
       subscribeToWorkspaceChanges(reload);
     }
+    await servicesReady;
+    startWhopAutoSync();
   } catch (error) {
     console.error(error);
     setState({ connection: { ok: false, message: "Could not load the workspace. Working from local data." } });

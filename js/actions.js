@@ -7,6 +7,7 @@ const WORKER_SECRET_NAMES = Object.freeze({
   openai: "OPENAI_API_KEY",
   whop: "WHOP_API_KEY",
   google_maps: "GOOGLE_MAPS_API_KEY",
+  mcp: "MCP_API_TOKEN",
 });
 
 import { closePalette, isPaletteOpen } from "./components/command-palette.js";
@@ -31,6 +32,7 @@ import {
   openTaskForm,
   openTemplateChooser,
   openTemplatePreview,
+  openTemplateUploadForm,
 } from "./components/forms.js";
 import { setNav } from "./components/shell.js";
 import { closeDrawer, closeModal, confirmAction, formValues, openDrawer, toast } from "./components/ui.js";
@@ -39,6 +41,12 @@ import { getState, setAssistant, setDiscovery, setState, setStudio } from "./cor
 import { isoOffset, safeJson, slugify, uid } from "./core/utils.js";
 import { runAgentLoop } from "./services/ai/agent.js";
 import { matchCommand, runCommand } from "./services/ai/commands.js";
+import {
+  deleteAssistantConversation,
+  newAssistantConversation,
+  openAssistantConversation,
+  persistAssistantHistory,
+} from "./services/ai/history.js";
 import { activeModel, providerReady } from "./services/ai/provider.js";
 import { formatPerMTok } from "./data/models.js";
 import { connectOutlook, disconnectOutlook, fetchServiceStatus } from "./services/api.js";
@@ -80,8 +88,13 @@ import {
   sendDraft,
   updatePipeline,
 } from "./services/operations.js";
-import { buildBundleForLead, catalogForRecord, composeDocument } from "./services/sites/bundle.js";
+import { buildBundleForLead, buildBundleForTemplateRecord, catalogForRecord, composeDocument } from "./services/sites/bundle.js";
 import { downloadBundle, openBundleInTab } from "./services/sites/publish.js";
+import {
+  createCustomTemplate,
+  deleteCustomTemplate,
+  filesForTemplatePreview,
+} from "./services/sites/templates.js";
 import { signIn, signOut, signUp } from "./services/supabase.js";
 import { currentFiles, selectedDemo, siteDetailsForm } from "./pages/studio.js";
 
@@ -285,7 +298,21 @@ export async function onClick(event) {
       setAssistant({ contextOpen: !getState().assistant.contextOpen });
       break;
     case "assistant-clear":
-      setAssistant({ messages: [] });
+    case "assistant-new":
+      newAssistantConversation();
+      break;
+    case "assistant-delete":
+      if (target.dataset.confirmed !== "true") {
+        confirmAction({
+          title: "Delete this conversation?",
+          message: "This removes the saved transcript from this workspace.",
+          confirmLabel: "Delete",
+          action: "assistant-delete",
+        });
+        break;
+      }
+      closeModal();
+      await run(() => deleteAssistantConversation(), "Conversation deleted");
       break;
 
     /* --- discovery --- */
@@ -486,14 +513,16 @@ export async function onClick(event) {
       break;
 
     /* --- websites --- */
+    case "template-upload":
+      openTemplateUploadForm();
+      break;
     case "templates-install":
       await run(ensureTemplateRecords, "Templates installed");
       break;
     case "template-preview": {
       const template = findRecord("templates", id);
       if (!template) break;
-      const entry = catalogForRecord(template);
-      const { files } = buildBundleForLead({
+      const { files } = buildBundleForTemplateRecord({
         business_name: "Example Local Co.",
         category: template.category,
         city: "Arlington",
@@ -501,8 +530,17 @@ export async function onClick(event) {
         phone: "(817) 555-0100",
         address: "120 Main Street, Arlington, TX",
         source_metadata: { openscout: { rating: 4.8, ratingCount: 42 } },
-      }, entry);
-      openTemplatePreview(template, composeDocument(files));
+      }, template);
+      const previewFiles = await filesForTemplatePreview(template, files);
+      openTemplatePreview(template, composeDocument(previewFiles));
+      break;
+    }
+    case "template-delete": {
+      const template = findRecord("templates", id);
+      if (!template) break;
+      if (!confirmDelete(target, "templates", template.name)) break;
+      await run(() => deleteCustomTemplate(template), "Template deleted");
+      closeModal();
       break;
     }
     case "template-use": {
@@ -706,6 +744,10 @@ export async function onChange(event) {
     await run(() => classifyReply(target.dataset.id, target.value), "Reply classified");
     return;
   }
+  if (action === "assistant-conversation") {
+    openAssistantConversation(target.value);
+    return;
+  }
   /* Model and effort switch in place, from the assistant bar or Settings, so
      you can drop to a cheaper model mid-conversation without leaving the page. */
   if (action === "model-select" || action === "effort-select") {
@@ -741,6 +783,30 @@ export async function onSubmit(event) {
       case "assistant":
         await handleAssistant(values.message, form);
         break;
+
+      case "template-upload": {
+        const readSource = async (name, required = false) => {
+          const file = form.elements[name]?.files?.[0] || null;
+          if (!file && required) throw new Error(`${name} is required.`);
+          return file ? file.text() : "";
+        };
+        const files = {
+          "index.html": await readSource("html_file", true),
+          "style.css": await readSource("css_file", true),
+          "script.js": await readSource("js_file"),
+        };
+        const assets = [...(form.elements.assets?.files || [])];
+        const template = await createCustomTemplate({
+          name: values.name,
+          category: values.category,
+          description: values.description || "",
+          files,
+          assets,
+        });
+        closeModal();
+        toast("Template uploaded", `${template.name} · ${assets.length} original asset${assets.length === 1 ? "" : "s"}.`);
+        break;
+      }
 
       case "automation-settings":
         saveAutomationSettings({
@@ -1095,6 +1161,7 @@ async function handleAssistant(rawMessage, form) {
 
   const messages = [...getState().assistant.messages, { id: uid(), role: "user", text: message, at: new Date().toISOString() }];
   setAssistant({ messages, pending: true });
+  await persistAssistantHistory(messages);
   form.reset();
   const input = document.getElementById("assistant-input");
   if (input) input.style.height = "auto";
@@ -1112,6 +1179,7 @@ async function handleAssistant(rawMessage, form) {
         at: new Date().toISOString(),
       }],
     });
+    await persistAssistantHistory();
     return;
   }
 
@@ -1127,6 +1195,7 @@ async function handleAssistant(rawMessage, form) {
         at: new Date().toISOString(),
       }],
     });
+    await persistAssistantHistory();
     return;
   }
 
@@ -1140,6 +1209,7 @@ async function handleAssistant(rawMessage, form) {
       onEntry: (entry) => setAssistant({ messages: [...getState().assistant.messages, entry] }),
     });
     setAssistant({ pending: false });
+    await persistAssistantHistory();
   } catch (error) {
     console.error(error);
     setAssistant({
@@ -1153,6 +1223,7 @@ async function handleAssistant(rawMessage, form) {
         at: new Date().toISOString(),
       }],
     });
+    await persistAssistantHistory().catch((historyError) => console.error("Could not save assistant history", historyError));
   }
 }
 
