@@ -22,6 +22,9 @@ import { getStoredApiKey, workerHoldsMapsKey } from "../services/openscout/adapt
 import { listTools } from "../services/ai/tools.js";
 import { contextSections } from "../services/ai/context.js";
 import { WORKER_PROVIDERS } from "../services/api.js";
+import { EFFORT_LEVELS, estimatedTurnCost, formatPerMTok, getModel, modelsForProvider } from "../data/models.js";
+import { activeModel } from "../services/ai/provider.js";
+import { formatCurrency, isSameMonth } from "../core/utils.js";
 
 /* The four keys the Cloudflare Worker can hold, and the secret name for each. */
 const WORKER_SECRETS = Object.freeze({
@@ -106,6 +109,54 @@ export function renderIntegrations() {
   `;
 }
 
+/**
+ * Model picker.
+ *
+ * Outside the settings form on purpose: changing model or effort takes effect
+ * immediately rather than waiting for a save, because the reason to change it is
+ * usually that the current one is costing too much right now.
+ */
+function modelSection() {
+  const { data } = getState();
+  const { provider, model, effort } = activeModel();
+  const available = modelsForProvider(provider);
+
+  const spend = data.aiUsage.reduce((total, usage) => total + Number(usage.cost || 0), 0);
+  const thisMonth = data.aiUsage
+    .filter((usage) => isSameMonth(usage.occurred_at))
+    .reduce((total, usage) => total + Number(usage.cost || 0), 0);
+
+  const options = available.map((entry) => ({
+    value: entry.id,
+    label: `${entry.label} · ${formatPerMTok(entry)}`,
+  }));
+
+  return section("Model", {
+    subtitle: "Applies immediately — no save needed",
+    body: `
+      <div class="field-grid">
+        ${field("Model", select("model", options, model?.id, { attrs: 'data-action="model-select"' }), {
+          hint: model ? `about ${formatCurrency(estimatedTurnCost(model.id), 4)} per assistant turn` : "",
+        })}
+        ${model?.supportsEffort
+          ? field("Effort", select("effort", EFFORT_LEVELS.map((level) => ({ value: level.id, label: `${level.label} — ${level.note}` })), effort, { attrs: 'data-action="effort-select"' }), { hint: "how much the model thinks — the biggest cost lever" })
+          : field("Effort", input("effort_disabled", "Not supported on this model", { attrs: "disabled" }), { hint: "only the current models have an effort control" })}
+      </div>
+      ${model?.note ? `<p class="faint">${escapeHtml(model.note)}</p>` : ""}
+      ${rows([
+        row({
+          main: "Spend so far",
+          sub: data.aiUsage.length
+            ? `${formatNumber(data.aiUsage.length)} recorded call${data.aiUsage.length === 1 ? "" : "s"} · ${formatCurrency(thisMonth, 2)} this month`
+            : "Nothing recorded yet — every assistant turn is logged here with its real token count",
+          iconName: "dollar",
+          side: `<strong>${formatCurrency(spend, 2)}</strong>`,
+        }),
+      ])}
+    `,
+  });
+}
+
 export function renderSettings() {
   const state = getState();
   const settings = preferences();
@@ -126,12 +177,6 @@ export function renderSettings() {
             side: pill(cloud ? "connected" : "warning", cloud ? "Cloud" : "Local"),
           }),
           row({
-            main: "Starter workspace",
-            sub: "Replace local data with realistic sample records",
-            iconName: "refresh",
-            side: btn("Load sample data", { action: "load-sample", size: "sm" }),
-          }),
-          row({
             main: "Google Maps key",
             sub: mapsKeySource(),
             iconName: "radar",
@@ -139,6 +184,8 @@ export function renderSettings() {
           }),
         ]),
       })}
+
+      ${modelSection()}
 
       <form class="stack" data-form="settings">
         ${section("Business", {

@@ -18,12 +18,14 @@ npx wrangler dev     # dashboard + the /api worker that holds the keys
 `python3 -m http.server 4173` still serves the dashboard, but without the worker
 there is no `/api`, so every key-backed feature reports itself as not connected.
 
-The dashboard opens straight into the workspace. There is no sign-in wall. The
-first run is genuinely empty — no invented leads, clients or revenue. Load the
-sample workspace from Settings if you want something to look at.
+The dashboard opens straight into the workspace. There is no sign-in wall, and
+it is empty until you put something in it — there is no sample data anywhere in
+the application, so every lead, email, number and statistic on screen is real.
+The realistic workspace used to exercise the pages lives in
+`tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
 ```bash
-npm test   # 49 OpenScout engine tests + 68 application tests
+npm test   # 49 OpenScout engine tests + 79 application tests
 ```
 
 ## How it is put together
@@ -50,7 +52,7 @@ js/
     email/           outreach copy and the send boundary
     research/        business research boundary
     openscout/       the unmodified discovery engine + one adapter
-  data/            template catalogue, starter workspace
+  data/            template catalogue, model catalogue
 ```
 
 Pages render strings, `actions.js` mutates through `services/operations.js`, and
@@ -61,8 +63,9 @@ state changes trigger a coalesced re-render. That is the whole architecture.
 `services/data.js` has two backends behind one CRUD API:
 
 - **Local** (default) — everything persists to `localStorage`. Works offline and
-  starts instantly. A new workspace starts empty; the sample workspace is a
-  button in Settings, never something the dashboard invents for you.
+  starts instantly. A new workspace is empty and nothing in the application can
+  seed it. A browser still holding records from the old starter workspace has
+  them swept out on load, so invented emails and revenue cannot reappear.
 - **Cloud** — used automatically when a Supabase session exists in the browser.
   Sign in from Settings if you want sync; the Supabase SDK is not even
   downloaded until then.
@@ -120,6 +123,34 @@ commands use, so the model can only do what the application can already do.
 
 With no key on the worker, anything that is not a known command is not answered
 — the assistant says so instead of inventing a reply.
+
+## Choosing a model
+
+Model and effort are picked in Settings and on the assistant's own toolbar, and
+both take effect immediately — the reason to switch is usually that the current
+choice is costing too much right now.
+
+| Model | Per million tokens | Use it for |
+| --- | --- | --- |
+| Haiku 4.5 | $1 / $5 | Lookups, classification, short answers |
+| Sonnet 5 | $3 / $15 | The default — near-Opus on agentic work at a third of the price |
+| Opus 5 | $5 / $25 | Hardest reasoning and long multi-step work |
+| Opus 4.8 | $5 / $25 | Fallback if Opus 5 refuses a request |
+
+**Effort is the larger lever.** It controls how much the model thinks, and moving
+from `high` to `medium` often saves more than dropping a model tier. The default
+here is `medium`, deliberately below the provider's own default, because this
+dashboard mostly asks short operational questions. Haiku has no effort control,
+so none is sent to it.
+
+`js/data/models.js` is the single source of truth, imported by both the browser
+and the worker — the worker rejects any model id that is not in it, so a typo
+cannot quietly bill against something expensive.
+
+Every turn writes its real token counts and cost to `ai_usage`, which is what
+Settings, Costs and Analytics read. OpenAI models are selectable but unpriced
+here; their spend shows as tokens rather than as a dollar figure that might be
+wrong.
 
 ## Websites
 

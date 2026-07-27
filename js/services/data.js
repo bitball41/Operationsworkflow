@@ -1,11 +1,21 @@
 import { CONFIG } from "../config.js";
+import { DEFAULT_EFFORT, DEFAULT_MODEL_ID } from "../data/models.js";
 import { getState, setData, setState } from "../core/state.js";
 import { debounce, slugify, uid } from "../core/utils.js";
-import { createSeedData } from "../data/seed-data.js";
 import { duplicateKey, toDiscoveryResult } from "./openscout/adapter.js";
 import { getSession, getSupabase, hasStoredSession, isConfigured } from "./supabase.js";
 
 const LOCAL_KEY = "operations.data.v2";
+
+/* Records written by the old starter workspace all carry this id prefix. The
+   sample workspace no longer exists, so any of them still sitting in a browser
+   are swept out on load — otherwise invented emails, revenue and statistics
+   would keep showing up as if they were real. */
+const SAMPLE_ID_PREFIX = "10000000-0000-4000-8000-";
+
+function isSampleRecord(record) {
+  return typeof record?.id === "string" && record.id.startsWith(SAMPLE_ID_PREFIX);
+}
 
 export const COLLECTIONS = Object.freeze({
   leads: "leads",
@@ -172,18 +182,24 @@ export async function initWorkspace() {
 }
 
 /**
- * Opens the local workspace. A first run starts genuinely empty — no invented
- * leads, clients or revenue — so every number on screen is a real one. The
- * sample workspace is available on demand from Settings.
+ * Opens the local workspace. Every number on screen is one you put there: a new
+ * workspace is empty, and nothing in the application can seed it.
  */
 export function loadLocalWorkspace() {
   const data = readLocal() || { profile: null };
   const next = { profile: data.profile || null };
+  let swept = 0;
+
   COLLECTION_KEYS.forEach((key) => {
-    next[key] = Array.isArray(data[key]) ? [...data[key]].sort(compare(key)) : [];
+    const records = Array.isArray(data[key]) ? data[key] : [];
+    const kept = records.filter((record) => !isSampleRecord(record));
+    swept += records.length - kept.length;
+    next[key] = kept.sort(compare(key));
   });
+
   setState({ storage: "local" }, { silent: true });
   setData(next, { silent: true });
+  if (swept) persist();
   return next;
 }
 
@@ -307,6 +323,8 @@ export function preferences() {
     maintenance_price: 50,
     preview_domain: CONFIG.previewDomain,
     follow_up_days: [3, 7, 14],
+    model: DEFAULT_MODEL_ID,
+    effort: DEFAULT_EFFORT,
     ...(data.settings.find((item) => item.key === "workspace")?.value || {}),
     ...(data.profile?.preferences || {}),
   };
@@ -491,45 +509,6 @@ export async function uploadDemoAsset(demoId, file) {
     change_summary: `Uploaded ${file.name}`,
     is_current: true,
   });
-}
-
-/* ---------- seeding ---------- */
-
-export async function loadSampleWorkspace() {
-  if (!isCloud()) {
-    const seed = createSeedData();
-    const next = { profile: seed.profile };
-    COLLECTION_KEYS.forEach((key) => { next[key] = seed[key] || []; });
-    setData(next);
-    persist();
-    return true;
-  }
-
-  const seed = createSeedData();
-  const idMap = new Map();
-  COLLECTION_KEYS.forEach((key) => (seed[key] || []).forEach((item) => {
-    if (item.id) idMap.set(item.id, uid());
-  }));
-
-  for (const key of COLLECTION_KEYS) {
-    const rows = (seed[key] || []).map((item) => {
-      const record = structuredClone(item);
-      if (record.id) record.id = idMap.get(record.id);
-      Object.entries(record).forEach(([field, value]) => {
-        if ((field.endsWith("_id") || field === "entity_id") && typeof value === "string" && idMap.has(value)) {
-          record[field] = idMap.get(value);
-        }
-      });
-      record.user_id = userId();
-      return record;
-    });
-    if (!rows.length) continue;
-    const client = await getSupabase();
-    const { error } = await client.from(COLLECTIONS[key]).insert(rows);
-    if (error) throw error;
-  }
-  await loadCloudWorkspace();
-  return true;
 }
 
 /* ---------- realtime ---------- */

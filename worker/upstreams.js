@@ -1,3 +1,5 @@
+import { DEFAULT_EFFORT, DEFAULT_MODEL_ID } from "../js/data/models.js";
+
 /**
  * Every external endpoint the Worker is allowed to talk to, in one file.
  *
@@ -9,10 +11,12 @@
 export const ANTHROPIC = Object.freeze({
   messages: "https://api.anthropic.com/v1/messages",
   version: "2023-06-01",
-  defaultModel: "claude-opus-5",
-  /* `high` is the API default and the right floor for operations reasoning.
-     Raise to "xhigh" if assistant answers come back shallow. */
-  defaultEffort: "high",
+  /* Used only when the caller sends no model. The picker in Settings normally
+     supplies one, and both are validated against js/data/models.js. */
+  defaultModel: DEFAULT_MODEL_ID,
+  /* Deliberately below the provider's own `high` default: this dashboard asks
+     short operational questions, and effort is the largest cost lever. */
+  defaultEffort: DEFAULT_EFFORT,
 });
 
 export const OPENAI = Object.freeze({
