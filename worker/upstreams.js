@@ -55,6 +55,7 @@ export const PLACES = Object.freeze({
 
 export const SUPABASE = Object.freeze({
   user: "https://yswxdsagoywzevwgarbf.supabase.co/auth/v1/user",
+  rest: "https://yswxdsagoywzevwgarbf.supabase.co/rest/v1",
   publishableKey: "sb_publishable_Ah6QGx7Tpr-rBvaa4cQcPw_7djryJ9K",
 });
 

@@ -478,6 +478,33 @@ export function openDeploymentLogs(deployment) {
   });
 }
 
+export function openTemplateUploadForm() {
+  openModal({
+    title: "Upload template",
+    subtitle: "Portable source files plus original image assets",
+    wide: true,
+    body: `<form id="template-upload-form" data-form="template-upload">
+      <div class="field-grid">
+        ${field("Name", input("name", "", { required: true, placeholder: "Northstar Plumbing" }))}
+        ${field("Niche", input("category", "", { required: true, placeholder: "Plumbing" }))}
+      </div>
+      ${field("Description", textarea("description", "", { attrs: 'rows="2"', placeholder: "What this template is best at" }))}
+      <div class="field-grid">
+        ${field("index.html", '<input name="html_file" type="file" accept=".html,text/html" required>')}
+        ${field("style.css", '<input name="css_file" type="file" accept=".css,text/css" required>')}
+        ${field("script.js", '<input name="js_file" type="file" accept=".js,text/javascript,application/javascript">')}
+        ${field("Images", '<input name="assets" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/svg+xml" multiple>', { hint: "original bytes, up to 15 MB each" })}
+      </div>
+      ${notice(
+        "Use portable paths",
+        "Reference images as assets/filename.png. Asset filenames and matching paths are normalized to lowercase hyphens. Available placeholders include {{business}}, {{city}}, {{region}}, {{phone}}, {{email}}, {{address}}, {{category}}, {{cta}}, {{hours}}, and {{accent}}.",
+        { iconName: "code" },
+      )}
+    </form>`,
+    footer: footer("template-upload-form", "Upload template"),
+  });
+}
+
 export function openTemplatePreview(template, document_) {
   openModal({
     title: template.name,

@@ -124,19 +124,27 @@ function modelSwitcher() {
 }
 
 export function renderAssistant() {
-  const { assistant } = getState();
+  const { assistant, data } = getState();
   const ready = providerReady();
+  const conversations = data.assistantConversations || [];
 
   return `
     <div class="chat">
       <div class="chat__bar">
+        ${conversations.length ? select(
+          "conversation",
+          conversations.map((conversation) => ({ value: conversation.id, label: conversation.title })),
+          assistant.activeConversationId,
+          { attrs: 'data-action="assistant-conversation" class="select-sm"', placeholder: "New conversation" },
+        ) : ""}
+        ${btn("New", { action: "assistant-new", size: "sm" })}
+        ${assistant.activeConversationId ? btn("Delete", { action: "assistant-delete", size: "sm", variant: "quiet" }) : ""}
         <span class="pill${ready ? " pill--green" : ""}">${ready ? "Provider connected" : "Provider not connected"}</span>
         ${ready ? modelSwitcher() : ""}
         <button class="context-chip" type="button" data-action="assistant-toggle-context">
           ${icon("layers")} Context: ${escapeHtml(contextSummary())} ${icon(assistant.contextOpen ? "chevron-down" : "chevron")}
         </button>
         <span class="toolbar__spacer"></span>
-        ${assistant.messages.length ? btn("Clear", { action: "assistant-clear", size: "sm" }) : ""}
       </div>
 
       ${assistant.contextOpen ? contextPanel() : ""}

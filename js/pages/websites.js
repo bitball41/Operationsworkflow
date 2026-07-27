@@ -7,7 +7,7 @@
 import { getState } from "../core/state.js";
 import { escapeHtml, formatNumber, relativeTime, statusLabel } from "../core/utils.js";
 import { btn, empty, externalLink, notice, pill, section, stats, table, td } from "../components/ui.js";
-import { buildBundleForLead, composeDocument, templateByKey } from "../services/sites/bundle.js";
+import { buildBundleForTemplateRecord, composeDocument } from "../services/sites/bundle.js";
 import { hostingConnected } from "../services/sites/publish.js";
 import { byId, filterSelect, leadName, searchInput } from "./shared.js";
 
@@ -22,8 +22,8 @@ const SAMPLE_LEAD = {
 };
 
 /* Thumbnails are static: no scripting in the frame, so no script is inlined. */
-function templatePreview(entry) {
-  const { files } = buildBundleForLead({ ...SAMPLE_LEAD, category: entry.category }, entry);
+function templatePreview(template) {
+  const { files } = buildBundleForTemplateRecord({ ...SAMPLE_LEAD, category: template.category }, template);
   return composeDocument(files, { scripts: false });
 }
 
@@ -39,23 +39,24 @@ export function renderTemplates() {
         ${searchInput("Search templates and niches", routeParams.q || "")}
         <span class="toolbar__spacer"></span>
         <span class="faint">Automation picks a template by niche automatically</span>
+        ${btn("Upload template", { action: "template-upload", variant: "primary", size: "sm", iconName: "upload" })}
       </div>
 
       ${templates.length ? `<div class="template-grid">
         ${templates.map((template) => {
-          const entry = templateByKey(template.layout_key);
           return `
             <article class="template">
               <div class="template__shot">
-                <iframe title="${escapeHtml(template.name)} preview" sandbox="" scrolling="no" srcdoc="${escapeHtml(templatePreview(entry))}"></iframe>
+                <iframe title="${escapeHtml(template.name)} preview" sandbox="" scrolling="no" srcdoc="${escapeHtml(templatePreview(template))}"></iframe>
               </div>
               <div class="template__meta">
-                <div class="cell"><strong>${escapeHtml(template.name)}</strong><span>${escapeHtml(template.category)}</span></div>
+                <div class="cell"><strong>${escapeHtml(template.name)}</strong><span>${escapeHtml(template.category)}${template.source_kind === "custom" ? " · uploaded" : ""}</span></div>
                 ${pill(template.status)}
               </div>
               <div class="btn-row">
                 ${btn("Preview", { action: "template-preview", size: "sm", attrs: `data-id="${template.id}"` })}
                 ${btn("Use for a lead", { action: "template-use", size: "sm", attrs: `data-id="${template.id}"` })}
+                ${template.source_kind === "custom" ? btn("Delete", { action: "template-delete", size: "sm", variant: "quiet", attrs: `data-id="${template.id}"` }) : ""}
                 <span class="faint">Used ${formatNumber(template.use_count || 0)}×</span>
               </div>
             </article>

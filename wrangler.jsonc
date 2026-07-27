@@ -14,6 +14,21 @@
   "observability": {
     "enabled": true
   },
+  "vars": {
+    "DEMO_DOMAIN": "demos.conno.fun"
+  },
+  // Cloudflare Browser Run powers the assistant's public-page research tool.
+  "browser": {
+    "binding": "BROWSER"
+  },
+  // Create once before the first production deploy:
+  //   npx wrangler r2 bucket create operationsworkflow-demos
+  "r2_buckets": [
+    {
+      "binding": "DEMO_SITES",
+      "bucket_name": "operationsworkflow-demos"
+    }
+  ],
   // OAuth state and encrypted per-user Outlook tokens.
   //
   // This binding must resolve to a real namespace or every Outlook route

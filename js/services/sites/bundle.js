@@ -9,6 +9,21 @@ import { renderLayout } from "./layouts.js";
 
 export const BUNDLE_FILES = ["index.html", "style.css", "script.js"];
 
+function runtimeEntryForRecord(record) {
+  if (record?.source_kind !== "custom") return templateByKey(record?.layout_key);
+  const fallback = templateByKey(FALLBACK_TEMPLATE_KEY);
+  return {
+    ...fallback,
+    key: `custom:${record.id}`,
+    name: record.name,
+    category: record.category,
+    keywords: String(record.category || "").toLowerCase().split(/\W+/).filter(Boolean),
+    layout: "custom",
+    files: record.files || {},
+    theme: { ...fallback.theme, accent: record.accent_color || fallback.theme.accent },
+  };
+}
+
 /** Builds the content model handed to a layout. */
 export function siteFromLead(lead = {}, catalogEntry, overrides = {}) {
   const entry = catalogEntry || templateByKey(FALLBACK_TEMPLATE_KEY);
@@ -58,6 +73,25 @@ export function siteFromLead(lead = {}, catalogEntry, overrides = {}) {
 /** Produces the three bundle files. */
 export function buildBundle(catalogEntry, site) {
   const entry = catalogEntry || templateByKey(FALLBACK_TEMPLATE_KEY);
+  if (entry.layout === "custom") {
+    const values = {
+      ...site,
+      business: site.business || "Your Business",
+      category: site.category || "",
+      city: site.city || "",
+      region: site.region || "",
+      phone: site.phone || "",
+      email: site.email || "",
+      address: site.address || "",
+      hours: site.hours || "",
+      cta: site.cta || "Get a quote",
+      accent: entry.theme?.accent || "#2563eb",
+    };
+    return Object.fromEntries(BUNDLE_FILES.map((name) => [
+      name,
+      fillTemplate(String(entry.files?.[name] || ""), values),
+    ]));
+  }
   const { html, css, js } = renderLayout(entry.layout, site, entry.theme);
   return { "index.html": html, "style.css": css, "script.js": js };
 }
@@ -65,6 +99,10 @@ export function buildBundle(catalogEntry, site) {
 export function buildBundleForLead(lead, catalogEntry, overrides = {}) {
   const site = siteFromLead(lead, catalogEntry, overrides);
   return { site, files: buildBundle(catalogEntry, site) };
+}
+
+export function buildBundleForTemplateRecord(lead, record, overrides = {}) {
+  return buildBundleForLead(lead, runtimeEntryForRecord(record), overrides);
 }
 
 /**
@@ -75,9 +113,25 @@ export function composeDocument(files = {}, { scripts = true } = {}) {
   const html = files["index.html"] || "<!doctype html><title>Empty demo</title><p>No files yet.</p>";
   const css = files["style.css"] || "";
   const js = files["script.js"] || "";
-  return html
-    .replace('<link rel="stylesheet" href="style.css">', `<style>\n${css}\n</style>`)
-    .replace('<script src="script.js"></script>', scripts ? `<script>\n${js}\n</script>` : "");
+  let document_ = html.replace(
+    /<link\b[^>]*href=["'](?:\.\/)?style\.css["'][^>]*>/i,
+    `<style>\n${css}\n</style>`,
+  );
+  if (document_ === html && css) {
+    const style = `<style>\n${css}\n</style>`;
+    document_ = /<\/head>/i.test(document_) ? document_.replace(/<\/head>/i, `${style}</head>`) : `${style}${document_}`;
+  }
+
+  const beforeScript = document_;
+  document_ = document_.replace(
+    /<script\b[^>]*src=["'](?:\.\/)?script\.js["'][^>]*><\/script>/i,
+    scripts ? `<script>\n${js}\n</script>` : "",
+  );
+  if (scripts && js && document_ === beforeScript) {
+    const script = `<script>\n${js}\n</script>`;
+    document_ = /<\/body>/i.test(document_) ? document_.replace(/<\/body>/i, `${script}</body>`) : `${document_}${script}`;
+  }
+  return document_;
 }
 
 export function bundleSize(files = {}) {
@@ -94,7 +148,7 @@ export function chooseTemplate(lead, templateRecords = []) {
   const active = templateRecords.filter((item) => item.status !== "archived");
   const scored = active
     .map((record) => {
-      const entry = templateByKey(record.layout_key);
+      const entry = runtimeEntryForRecord(record);
       const byRecord = scoreTemplateMatch({ category: record.category || entry.category, keywords: entry.keywords }, searchable);
       const byEntry = scoreTemplateMatch(entry, searchable);
       return { record, entry, score: Math.max(byRecord, byEntry) };
@@ -116,7 +170,7 @@ export function chooseTemplate(lead, templateRecords = []) {
 }
 
 export function catalogForRecord(record) {
-  return templateByKey(record?.layout_key);
+  return runtimeEntryForRecord(record);
 }
 
 export { TEMPLATE_CATALOG, templateByKey };

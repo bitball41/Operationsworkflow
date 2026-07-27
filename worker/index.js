@@ -26,6 +26,9 @@
 
 import { ANTHROPIC, OPENAI, WHOP, PLACES } from "./upstreams.js";
 import { getModel, resolveModel } from "../js/data/models.js";
+import { handleBrowserResearch } from "./browser.js";
+import { demoHostingStatus, handleDemoPublish, servePublicDemo } from "./demos.js";
+import { handleMcp } from "./mcp.js";
 import {
   handleOutlookCallback,
   handleOutlookConnect,
@@ -120,7 +123,11 @@ async function handleStatus(request, env) {
   for (const name of Object.keys(PROVIDERS)) providers[name] = Boolean(secretFor(env, name));
   const outlook = await outlookConnectionStatus(request, env);
   providers.outlook = outlook.connected;
-  return json({ providers, outlook, at: new Date().toISOString() });
+  const hosting = demoHostingStatus(env);
+  providers.cloudflare = hosting.configured;
+  providers.research = Boolean(env?.BROWSER);
+  providers.mcp = Boolean(env?.MCP_API_TOKEN);
+  return json({ providers, outlook, hosting, at: new Date().toISOString() });
 }
 
 /**
@@ -299,6 +306,10 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/maps/key" && request.method === "GET") return handleMapsKey(env);
     if (path === "/api/maps/places/search-text" && isPost) return await handlePlacesSearch(request, env);
+    if (path === "/api/browser/research" && isPost) {
+      return await handleBrowserResearch(request, env, await readJson(request, 40_000));
+    }
+    if (path === "/api/demos/publish" && isPost) return await handleDemoPublish(request, env);
     if (path === "/api/ai/anthropic/messages" && isPost) return await handleAnthropic(request, env);
     if (path === "/api/ai/openai/responses" && isPost) return await handleOpenAI(request, env);
     if (path === "/api/whop" || path.startsWith("/api/whop/")) return await handleWhop(request, env, url);
@@ -312,9 +323,14 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/mcp") return handleMcp(request, env);
+
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
       return handleApi(request, env, url);
     }
+
+    const demo = await servePublicDemo(request, env);
+    if (demo) return demo;
 
     /* Everything else is the static dashboard. Asset routing runs before this
        Worker, so a request only lands here when no file matched. */

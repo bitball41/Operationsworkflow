@@ -16,6 +16,7 @@ import { NotConnectedError, isConnected } from "../integrations.js";
 
 const PAGE_SIZE = 50;
 const MAX_PAGES = 10;
+const AUTO_SYNC_INTERVAL = 5 * 60 * 1000;
 
 function firstNumber(...values) {
   for (const value of values) {
@@ -189,4 +190,54 @@ export async function whopAccount() {
     name: firstString(response?.name, response?.username, response?.email),
     email: response?.email || "",
   };
+}
+
+let autoSyncStop = null;
+
+/**
+ * Reconciles Whop when the dashboard opens and every five minutes while it is
+ * visible. The importer is idempotent, so a manual sync and an automatic sync
+ * can safely overlap in intent; this runner still serializes its own calls.
+ */
+export function startWhopAutoSync({ interval = AUTO_SYNC_INTERVAL } = {}) {
+  autoSyncStop?.();
+  let stopped = false;
+  let running = false;
+  let timer = null;
+
+  const schedule = () => {
+    if (stopped) return;
+    timer = globalThis.setTimeout(run, interval);
+  };
+  const run = async () => {
+    if (stopped || running) return;
+    if (globalThis.document?.hidden || !isConnected("whop")) {
+      schedule();
+      return;
+    }
+    running = true;
+    try {
+      await syncWhopPayments();
+    } catch (error) {
+      console.warn("Automatic Whop sync failed", error);
+    } finally {
+      running = false;
+      schedule();
+    }
+  };
+  const onVisible = () => {
+    if (!globalThis.document?.hidden && !running) {
+      if (timer) globalThis.clearTimeout(timer);
+      run();
+    }
+  };
+
+  globalThis.document?.addEventListener?.("visibilitychange", onVisible);
+  run();
+  autoSyncStop = () => {
+    stopped = true;
+    if (timer) globalThis.clearTimeout(timer);
+    globalThis.document?.removeEventListener?.("visibilitychange", onVisible);
+  };
+  return autoSyncStop;
 }

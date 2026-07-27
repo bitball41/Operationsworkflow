@@ -12,13 +12,32 @@ import { getSession, hasStoredSession } from "./supabase.js";
 export const API_BASE = "/api";
 
 /** Providers the Worker can hold a key for, in the order Integrations shows them. */
-export const WORKER_PROVIDERS = Object.freeze(["outlook", "anthropic", "openai", "whop", "google_maps"]);
+export const WORKER_PROVIDERS = Object.freeze([
+  "outlook",
+  "anthropic",
+  "openai",
+  "whop",
+  "google_maps",
+  "cloudflare",
+  "research",
+  "mcp",
+]);
 
 const EMPTY_STATUS = Object.freeze({
   reachable: false,
-  providers: Object.freeze({ outlook: false, anthropic: false, openai: false, whop: false, google_maps: false }),
+  providers: Object.freeze({
+    outlook: false,
+    anthropic: false,
+    openai: false,
+    whop: false,
+    google_maps: false,
+    cloudflare: false,
+    research: false,
+    mcp: false,
+  }),
   /* Why Outlook is unusable, when it is. See handleStatus in worker/index.js. */
   outlook: Object.freeze({ configured: false, connected: false, signed_in: false, missing: [], account: "", can_read_mail: false }),
+  hosting: Object.freeze({ configured: false, domain: "demos.conno.fun", missing: ["DEMO_SITES"] }),
 });
 
 export class ApiError extends Error {
@@ -33,12 +52,12 @@ export class ApiError extends Error {
 
 async function sessionAuthorization(required) {
   if (!hasStoredSession()) {
-    if (required) throw new ApiError("Sign in to Supabase before using Outlook.", { status: 401 });
+    if (required) throw new ApiError("Sign in to Supabase before using this feature.", { status: 401 });
     return "";
   }
   const session = await getSession().catch(() => null);
   if (!session?.access_token && required) {
-    throw new ApiError("Your Supabase session expired. Sign in again before using Outlook.", { status: 401 });
+    throw new ApiError("Your Supabase session expired. Sign in again before continuing.", { status: 401 });
   }
   return session?.access_token ? `Bearer ${session.access_token}` : "";
 }
@@ -93,6 +112,7 @@ export async function fetchServiceStatus() {
       reachable: true,
       providers,
       outlook: { ...EMPTY_STATUS.outlook, ...(data?.outlook || {}) },
+      hosting: { ...EMPTY_STATUS.hosting, ...(data?.hosting || {}) },
       at: data?.at || new Date().toISOString(),
     };
   } catch {
@@ -101,7 +121,12 @@ export async function fetchServiceStatus() {
 }
 
 export function emptyServiceStatus() {
-  return { ...EMPTY_STATUS, providers: { ...EMPTY_STATUS.providers }, outlook: { ...EMPTY_STATUS.outlook } };
+  return {
+    ...EMPTY_STATUS,
+    providers: { ...EMPTY_STATUS.providers },
+    outlook: { ...EMPTY_STATUS.outlook },
+    hosting: { ...EMPTY_STATUS.hosting },
+  };
 }
 
 /**
@@ -116,6 +141,10 @@ export async function fetchMapsKey() {
 
 export async function searchPlaces(payload, { signal } = {}) {
   return request("/maps/places/search-text", { method: "POST", body: payload, signal });
+}
+
+export async function browserResearch(url, { signal } = {}) {
+  return request("/browser/research", { method: "POST", body: { url }, signal, auth: true });
 }
 
 export async function callAnthropic(payload, { signal } = {}) {
@@ -153,4 +182,36 @@ export async function fetchOutlookMessages({ since = "", limit = 25 } = {}) {
   const query = new URLSearchParams({ limit: String(limit), ...(since ? { since } : {}) });
   const data = await request(`/outlook/messages?${query}`, { auth: true });
   return Array.isArray(data?.messages) ? data.messages : [];
+}
+
+export async function publishDemoBundle({ demoId, publicNumber, files, assets = [] }) {
+  const authorization = await sessionAuthorization(true);
+  const form = new FormData();
+  form.set("demo_id", String(demoId));
+  form.set("public_number", String(publicNumber));
+  for (const [path, source] of Object.entries(files || {})) {
+    const type = path.endsWith(".html") ? "text/html"
+      : path.endsWith(".css") ? "text/css"
+        : "text/javascript";
+    form.append(`file:${path}`, new Blob([String(source)], { type }), path);
+  }
+  for (const asset of assets) {
+    form.append(`file:${asset.path}`, asset.blob, asset.path.split("/").pop());
+  }
+
+  const response = await fetch(`${API_BASE}/demos/publish`, {
+    method: "POST",
+    headers: { authorization },
+    body: form,
+  }).catch((error) => {
+    throw new ApiError(`Could not reach the demo publisher: ${error.message}`, { status: 0, provider: "cloudflare" });
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (response.ok) return payload;
+  throw new ApiError(payload?.message || `The demo publisher returned ${response.status}.`, {
+    status: response.status,
+    provider: "cloudflare",
+    blocked: response.status === 503,
+  });
 }

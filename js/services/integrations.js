@@ -16,6 +16,9 @@ const WORKER_BACKED = Object.freeze({
   anthropic: "anthropic",
   openai: "openai",
   whop: "whop",
+  cloudflare: "cloudflare",
+  research: "research",
+  mcp: "mcp",
 });
 
 function workerHasKey(provider) {
