@@ -25,7 +25,7 @@ The realistic workspace used to exercise the pages lives in
 `tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
 ```bash
-npm test   # 49 OpenScout engine tests + 79 application tests
+npm test   # 49 OpenScout engine tests + 111 application tests
 ```
 
 ## How it is put together
@@ -104,22 +104,39 @@ A full-page workspace at `#/assistant`. Three parts already work:
   into a structured snapshot: current route and selection, automation state,
   today's numbers, what needs attention, money, pipeline, and slim projections
   of every collection.
-- **Tool registry** (`services/ai/tools.js`) — 23 validated operations
-  (`get_next_lead`, `search_leads`, `get_lead`, `research_business`,
-  `list_templates`, `choose_template`, `create_demo`, `update_demo`,
-  `publish_demo`, `draft_email`, `send_email`, `create_followup`,
-  `update_pipeline`, `get_inbox`, `classify_reply`, `get_clients`,
-  `get_payments`, `get_revenue`, `get_tasks`, `get_status`,
-  `start_automation`, `stop_automation`, `run_one_lead`). `toolSchema()` emits
-  them in the shape a model API expects, so the same registry can back an MCP
-  server later.
+- **Tool registry** (`services/ai/tools.js`) — validated operations covering
+  every stage of the workflow, not just reading it:
+  - *Discovery* — `discover_leads` (a real Google Places search that adds
+    leads), `save_discovered_leads`
+  - *Leads* — `get_next_lead`, `search_leads`, `get_lead`, `create_lead`,
+    `update_lead`, `research_business`, `update_pipeline`
+  - *Websites* — `list_templates`, `choose_template`, `create_demo`,
+    `update_demo`, `publish_demo`
+  - *Outreach* — `draft_email`, `send_draft`, `send_email` (any address, lead
+    or not), `reply_to_thread`, `sync_inbox`, `create_followup`, `get_inbox`,
+    `classify_reply`
+  - *Business* — `get_clients`, `get_payments`, `get_revenue`, `get_tasks`,
+    `get_status`, `get_follow_ups`, `get_integrations`, `sync_whop_payments`,
+    `record_payment`, `record_expense`
+  - *Workspace* — `create_task`, `complete_task`, `create_note`,
+    `create_calendar_event`, `get_activity`
+  - *Automation* — `start_automation`, `stop_automation`, `run_one_lead`
+
+  `toolSchema()` emits them in the shape a model API expects, so the same
+  registry can back an MCP server later.
 - **Commands** (`services/ai/commands.js`) — `go`, `go 12`, `stop`, `status`,
   `next`, `revenue`, `inbox` run real operations with no model involved.
 
-`runAssistantTurn({ messages, context, tools })` posts the conversation, the
-context snapshot and the tool schema to the worker, which adds the key and calls
-Anthropic (or OpenAI). Tool calls come back and run through the same registry the
-commands use, so the model can only do what the application can already do.
+`runAgentLoop` (`services/ai/agent.js`) drives the actual conversation: it calls
+the model, runs whatever tools come back through the same registry the commands
+use, feeds the results back as `tool_result` blocks, and repeats until the model
+answers or the step budget (8) runs out. The workspace snapshot is rebuilt on
+every step, so a tool that just created a lead is visible to the next one.
+
+Results are trimmed before they are returned to the model
+(`serializeToolResult`): the summary always survives, and oversized payloads —
+a lead's raw OpenScout blob, a demo's whole file bundle — are reported as
+truncated rather than silently eating the context window.
 
 With no key on the worker, anything that is not a known command is not answered
 — the assistant says so instead of inventing a reply.
@@ -225,8 +242,9 @@ a result until credentials exist:
 | --- | --- | --- |
 | Model provider | `services/ai/provider.js` → `runAssistantTurn` | worker |
 | Google Maps | `services/openscout/adapter.js` → `resolveMapsKey` | worker |
-| Whop | `services/api.js` → `whopGet` | worker |
-| Outlook | `services/email/outreach.js` → `sendEmail` | worker OAuth + Graph |
+| Whop | `services/payments/whop.js` → `syncWhopPayments` | worker |
+| Outlook (send) | `services/email/outreach.js` → `sendEmail` | worker OAuth + Graph |
+| Outlook (inbox) | `services/email/inbox.js` → `syncInbox` | worker OAuth + Graph |
 | Cloudflare hosting | `services/sites/publish.js` → `publishBundle` | not wired |
 | Research tool | `services/research/research.js` → `researchBusiness` | not wired |
 | MCP | `services/ai/tools.js` → `toolSchema` | not wired |
@@ -249,9 +267,22 @@ npx wrangler secret put OUTLOOK_TOKEN_ENCRYPTION_KEY
 
 Set `MICROSOFT_TENANT=common` in `.dev.vars` locally or as a non-secret Worker
 variable. The Entra app must register the exact production callback
-`https://operations.conno.fun/api/outlook/callback`. `OUTLOOK_TOKENS` is a
-Workers KV binding declared in `wrangler.jsonc`; it holds one-time OAuth state
-and AES-GCM-encrypted tokens keyed by the verified Supabase user id.
+`https://operations.conno.fun/api/outlook/callback`, and needs delegated
+`Mail.Send` **and** `Mail.Read` — without the second one the mailbox is
+write-only and the Inbox stays empty forever.
+
+`OUTLOOK_TOKENS` is a Workers KV binding declared in `wrangler.jsonc`; it holds
+one-time OAuth state and AES-GCM-encrypted tokens keyed by the verified Supabase
+user id. **It must resolve to a real namespace.** Wrangler can provision one
+during an interactive deploy, but a CI or dashboard build has nobody to answer
+the prompt, so create it once and paste the id into `wrangler.jsonc`:
+
+```bash
+npx wrangler kv namespace create OUTLOOK_TOKENS
+```
+
+Until it exists, every Outlook route answers 503 and names `OUTLOOK_TOKENS` in
+the missing list — which Integrations shows on screen.
 
 Locally, copy `.dev.vars.example` to `.dev.vars` (git-ignored) and fill in what
 you have. `GET /api/status` reports which keys exist — never their values — and
@@ -264,6 +295,8 @@ actually reach it.
 | `POST /api/outlook/connect` | begin Microsoft OAuth for the signed-in user |
 | `GET /api/outlook/callback` | validate OAuth state and store encrypted tokens |
 | `POST /api/outlook/send` | send one message through Microsoft Graph |
+| `POST /api/outlook/reply` | reply inside an existing Outlook conversation |
+| `GET /api/outlook/messages` | recent inbox messages, newest first |
 | `POST /api/outlook/disconnect` | remove the signed-in user's Outlook tokens |
 | `GET /api/maps/key` | the Google Maps browser key |
 | `POST /api/maps/places/search-text` | Places API (New) |
@@ -282,9 +315,26 @@ Migrations are in `supabase/migrations/` and are applied to the connected
 project. Browser-facing tables are owner-scoped with row-level security, and the
 browser only ever uses the publishable key.
 
+Signing in is optional and never blocks the dashboard, but two things depend on
+it: cloud sync, and Outlook — a mailbox connection is stored against the
+verified Supabase user id, so there is nowhere to put one until you are signed
+in. The form is on Settings, and Integrations links to it when Outlook is
+waiting on it.
+
+Work done before signing in stays in this browser. **Settings → Data → Upload to
+Supabase** copies it up: records are inserted parents-first and their foreign
+keys are rewritten to the ids the database assigns, so leads keep their demos,
+demos keep their drafts, and local storage is left untouched either way.
+
+A table that cannot be read no longer takes the whole workspace down with it.
+The rest still opens and the connection banner names what failed.
+
 ## Known limits
 
-- Sending, hosting and research are boundaries, not features yet.
+- Hosting and research are boundaries, not features yet: `publishBundle`
+  records a demo as ready and never claims it is served on a public domain.
+- Outlook connections made before `Mail.Read` was requested can send but not
+  read. Disconnect and reconnect from Integrations to re-consent.
 - Live discovery needs a Google Maps key and available Places quota.
 - Preview links point at this app's own origin until a real preview domain is
   set in Settings, and nothing is hosted until Cloudflare Pages is wired up.

@@ -13,27 +13,42 @@ import { EFFORT_LEVELS, formatPerMTok, modelsForProvider } from "../data/models.
 import { toolGroups } from "../services/ai/tools.js";
 
 const EXAMPLES = [
+  "Find 25 plumbers in Austin with no website",
   "Which leads should I contact next?",
+  "Email hello@acme.com and ask when they want the site live",
+  "Sync the inbox and tell me who replied",
   "What needs my attention?",
-  "What happened today?",
-  "How much revenue did I make this week?",
-  "Which template should I use for Ironwood Electric?",
+  "Import my Whop payments and tell me this month's profit",
 ];
 
 function messageBlock(message) {
   if (message.role === "user") {
     return `<div class="msg msg--user"><span class="msg__who">You</span><div class="msg__body">${escapeHtml(message.text)}</div></div>`;
   }
+
   if (message.role === "tool") {
     const result = message.result || {};
+    const blocked = result.ok === false || result.blocked;
+    /* A tool the model chose reads differently from one a typed command ran,
+       and the difference matters when you are checking what actually
+       happened. */
+    const who = message.toolCallId ? "Ran" : "Command";
     return `
-      <div class="msg msg--system">
-        <span class="msg__who">Command · ${escapeHtml(message.tool)}</span>
+      <div class="msg msg--system${blocked ? " msg--blocked" : ""}">
+        <span class="msg__who">${who} · ${escapeHtml(message.tool)}</span>
         <div class="tool-call">${icon("tool")}<code>${escapeHtml(message.tool)}()</code></div>
         <div class="msg__body">${escapeHtml(result.summary || result.error || "Done.")}</div>
       </div>
     `;
   }
+
+  if (message.role === "assistant") {
+    /* An assistant turn that only called tools has no words of its own; the
+       tool entries that follow it are the visible record. */
+    if (!message.text) return "";
+    return `<div class="msg msg--assistant"><span class="msg__who">Operations</span><div class="msg__body">${escapeHtml(message.text)}</div></div>`;
+  }
+
   return `
     <div class="msg msg--system${message.blocked ? " msg--blocked" : ""}">
       <span class="msg__who">${escapeHtml(message.who || "Operations")}</span>

@@ -35,6 +35,8 @@ const { isConnected, integrationList } = await import("../js/services/integratio
 const { providerReady } = await import("../js/services/ai/provider.js");
 const { canSend } = await import("../js/services/email/outreach.js");
 const { normalizeLead, duplicateKey, splitAddress } = await import("../js/services/openscout/adapter.js");
+const { updateRecord } = await import("../js/services/data.js");
+const { recentTranscript, serializeToolResult } = await import("../js/services/ai/provider.js");
 
 const seed = createSeedData();
 setData(seed, { silent: true });
@@ -205,11 +207,41 @@ test("read tools return data from the workspace", async () => {
 
 test("external tools report blocked instead of pretending", async () => {
   const draft = getState().data.drafts.find((item) => item.status === "ready");
-  const result = await runTool("send_email", { draft_id: draft.id });
+  const result = await runTool("send_draft", { draft_id: draft.id, to: "owner@example.com" });
   assert.equal(result.ok, true, "the tool call itself succeeds");
   assert.equal(result.blocked, true, "sending is blocked");
   assert.match(result.summary, /not connected/i);
   assert.equal(getState().data.drafts.find((item) => item.id === draft.id).status, "ready", "nothing was marked sent");
+});
+
+test("a lead with no email address blocks the send instead of failing it", async () => {
+  const draft = getState().data.drafts.find((item) => item.status === "ready");
+  await updateRecord("leads", draft.lead_id, { email: "" });
+
+  const result = await runTool("send_draft", { draft_id: draft.id });
+  assert.equal(result.ok, true, "a missing address is an outcome, not a thrown error");
+  assert.equal(result.blocked, true);
+  assert.match(result.summary, /no email address/i);
+  assert.equal(getState().data.drafts.find((item) => item.id === draft.id).status, "ready");
+});
+
+test("send_email refuses any recipient that is not an address", async () => {
+  const result = await runTool("send_email", { to: "not-an-address", subject: "Hi", body: "Hello" });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.match(result.error, /not a valid email address/i);
+});
+
+test("send_email reaches an address with no lead behind it", async () => {
+  const result = await runTool("send_email", {
+    to: "accountant@example.com",
+    subject: "Invoice",
+    body: "Attached.",
+  });
+  /* Outlook is not connected in tests, so the boundary is what is asserted:
+     the tool accepts an arbitrary recipient and stops at the transport. */
+  assert.equal(result.blocked, true);
+  assert.match(result.error, /not connected/i);
 });
 
 test("research reports that the tool is not connected", async () => {
@@ -358,4 +390,92 @@ test("the OpenScout adapter still normalizes leads the same way", () => {
     postalCode: "76010",
     country: "USA",
   });
+});
+
+/* ---------- the assistant loop ---------- */
+
+test("the tool registry covers the work the business actually does", () => {
+  const names = new Set(listTools().map((tool) => tool.name));
+  /* Every one of these was missing, which is why the assistant could describe
+     the business but never move it forward. */
+  for (const name of [
+    "discover_leads", "create_lead", "update_lead", "send_email", "send_draft",
+    "sync_inbox", "reply_to_thread", "sync_whop_payments", "record_payment",
+    "record_expense", "create_task", "create_note", "create_calendar_event",
+  ]) {
+    assert.ok(names.has(name), `${name} is missing from the tool registry`);
+  }
+});
+
+test("array and object tool parameters produce a valid JSON schema", () => {
+  const schema = toolSchema();
+  for (const tool of schema) {
+    for (const [name, property] of Object.entries(tool.input_schema.properties)) {
+      if (property.type === "array") {
+        assert.ok(property.items, `${tool.name}.${name} is an array with no items schema`);
+      }
+    }
+  }
+});
+
+test("a tool result is serialised for the model, and trimmed when it is huge", () => {
+  const small = JSON.parse(serializeToolResult({ ok: true, summary: "2 leads", data: [{ id: 1 }] }));
+  assert.equal(small.ok, true);
+  assert.equal(small.summary, "2 leads");
+  assert.deepEqual(small.data, [{ id: 1 }]);
+
+  const serialized = serializeToolResult({ ok: true, summary: "lots", data: "x".repeat(50_000) });
+  const huge = JSON.parse(serialized);
+  assert.equal(huge.data_truncated, true);
+  assert.equal(huge.summary, "lots", "the summary always survives");
+  assert.equal(huge.data, undefined, "the oversized payload is not sent anyway");
+  assert.ok(serialized.length <= 6000, `serialised to ${serialized.length} characters`);
+});
+
+test("tool results are returned to the model, matched to the call that produced them", () => {
+  const transcript = recentTranscript([
+    { role: "user", text: "who is next?" },
+    { role: "assistant", text: "", toolCalls: [{ id: "call_1", name: "get_next_lead", args: {} }] },
+    { role: "tool", toolCallId: "call_1", tool: "get_next_lead", result: { ok: true, summary: "Ironwood Electric" } },
+  ]);
+
+  assert.equal(transcript.length, 3);
+  assert.equal(transcript[1].toolCalls[0].id, "call_1", "the call survives the trim");
+  assert.equal(transcript[2].toolCallId, "call_1", "and so does its result");
+});
+
+test("an unanswered tool call is dropped rather than sent as an orphan", () => {
+  const transcript = recentTranscript([
+    { role: "user", text: "go" },
+    { role: "assistant", text: "Working on it.", toolCalls: [{ id: "call_abandoned", name: "get_status", args: {} }] },
+    { role: "user", text: "actually, stop" },
+  ]);
+
+  const calls = transcript.flatMap((entry) => entry.toolCalls || []);
+  assert.equal(calls.length, 0, "an aborted call would be a hard 400 from the provider");
+  assert.equal(transcript.at(-1).text, "actually, stop");
+});
+
+test("a command's tool result becomes narration instead of an orphan result", () => {
+  const transcript = recentTranscript([
+    { role: "tool", tool: "get_status", result: { ok: true, summary: "3 items need attention" } },
+    { role: "user", text: "what did that say?" },
+  ]);
+
+  assert.equal(transcript[0].role, "user");
+  assert.match(transcript[0].text, /get_status ran outside this conversation/);
+  assert.match(transcript[0].text, /3 items need attention/);
+});
+
+test("a typed search command runs discovery without a model", () => {
+  const command = matchCommand("find 25 plumbers in Austin, TX");
+  assert.equal(command.tool, "discover_leads");
+  assert.deepEqual(command.input, { business_type: "plumbers", location: "Austin, TX", limit: 25 });
+
+  const noCount = matchCommand("find roofers in Dallas");
+  assert.equal(noCount.tool, "discover_leads");
+  assert.deepEqual(noCount.input, { business_type: "roofers", location: "Dallas" });
+
+  assert.equal(matchCommand("sync").tool, "sync_inbox");
+  assert.equal(matchCommand("what is the weather"), null, "everything else is left to the model");
 });

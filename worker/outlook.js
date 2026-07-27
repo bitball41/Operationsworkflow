@@ -216,18 +216,34 @@ async function usableToken(env, userId, { forceRefresh = false } = {}) {
   return token;
 }
 
+/** True when the stored grant covers a Graph permission, e.g. `Mail.Read`. */
+function hasScope(token, permission) {
+  const granted = String(token?.scope || "").toLowerCase();
+  return granted.includes(permission.toLowerCase());
+}
+
+/**
+ * Everything the dashboard needs to tell the three Outlook states apart:
+ * the Worker is missing secrets, the Worker is ready but this user has not
+ * connected a mailbox, or the mailbox is connected. Previously all three
+ * collapsed into a single `false`, so a working Worker still read as
+ * "requires Microsoft OAuth secrets".
+ */
 export async function outlookConnectionStatus(request, env) {
-  const configured = missingConfiguration(env).length === 0;
-  if (!configured) return { configured: false, connected: false };
+  const missing = missingConfiguration(env);
+  if (missing.length) return { configured: false, connected: false, missing, signed_in: false };
 
   const user = await authenticatedSupabaseUser(request).catch(() => null);
-  if (!user) return { configured: true, connected: false };
+  if (!user) return { configured: true, connected: false, missing: [], signed_in: false };
 
   const token = await loadToken(env, user.id).catch(() => null);
   return {
     configured: true,
     connected: Boolean(token?.refresh_token),
+    missing: [],
+    signed_in: true,
     account: token?.account || "",
+    can_read_mail: Boolean(token?.refresh_token) && hasScope(token, "Mail.Read"),
   };
 }
 
@@ -326,83 +342,217 @@ function validRecipient(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 320;
 }
 
-async function sendWithAccessToken(accessToken, payload) {
-  return fetch(OUTLOOK.sendMail, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      message: {
-        subject: payload.subject,
-        body: { contentType: "Text", content: payload.body },
-        toRecipients: [{ emailAddress: { address: payload.to } }],
-      },
-      saveToSentItems: true,
-    }),
-  });
+function recipientList(value) {
+  const values = Array.isArray(value) ? value : String(value || "").split(/[,;]/);
+  return [...new Set(values.map((entry) => String(entry).trim()).filter(Boolean))];
 }
 
-export async function handleOutlookSend(request, env, payload) {
+/**
+ * Resolves the caller to a mailbox, or to the response that explains why there
+ * isn't one. Every Graph-backed route starts here so "not configured", "not
+ * signed in" and "not connected" always come back with the same shape.
+ */
+async function mailboxContext(request, env) {
   const missing = missingConfiguration(env);
   if (missing.length) {
-    return json({
-      error: "not_connected",
-      provider: "outlook",
-      message: `Outlook is not configured on this Worker. Missing: ${missing.join(", ")}.`,
-    }, 503);
+    return {
+      error: json({
+        error: "not_connected",
+        provider: "outlook",
+        message: `Outlook is not configured on this Worker. Missing: ${missing.join(", ")}.`,
+      }, 503),
+    };
   }
 
   const user = await authenticatedSupabaseUser(request);
-  if (!user) return json({ error: "unauthorized", message: "Sign in before sending email." }, 401);
-
-  const to = String(payload?.to || "").trim();
-  const subject = String(payload?.subject || "").trim();
-  const body = String(payload?.body || "");
-  if (!validRecipient(to) || !subject || subject.length > 300 || !body || body.length > 100_000) {
-    return json({
-      error: "invalid_request",
-      message: "A valid recipient, a subject under 300 characters, and a non-empty email body are required.",
-    }, 400);
+  if (!user) {
+    return { error: json({ error: "unauthorized", message: "Sign in to Supabase before using Outlook." }, 401) };
   }
 
   let token;
   try {
     token = await usableToken(env, user.id);
   } catch (error) {
-    return json({ error: "not_connected", provider: "outlook", message: error.message }, 503);
+    return { error: json({ error: "not_connected", provider: "outlook", message: error.message }, 503) };
   }
   if (!token) {
+    return {
+      error: json({
+        error: "not_connected",
+        provider: "outlook",
+        message: "Outlook is not connected. Connect it from Integrations first.",
+      }, 503),
+    };
+  }
+  return { user, token };
+}
+
+/**
+ * One Graph call, with a single silent retry after a forced token refresh.
+ * Microsoft returns 401 for an access token that expired between the freshness
+ * check and the request, which is common enough that failing on it would look
+ * like a broken connection.
+ */
+async function graph(env, context, url, init = {}) {
+  const call = (accessToken) => fetch(url, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      accept: "application/json",
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...(init.headers || {}),
+    },
+  });
+
+  let response = await call(context.token.access_token);
+  if (response.status === 401) {
+    /* A refresh that fails means the grant is gone, not that Graph is broken;
+       the caller turns that into "reconnect Outlook" rather than a 502. */
+    const refreshed = await usableToken(env, context.user.id, { forceRefresh: true }).catch(() => null);
+    if (!refreshed) return response;
+    context.token = refreshed;
+    response = await call(refreshed.access_token);
+  }
+  return response;
+}
+
+function graphFailure(response, { provider = "outlook", message }) {
+  if (response.status === 401) {
     return json({
       error: "not_connected",
-      provider: "outlook",
-      message: "Outlook is not connected. Connect it from Integrations before sending.",
+      provider,
+      message: "The Outlook connection expired. Reconnect it from Integrations.",
     }, 503);
   }
-
-  let response = await sendWithAccessToken(token.access_token, { to, subject, body });
-  if (response.status === 401) {
-    try {
-      token = await usableToken(env, user.id, { forceRefresh: true });
-      response = await sendWithAccessToken(token.access_token, { to, subject, body });
-    } catch (error) {
-      return json({ error: "not_connected", provider: "outlook", message: error.message }, 503);
-    }
-  }
-
-  if (response.status === 202) return json({ sent: true, provider: "outlook" });
   if (response.status === 429) {
     return json(
-      { error: "rate_limited", provider: "outlook", message: "Outlook is temporarily rate-limiting sends. Try again later." },
+      { error: "rate_limited", provider, message: "Outlook is rate-limiting this mailbox. Try again shortly." },
       429,
       response.headers.get("retry-after") ? { "retry-after": response.headers.get("retry-after") } : {},
     );
   }
-  return json({
-    error: "send_failed",
-    provider: "outlook",
+  if (response.status === 403) {
+    return json({
+      error: "not_connected",
+      provider,
+      message: "This Outlook connection is missing a permission. Disconnect and reconnect it from Integrations to re-consent.",
+    }, 503);
+  }
+  return json({ error: "graph_failed", provider, message }, 502);
+}
+
+export async function handleOutlookSend(request, env, payload) {
+  const context = await mailboxContext(request, env);
+  if (context.error) return context.error;
+
+  const to = recipientList(payload?.to);
+  const cc = recipientList(payload?.cc);
+  const subject = String(payload?.subject || "").trim();
+  const body = String(payload?.body || "");
+  const invalid = [...to, ...cc].filter((address) => !validRecipient(address));
+
+  if (!to.length || invalid.length || !subject || subject.length > 300 || !body || body.length > 100_000) {
+    return json({
+      error: "invalid_request",
+      message: invalid.length
+        ? `Not a valid email address: ${invalid.slice(0, 3).join(", ")}.`
+        : "At least one recipient, a subject under 300 characters, and a non-empty email body are required.",
+    }, 400);
+  }
+
+  const response = await graph(env, context, OUTLOOK.sendMail, {
+    method: "POST",
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: payload?.html ? "HTML" : "Text", content: body },
+        toRecipients: to.map((address) => ({ emailAddress: { address } })),
+        ...(cc.length ? { ccRecipients: cc.map((address) => ({ emailAddress: { address } })) } : {}),
+      },
+      saveToSentItems: true,
+    }),
+  });
+
+  if (response.status === 202) return json({ sent: true, provider: "outlook", to, cc });
+  return graphFailure(response, {
     message: "Microsoft Graph did not accept the email. Nothing was marked as sent.",
-  }, 502);
+  });
+}
+
+/** Replies in place on a real Outlook thread, so the conversation stays intact. */
+export async function handleOutlookReply(request, env, payload) {
+  const context = await mailboxContext(request, env);
+  if (context.error) return context.error;
+
+  const messageId = String(payload?.message_id || "").trim();
+  const body = String(payload?.body || "");
+  if (!messageId || !body || body.length > 100_000) {
+    return json({ error: "invalid_request", message: "message_id and a non-empty body are required." }, 400);
+  }
+
+  const response = await graph(env, context, OUTLOOK.reply(messageId), {
+    method: "POST",
+    body: JSON.stringify({ comment: body }),
+  });
+
+  if (response.status === 202) return json({ sent: true, provider: "outlook", message_id: messageId });
+  return graphFailure(response, { message: "Microsoft Graph did not accept the reply." });
+}
+
+function normalizeMessage(message) {
+  return {
+    id: message?.id || "",
+    thread_id: message?.conversationId || message?.id || "",
+    subject: String(message?.subject || "(no subject)"),
+    from_name: message?.from?.emailAddress?.name || "",
+    from_email: String(message?.from?.emailAddress?.address || "").toLowerCase(),
+    to: (Array.isArray(message?.toRecipients) ? message.toRecipients : [])
+      .map((entry) => String(entry?.emailAddress?.address || "").toLowerCase())
+      .filter(Boolean),
+    preview: String(message?.bodyPreview || "").slice(0, 2000),
+    received_at: message?.receivedDateTime || null,
+    unread: message?.isRead === false,
+    web_link: message?.webLink || "",
+  };
+}
+
+/**
+ * Recent inbox messages. `since` is an ISO timestamp; the caller passes the
+ * newest message it already stored so a sync only ever fetches the tail.
+ */
+export async function handleOutlookMessages(request, env, url) {
+  const context = await mailboxContext(request, env);
+  if (context.error) return context.error;
+
+  if (!hasScope(context.token, "Mail.Read")) {
+    return json({
+      error: "not_connected",
+      provider: "outlook",
+      message: "This Outlook connection predates inbox reading. Disconnect and reconnect it from Integrations to grant Mail.Read.",
+    }, 503);
+  }
+
+  /* Built by hand rather than through URLSearchParams: that encodes `$` as
+     `%24` and spaces as `+`, and OData query options are far happier with the
+     literal `$` and `%20`. */
+  const top = Math.min(Math.max(Number(url.searchParams.get("limit")) || 25, 1), 100);
+  const options = [
+    `$select=${encodeURIComponent(OUTLOOK.messageFields)}`,
+    `$orderby=${encodeURIComponent("receivedDateTime desc")}`,
+    `$top=${top}`,
+  ];
+
+  const since = url.searchParams.get("since");
+  if (since && !Number.isNaN(Date.parse(since))) {
+    options.push(`$filter=${encodeURIComponent(`receivedDateTime gt ${new Date(since).toISOString()}`)}`);
+  }
+
+  const response = await graph(env, context, `${OUTLOOK.messages}?${options.join("&")}`);
+  if (!response.ok) {
+    return graphFailure(response, { message: "Microsoft Graph did not return the inbox." });
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const messages = (Array.isArray(payload?.value) ? payload.value : []).map(normalizeMessage);
+  return json({ messages, account: context.token.account || "", at: new Date().toISOString() });
 }

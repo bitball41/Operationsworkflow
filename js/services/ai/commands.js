@@ -50,6 +50,24 @@ const COMMANDS = [
     label: "Unread replies",
     input: () => ({ unread_only: true }),
   },
+  {
+    match: /^(sync|sync inbox|check email|check mail)$/i,
+    tool: "sync_inbox",
+    label: "Sync the Outlook inbox",
+    input: () => ({}),
+  },
+  {
+    /* "find plumbers in austin, tx" — the way this day actually starts, with
+       no model involved and no form to fill in. */
+    match: /^find\s+(?:(\d{1,3})\s+)?(.+?)\s+in\s+(.+)$/i,
+    tool: "discover_leads",
+    label: "Find leads",
+    input: (matches) => ({
+      business_type: matches[2].trim(),
+      location: matches[3].trim(),
+      ...(matches[1] ? { limit: Number(matches[1]) } : {}),
+    }),
+  },
 ];
 
 export function matchCommand(text) {
@@ -68,9 +86,11 @@ export async function runCommand(command) {
 }
 
 export const COMMAND_HINTS = Object.freeze([
+  { command: "find 25 plumbers in Austin, TX", detail: "Search Google Places and save the leads" },
   { command: "go", detail: "Start the outreach batch" },
   { command: "go 10", detail: "Start with a batch of 10" },
   { command: "stop", detail: "Stop after the current lead" },
   { command: "status", detail: "What needs attention right now" },
   { command: "next", detail: "Show the next best lead" },
+  { command: "sync", detail: "Pull new replies from Outlook" },
 ]);

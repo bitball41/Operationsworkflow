@@ -6,6 +6,7 @@ const WORKER_SECRET_NAMES = Object.freeze({
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   whop: "WHOP_API_KEY",
+  google_maps: "GOOGLE_MAPS_API_KEY",
 });
 
 import { closePalette, isPaletteOpen } from "./components/command-palette.js";
@@ -14,6 +15,7 @@ import {
   openClientDetails,
   openClientForm,
   openDeploymentLogs,
+  openDirectEmailForm,
   openDiscoveryDetails,
   openDraftForm,
   openExpenseForm,
@@ -35,11 +37,10 @@ import { closeDrawer, closeModal, confirmAction, formValues, openDrawer, toast }
 import { navigate, setParam } from "./core/router.js";
 import { getState, setAssistant, setDiscovery, setState, setStudio } from "./core/state.js";
 import { isoOffset, safeJson, slugify, uid } from "./core/utils.js";
+import { runAgentLoop } from "./services/ai/agent.js";
 import { matchCommand, runCommand } from "./services/ai/commands.js";
-import { buildContext } from "./services/ai/context.js";
-import { activeModel, providerReady, runAssistantTurn } from "./services/ai/provider.js";
+import { activeModel, providerReady } from "./services/ai/provider.js";
 import { formatPerMTok } from "./data/models.js";
-import { runTool, toolSchema } from "./services/ai/tools.js";
 import { connectOutlook, disconnectOutlook, fetchServiceStatus } from "./services/api.js";
 import { AUTOMATION_DEFAULTS } from "./config.js";
 import {
@@ -49,21 +50,23 @@ import {
   stopAutomation,
 } from "./services/automation/engine.js";
 import {
-  completeDiscoveryRun,
-  createDiscoveryRun,
   createRecord,
   deleteRecord,
-  failDiscoveryRun,
   findRecord,
   logActivity,
   preferences,
+  pushLocalWorkspaceToCloud,
   rejectDiscoveryCandidates,
   saveDiscoveryCandidates,
   savePreferences,
   updateRecord,
 } from "./services/data.js";
+import { runDiscoverySearch } from "./services/discovery.js";
 import { canSend } from "./services/email/outreach.js";
-import { discoverWithOpenScout, resolveMapsKey, setStoredApiKey } from "./services/openscout/adapter.js";
+import { providerName } from "./services/integrations.js";
+import { syncInbox } from "./services/email/inbox.js";
+import { syncWhopPayments } from "./services/payments/whop.js";
+import { setStoredApiKey } from "./services/openscout/adapter.js";
 import {
   classifyReply,
   createOrUpdateDemo,
@@ -71,7 +74,9 @@ import {
   demoForLead,
   ensureTemplateRecords,
   publishDemo,
+  replyToThread,
   saveDemoFiles,
+  sendDirectEmail,
   sendDraft,
   updatePipeline,
 } from "./services/operations.js";
@@ -173,11 +178,16 @@ export async function onClick(event) {
     case "integration-setup": {
       const provider = target.dataset.provider;
       const secret = WORKER_SECRET_NAMES[provider];
+      /* Outlook is not one secret but a set, plus a KV namespace, so it names
+         exactly what the Worker reported as missing rather than guessing. */
+      const outlookMissing = getState().services.outlook?.missing || [];
       toast(
-        `${provider} is not connected`,
-        secret
-          ? `Add the key to the Cloudflare Worker — wrangler secret put ${secret} — then reload. No credential is ever stored in this project.`
-          : "Credentials are deliberately not in this project. The interface, records and tool calls for it already exist.",
+        `${providerName(provider)} is not connected`,
+        provider === "outlook"
+          ? `The Cloudflare Worker is missing ${outlookMissing.join(", ") || "its Microsoft configuration"}. See README → API keys.`
+          : secret
+            ? `Add the key to the Cloudflare Worker — wrangler secret put ${secret} — then reload. No credential is ever stored in this project.`
+            : "Credentials are deliberately not in this project. The interface, records and tool calls for it already exist.",
         "info",
       );
       break;
@@ -190,6 +200,50 @@ export async function onClick(event) {
         await disconnectOutlook();
         setState({ services: await fetchServiceStatus() });
       }, "Outlook disconnected", "No further email can be sent until it is reconnected.");
+      break;
+    case "inbox-sync":
+      await run(async () => {
+        const result = await syncInbox();
+        toast(
+          result.messages ? "Inbox synced" : "Inbox is up to date",
+          result.messages ? `${result.messages} new message${result.messages === 1 ? "" : "s"}.` : "No new messages from Outlook.",
+        );
+      });
+      break;
+    case "whop-sync":
+      await run(async () => {
+        const result = await syncWhopPayments();
+        toast(
+          "Whop synced",
+          `${result.imported} new payment${result.imported === 1 ? "" : "s"}, ${result.updated} updated, ${result.scanned} scanned.`,
+        );
+      });
+      break;
+    case "cloud-upload":
+      if (target.dataset.confirmed !== "true") {
+        confirmAction({
+          title: "Copy this browser's workspace to Supabase?",
+          message: "Every local lead, demo, draft and payment is inserted into your Supabase project. Local storage is left untouched.",
+          confirmLabel: "Upload",
+          action: "cloud-upload",
+          danger: false,
+          attrs: 'data-confirmed="true"',
+        });
+        break;
+      }
+      closeModal();
+      await run(async () => {
+        const result = await pushLocalWorkspaceToCloud();
+        toast(
+          "Workspace uploaded",
+          result.uploaded
+            ? `${result.uploaded} record${result.uploaded === 1 ? "" : "s"} copied${result.skipped.length ? `. Skipped: ${result.skipped.join(", ")}` : "."}`
+            : "Nothing local left to upload.",
+        );
+      });
+      break;
+    case "email-new":
+      openDirectEmailForm();
       break;
 
     /* --- automation --- */
@@ -757,18 +811,46 @@ export async function onSubmit(event) {
         break;
       }
 
+      case "direct-email": {
+        await sendDirectEmail({
+          to: values.to,
+          cc: values.cc,
+          subject: values.subject,
+          body: values.body,
+          leadId: values.lead_id || null,
+        });
+        closeModal();
+        toast("Email sent", values.to);
+        break;
+      }
+
       case "reply": {
-        const draft = await createRecord("drafts", {
+        const threadId = form.dataset.threadId;
+        const thread = findRecord("emailThreads", threadId);
+
+        /* A thread that came from Outlook can be answered in place. Anything
+           else — an older record, or a mailbox that has not been synced — still
+           falls back to a ready draft rather than dropping the reply. */
+        if (thread?.external_thread_id && canSend()) {
+          await replyToThread(threadId, values.body);
+          toast("Reply sent", thread.sender_email || "");
+          form.reset();
+          break;
+        }
+
+        await createRecord("drafts", {
           lead_id: form.dataset.leadId || null,
           kind: "reply",
-          subject: `Re: ${findRecord("emailThreads", form.dataset.threadId)?.subject || "Website preview"}`,
+          subject: `Re: ${thread?.subject || "Website preview"}`,
           body: values.body,
           status: "ready",
         });
-        await updateRecord("emailThreads", form.dataset.threadId, { is_unread: false });
-        toast("Reply saved as ready", canSend() ? "Send it from Outreach." : "Outlook is not connected yet.");
+        await updateRecord("emailThreads", threadId, { is_unread: false });
+        toast(
+          "Reply saved as ready",
+          canSend() ? "This thread has no Outlook conversation to answer — send it from Outreach." : "Outlook is not connected yet.",
+        );
         form.reset();
-        if (!draft) break;
         break;
       }
 
@@ -1049,30 +1131,20 @@ async function handleAssistant(rawMessage, form) {
   }
 
   try {
-    const turn = await runAssistantTurn({
-      messages,
-      context: buildContext(),
-      tools: toolSchema(),
+    /* The loop appends as it goes, so a multi-step request shows each tool
+       landing instead of freezing until the whole chain finishes. Tools run
+       through the same registry the commands use, so the model can only do
+       things the application can already do. */
+    await runAgentLoop({
+      transcript: messages,
+      onEntry: (entry) => setAssistant({ messages: [...getState().assistant.messages, entry] }),
     });
-
-    /* Tool calls run through the same registry the commands use, so the model
-       can only do things the application can already do. */
-    const toolMessages = [];
-    for (const call of turn.toolCalls || []) {
-      const result = await runTool(call.name, call.args || {});
-      toolMessages.push({ id: uid(), role: "tool", tool: call.name, result, at: new Date().toISOString() });
-    }
-
-    const reply = turn.text
-      ? [{ id: uid(), role: "assistant", text: turn.text, at: new Date().toISOString() }]
-      : [];
-
-    setAssistant({ pending: false, messages: [...messages, ...toolMessages, ...reply] });
+    setAssistant({ pending: false });
   } catch (error) {
     console.error(error);
     setAssistant({
       pending: false,
-      messages: [...messages, {
+      messages: [...getState().assistant.messages, {
         id: uid(),
         role: "system",
         blocked: true,
@@ -1089,75 +1161,47 @@ async function handleAssistant(rawMessage, form) {
 async function runDiscovery(values) {
   /* A key typed into the form wins, then the Worker's, then this browser's. */
   if (values.api_key) setStoredApiKey(String(values.api_key).trim());
-  const apiKey = String(values.api_key || (await resolveMapsKey()) || "").trim();
-  if (!apiKey) {
-    setDiscovery({
-      status: "idle",
-      progress: null,
-      error: "No Google Maps key available. Set GOOGLE_MAPS_API_KEY on the Cloudflare Worker, or paste a browser key below.",
-    });
-    return;
-  }
 
-  const query = {
-    location: values.location,
-    businessType: values.business_type,
-    radiusKm: number(values.radius_km, 15),
-    limit: number(values.limit, 50),
-    depth: values.depth || "standard",
-    minConfidence: number(values.min_confidence, 70),
-    minRating: number(values.min_rating, 0),
-    filters: {
+  setDiscovery({
+    status: "running",
+    runId: null,
+    results: [],
+    selected: [],
+    error: "",
+    progress: { phase: "scan", completed: 0, total: 1, scanned: 0, leads: 0 },
+    summary: null,
+  });
+
+  try {
+    const search = await runDiscoverySearch({
+      apiKey: values.api_key,
+      location: values.location,
+      businessType: values.business_type,
+      radiusKm: number(values.radius_km, 15),
+      limit: number(values.limit, 50),
+      depth: values.depth || "standard",
+      minConfidence: number(values.min_confidence, 70),
+      minRating: number(values.min_rating, 0),
       noWebsite: values.no_website !== false,
       mustHavePhone: Boolean(values.must_have_phone),
       skipKnown: values.skip_known !== false,
       verify: Boolean(values.verify),
-    },
-  };
-
-  let runRecord = null;
-  try {
-    runRecord = await createDiscoveryRun(query);
-    setDiscovery({
-      status: "running",
-      runId: runRecord.id,
-      results: [],
-      selected: [],
-      error: "",
-      progress: { phase: "scan", completed: 0, total: 1, scanned: 0, leads: 0 },
-      summary: null,
+    }, {
+      onProgress: (progress) => setDiscovery({ progress }),
+      onRunCreated: (record) => setDiscovery({ runId: record.id }),
     });
 
-    const result = await discoverWithOpenScout({
-      apiKey,
-      location: values.location,
-      businessType: values.business_type,
-      radiusKm: query.radiusKm,
-      limit: query.limit,
-      depth: query.depth,
-      minConfidence: query.minConfidence,
-      verify: query.filters.verify,
-      mustHavePhone: query.filters.mustHavePhone,
-      mustHaveEmail: false,
-      strictlyBlankWebsite: query.filters.noWebsite,
-    }, (progress) => setDiscovery({ progress }));
-
-    /* Post-filters the engine does not own. */
-    let leads = result.leads;
-    if (query.minRating > 0) {
-      leads = leads.filter((lead) => Number(lead.source_metadata?.openscout?.rating || 0) >= query.minRating);
-    }
-    if (query.filters.skipKnown) {
-      const known = new Set(getState().data.leads.map((lead) => String(lead.source_key || "")));
-      leads = leads.filter((lead) => !known.has(String(lead.source_key || "")));
-    }
-
-    const stored = await completeDiscoveryRun(runRecord.id, { ...result, leads });
-    setDiscovery({ status: "completed", results: stored, selected: [], progress: null, summary: result, error: "" });
-    toast("Search finished", `${stored.length} businesses found.`);
+    setDiscovery({
+      status: "completed",
+      results: search.results,
+      selected: [],
+      progress: null,
+      summary: search.summary,
+      error: "",
+    });
+    toast("Search finished", `${search.results.length} businesses found.`);
   } catch (error) {
     console.error(error);
-    await failDiscoveryRun(runRecord?.id, error.message || "Search failed.");
     setDiscovery({ status: "failed", progress: null, error: error.message || "The search could not finish." });
   }
 }

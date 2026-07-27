@@ -1,7 +1,8 @@
 /** Payments, Analytics, Costs and Pricing Experiments. */
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, groupBy, isSameMonth, statusLabel, sum } from "../core/utils.js";
-import { bars, btn, empty, lineChart, pill, section, stats, table, td } from "../components/ui.js";
+import { bars, btn, empty, lineChart, notice, pill, section, stats, table, td } from "../components/ui.js";
+import { isConnected } from "../services/integrations.js";
 import { getPayments, revenueSummary } from "../services/operations.js";
 import { byId, clientName, filterSelect, searchInput } from "./shared.js";
 
@@ -41,10 +42,22 @@ export function renderPayments() {
         ]),
       })}
 
+      ${isConnected("whop") ? "" : notice(
+        "Whop is not connected",
+        "Payments here are only the ones entered by hand. Add WHOP_API_KEY to the Cloudflare Worker to import real charges.",
+        { iconName: "wallet", tone: "warn" },
+      )}
+
       <div class="toolbar">
         ${searchInput("Search customer or transaction", routeParams.q || "")}
         ${filterSelect("type", [{ value: "website_sale", label: "Website sale" }, { value: "maintenance", label: "Maintenance" }], type, "All types")}
         <span class="toolbar__spacer"></span>
+        ${btn("Sync from Whop", {
+          action: "whop-sync",
+          iconName: "refresh",
+          size: "sm",
+          attrs: isConnected("whop") ? "" : "disabled",
+        })}
         ${btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary", size: "sm" })}
       </div>
 

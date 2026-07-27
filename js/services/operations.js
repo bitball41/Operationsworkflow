@@ -17,7 +17,7 @@ import {
   updateRecord,
 } from "./data.js";
 import { TEMPLATE_CATALOG } from "../data/site-templates.js";
-import { draftFollowUp, draftOutreach, sendEmail } from "./email/outreach.js";
+import { draftFollowUp, draftOutreach, isEmailAddress, replyToMessage, sendEmail } from "./email/outreach.js";
 import { NotConnectedError } from "./integrations.js";
 import { buildBundleForLead, catalogForRecord, chooseTemplate } from "./sites/bundle.js";
 import { publishBundle } from "./sites/publish.js";
@@ -225,16 +225,28 @@ export async function createOutreachDraft(leadOrId, { price, status = "ready", k
 }
 
 /**
- * Attempts a real send. When Outlook is not connected the draft is left in
- * `ready` and the blocked reason is returned — nothing is marked as sent.
+ * Attempts a real send. When Outlook is not connected — or the lead has no
+ * email address at all, which is the normal state of a freshly discovered
+ * business — the draft is left in `ready` and the blocked reason is returned.
+ * Nothing is marked as sent, and the automation loop does not count it as a
+ * failure, because there is nothing wrong that retrying would fix.
+ *
+ * `to` overrides the lead's stored address for a one-off send.
  */
-export async function sendDraft(draftId) {
+export async function sendDraft(draftId, { to } = {}) {
   const draft = findRecord("drafts", draftId);
   if (!draft) throw new Error("Draft not found.");
   const lead = leadById(draft.lead_id);
+  const recipient = String(to || lead?.email || "").trim();
+
+  if (!recipient) {
+    const reason = `${lead?.business_name || "This lead"} has no email address, so nothing was sent. Add one on the lead, or send to an address directly.`;
+    await updateRecord("drafts", draftId, { status: "ready", error_message: reason });
+    return { sent: false, blocked: true, reason, provider: "outlook", needsRecipient: true };
+  }
 
   try {
-    const result = await sendEmail({ to: lead?.email, subject: draft.subject, body: draft.body });
+    const result = await sendEmail({ to: recipient, subject: draft.subject, body: draft.body });
     const sentAt = new Date().toISOString();
     const sent = await updateRecord("drafts", draftId, {
       status: "sent",
@@ -242,9 +254,10 @@ export async function sendDraft(draftId) {
       external_message_id: result?.id || null,
       error_message: null,
     });
-    await markContacted(lead.id, sentAt);
-    await logActivity("email_sent", "Outreach sent", `${lead?.business_name} · ${draft.subject}`, { lead_id: lead?.id });
-    return { sent: true, draft: sent };
+    if (lead) await markContacted(lead.id, sentAt);
+    await recordOutboundEmail({ to: recipient, subject: draft.subject, body: draft.body, leadId: lead?.id || null });
+    await logActivity("email_sent", "Outreach sent", `${lead?.business_name || recipient} · ${draft.subject}`, { lead_id: lead?.id });
+    return { sent: true, draft: sent, to: recipient };
   } catch (error) {
     if (error instanceof NotConnectedError) {
       await updateRecord("drafts", draftId, { status: "ready", error_message: error.message });
@@ -253,6 +266,75 @@ export async function sendDraft(draftId) {
     await updateRecord("drafts", draftId, { status: "failed", error_message: error.message });
     throw error;
   }
+}
+
+/** Keeps a copy of everything that left the mailbox, so Inbox shows both sides. */
+async function recordOutboundEmail({ to, subject, body, leadId = null }) {
+  try {
+    await createRecord("emails", {
+      lead_id: leadId,
+      direction: "outbound",
+      sender: preferences().default_email || null,
+      recipients: Array.isArray(to) ? to : [to],
+      subject,
+      body,
+      status: "sent",
+      sent_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn("Could not record the outbound email", error);
+  }
+}
+
+/**
+ * Sends an email to any address, lead or not.
+ *
+ * The outreach path is deliberately narrow — a lead, a demo, the standard offer
+ * — but plenty of real work is a one-off message to a supplier, a client, or
+ * someone who has not been added to the pipeline at all. This is that path, and
+ * it is the same transport, so it is subject to the same connection check.
+ */
+export async function sendDirectEmail({ to, cc, subject, body, leadId = null }) {
+  const result = await sendEmail({ to, cc, subject, body });
+  const recipients = Array.isArray(result?.to) && result.to.length ? result.to : [String(to)];
+  await recordOutboundEmail({ to: recipients, subject, body, leadId });
+  if (leadId) await markContacted(leadId);
+  await logActivity(
+    "email_sent",
+    "Email sent",
+    `${recipients.join(", ")} · ${subject}`,
+    leadId ? { lead_id: leadId } : {},
+  );
+  return { sent: true, to: recipients, subject };
+}
+
+/** Replies inside an existing Outlook conversation and marks the thread read. */
+export async function replyToThread(threadId, body) {
+  const thread = findRecord("emailThreads", threadId);
+  if (!thread) throw new Error("Thread not found.");
+  if (!thread.external_thread_id) {
+    throw new Error("This thread did not come from Outlook, so there is nothing to reply to.");
+  }
+
+  const message = data().emails
+    .filter((email) => String(email.thread_id) === String(threadId) && email.direction === "inbound" && email.external_message_id)
+    .sort((a, b) => new Date(b.received_at || b.created_at || 0) - new Date(a.received_at || a.created_at || 0))[0];
+  if (!message) throw new Error("No Outlook message to reply to on this thread. Sync the inbox first.");
+
+  await replyToMessage({ messageId: message.external_message_id, body });
+  await updateRecord("emailThreads", threadId, { is_unread: false, last_message_at: new Date().toISOString() });
+  await createRecord("emails", {
+    thread_id: threadId,
+    lead_id: thread.lead_id || null,
+    direction: "outbound",
+    recipients: [thread.sender_email].filter(Boolean),
+    subject: `Re: ${thread.subject}`,
+    body,
+    status: "sent",
+    sent_at: new Date().toISOString(),
+  });
+  await logActivity("email_sent", "Reply sent", `${thread.sender_email || thread.sender_name} · ${thread.subject}`, { lead_id: thread.lead_id });
+  return { sent: true, thread_id: threadId };
 }
 
 export async function markContacted(leadId, when = new Date().toISOString()) {
@@ -283,6 +365,55 @@ export async function createFollowUp(leadId, { days, attempt, draftId = null, su
   });
   await updateRecord("leads", leadId, { follow_up_at: followUp.due_at });
   return followUp;
+}
+
+/* ---------- lead records ---------- */
+
+const LEAD_FIELDS = [
+  "business_name", "contact_name", "email", "phone", "address", "city", "region",
+  "postal_code", "country", "category", "website_url", "has_website", "notes",
+  "deal_value", "asking_price", "lead_score", "priority", "tags",
+];
+
+function pickLeadFields(values = {}) {
+  return Object.fromEntries(Object.entries(values).filter(([key]) => LEAD_FIELDS.includes(key)));
+}
+
+/** Adds a lead by hand — the ones that arrive by referral, not by search. */
+export async function createLead(values = {}) {
+  const businessName = String(values.business_name || "").trim();
+  if (!businessName) throw new Error("A lead needs a business name.");
+  if (values.email && !isEmailAddress(values.email)) throw new Error(`"${values.email}" is not a valid email address.`);
+
+  const existing = data().leads.find((lead) => (
+    lead.business_name.toLowerCase() === businessName.toLowerCase()
+    && String(lead.city || "").toLowerCase() === String(values.city || "").toLowerCase()
+  ));
+  if (existing) return { lead: existing, created: false };
+
+  const lead = await createRecord("leads", {
+    ...pickLeadFields(values),
+    business_name: businessName,
+    source: values.source || "manual",
+    status: "new",
+    discovered_at: new Date().toISOString(),
+  });
+  await logActivity("lead_saved", "Lead added", businessName, { lead_id: lead.id });
+  return { lead, created: true };
+}
+
+/**
+ * Edits a lead. Adding the email address is the single most common one — a
+ * discovered business never comes with one, and without it nothing can be sent.
+ */
+export async function updateLead(leadId, patch = {}) {
+  const lead = leadById(leadId);
+  if (!lead) throw new Error("Lead not found.");
+  if (patch.email && !isEmailAddress(patch.email)) throw new Error(`"${patch.email}" is not a valid email address.`);
+
+  const fields = pickLeadFields(patch);
+  if (!Object.keys(fields).length) throw new Error("Nothing to update on this lead.");
+  return updateRecord("leads", leadId, fields);
 }
 
 export async function updatePipeline(leadId, status) {
@@ -321,6 +452,113 @@ export async function classifyReply(threadId, classification) {
   }[classification];
   if (leadStatus && thread.lead_id) await updateRecord("leads", thread.lead_id, { status: leadStatus });
   return updated;
+}
+
+/* ---------- workspace records ---------- */
+
+function futureDate(value, { fallbackDays = null } = {}) {
+  if (value) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+    /* "3" or "3 days" reads as an offset, which is how these are usually said. */
+    const days = Number(String(value).match(/-?\d+(\.\d+)?/)?.[0]);
+    if (Number.isFinite(days)) {
+      const due = new Date();
+      due.setDate(due.getDate() + days);
+      return due.toISOString();
+    }
+    throw new Error(`"${value}" is not a date this can understand.`);
+  }
+  if (fallbackDays === null) return null;
+  const due = new Date();
+  due.setDate(due.getDate() + fallbackDays);
+  return due.toISOString();
+}
+
+const TASK_PRIORITIES = ["low", "normal", "high", "urgent"];
+
+export async function createTask({ title, description = "", priority = "normal", due_at: dueAt, lead_id: leadId = null, created_by: createdBy = "user" } = {}) {
+  const value = String(title || "").trim();
+  if (!value) throw new Error("A task needs a title.");
+  return createRecord("tasks", {
+    title: value,
+    description,
+    priority: TASK_PRIORITIES.includes(priority) ? priority : "normal",
+    due_at: futureDate(dueAt),
+    status: "pending",
+    lead_id: leadId,
+    created_by: createdBy,
+  });
+}
+
+export async function completeTask(taskId) {
+  const task = findRecord("tasks", taskId);
+  if (!task) throw new Error("Task not found.");
+  return updateRecord("tasks", taskId, { status: "completed" });
+}
+
+export async function createNote({ title, content = "", category = "general", lead_id: leadId = null, pinned = false } = {}) {
+  const value = String(title || "").trim();
+  if (!value) throw new Error("A note needs a title.");
+  return createRecord("notes", {
+    title: value,
+    content: String(content || ""),
+    category,
+    lead_id: leadId,
+    is_pinned: Boolean(pinned),
+    is_archived: false,
+  });
+}
+
+const EVENT_TYPES = ["follow_up", "call", "deadline", "launch", "maintenance", "task", "other"];
+
+export async function createCalendarEvent({ title, starts_at: startsAt, event_type: eventType = "other", notes = "", lead_id: leadId = null } = {}) {
+  const value = String(title || "").trim();
+  if (!value) throw new Error("An event needs a title.");
+  const start = futureDate(startsAt, { fallbackDays: 1 });
+  return createRecord("calendarEvents", {
+    title: value,
+    event_type: EVENT_TYPES.includes(eventType) ? eventType : "other",
+    starts_at: start,
+    notes,
+    lead_id: leadId,
+    all_day: false,
+  });
+}
+
+export async function recordPayment({ customer_name: customerName, amount, payment_type: paymentType = "website_sale", fee_amount: feeAmount = 0, status = "paid", client_id: clientId = null } = {}) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) throw new Error("A payment needs a positive amount.");
+  const name = String(customerName || "").trim();
+  if (!name) throw new Error("A payment needs a customer name.");
+  const payment = await createRecord("payments", {
+    customer_name: name,
+    amount: value,
+    fee_amount: Math.max(0, Number(feeAmount) || 0),
+    payment_type: paymentType === "maintenance" ? "maintenance" : "website_sale",
+    status: ["pending", "paid", "available", "failed", "refunded"].includes(status) ? status : "paid",
+    source: "manual",
+    client_id: clientId,
+    paid_at: new Date().toISOString(),
+  });
+  await logActivity("payment_received", "Payment recorded", `${name} · ${value}`, { client_id: clientId });
+  return payment;
+}
+
+const EXPENSE_CATEGORIES = ["hosting", "domains", "apis", "software", "payment_fees", "ai", "other"];
+
+export async function recordExpense({ description, amount, category = "other", vendor = "" } = {}) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) throw new Error("An expense needs a positive amount.");
+  const text = String(description || "").trim();
+  if (!text) throw new Error("An expense needs a description.");
+  return createRecord("expenses", {
+    description: text,
+    amount: value,
+    category: EXPENSE_CATEGORIES.includes(category) ? category : "other",
+    vendor,
+    occurred_on: new Date().toISOString().slice(0, 10),
+  });
 }
 
 /* ---------- read models ---------- */

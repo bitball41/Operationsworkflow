@@ -22,6 +22,32 @@ function workerHasKey(provider) {
   return getState().services?.providers?.[provider] === true;
 }
 
+/** The Outlook detail block from /api/status: configured, signed_in, connected. */
+export function outlookState() {
+  return getState().services?.outlook || { configured: false, connected: false, signed_in: false, missing: [] };
+}
+
+/**
+ * Why Outlook cannot send, in the order the operator has to fix it. Returns an
+ * empty string when it can.
+ */
+export function outlookBlocker() {
+  const outlook = outlookState();
+  if (!getState().services?.reachable) return "The API worker is not answering, so Outlook cannot be reached.";
+  if (!outlook.configured) {
+    const missing = outlook.missing?.length ? ` Missing: ${outlook.missing.join(", ")}.` : "";
+    return `Outlook is not configured on the Cloudflare Worker.${missing}`;
+  }
+  if (!outlook.signed_in) return "Sign in to Supabase first — an Outlook mailbox is stored per signed-in user.";
+  if (!outlook.connected) return "No Outlook mailbox is connected yet. Connect one from Integrations.";
+  return "";
+}
+
+/** True once the mailbox grant covers reading the inbox, not just sending. */
+export function canReadOutlookMail() {
+  return outlookState().can_read_mail === true;
+}
+
 export class NotConnectedError extends Error {
   constructor(provider, message) {
     super(message || `${providerName(provider)} is not connected yet.`);
