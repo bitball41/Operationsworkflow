@@ -28,7 +28,7 @@ import {
   table,
   td,
 } from "../components/ui.js";
-import { canUseDirectWebsiteVerification, getStoredApiKey } from "../services/openscout/adapter.js";
+import { canUseDirectWebsiteVerification, getStoredApiKey, workerHoldsMapsKey } from "../services/openscout/adapter.js";
 import { demoForLead, filterSelect, locationOf, searchInput, viewTabs } from "./shared.js";
 
 /* ---------- discovery ---------- */
@@ -58,7 +58,8 @@ function progressLine(discovery) {
 export function renderDiscovery() {
   const state = getState();
   const { data, routeParams, discovery } = state;
-  const hasKey = Boolean(getStoredApiKey());
+  const fromWorker = workerHoldsMapsKey();
+  const hasKey = fromWorker || Boolean(getStoredApiKey());
   const canVerify = canUseDirectWebsiteVerification();
   const lastQuery = data.discoveryRuns[0]?.query || {};
   const allRows = discoveryRows(state);
@@ -73,14 +74,14 @@ export function renderDiscovery() {
 
   const keyField = field("Google Maps browser key", input("api_key", "", {
     type: "password",
-    placeholder: hasKey ? "Saved — enter only to replace" : "AIza…",
-  }), { hint: "stored in this browser only" });
+    placeholder: fromWorker ? "Served by the Worker — enter only to override" : hasKey ? "Saved — enter only to replace" : "AIza…",
+  }), { hint: fromWorker ? "the Cloudflare Worker supplies this key" : "stored in this browser only" });
 
   return `
     <div class="stack">
       ${hasKey ? "" : notice(
         "A Google Maps browser key is required",
-        "Lead Discovery uses the Google Places API through OpenScout. Paste a browser key below — it stays in this browser and is never sent to the database.",
+        "Lead Discovery uses the Google Places API through OpenScout. Set GOOGLE_MAPS_API_KEY on the Cloudflare Worker so every browser gets it, or paste one below to keep it in this browser only. A Maps JavaScript key is public either way — restrict it by HTTP referrer in Google Cloud.",
         { tone: "warn", iconName: "info" },
       )}
 

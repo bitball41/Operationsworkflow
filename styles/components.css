@@ -6,7 +6,7 @@
 }
 
 .greeting p {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.9375rem;
 }
 
@@ -15,7 +15,7 @@
   align-items: center;
   gap: 16px;
   padding: 16px 18px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
   flex-wrap: wrap;
@@ -38,7 +38,7 @@
 }
 
 .control-strip__main span {
-  color: var(--text-2);
+  color: var(--text);
   font-size: 0.875rem;
 }
 
@@ -79,7 +79,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  color: var(--text-2);
+  color: var(--text);
   font-size: 0.8125rem;
 }
 
@@ -88,7 +88,7 @@
 }
 
 .auto-state p {
-  color: var(--text-2);
+  color: var(--text);
   font-size: 0.9375rem;
 }
 
@@ -105,8 +105,8 @@
   padding: 5px 10px;
   border-radius: 6px;
   background: var(--surface);
-  border: 1px solid var(--line-soft);
-  color: var(--text-3);
+  border: 1px solid var(--line);
+  color: var(--text-2);
   font-size: 0.8125rem;
 }
 
@@ -116,7 +116,7 @@
 }
 
 .step-chip.is-done {
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .step-chip.is-done svg {
@@ -130,7 +130,7 @@
 }
 
 .step-chip.is-blocked {
-  border-color: rgba(216, 162, 76, 0.3);
+  border-color: rgba(232, 180, 92, 0.5);
   color: var(--amber);
 }
 
@@ -157,7 +157,7 @@
 .event-log__item svg {
   width: 15px;
   height: 15px;
-  color: var(--text-3);
+  color: var(--text-2);
   align-self: center;
 }
 
@@ -167,7 +167,7 @@
 }
 
 .event-log__item p {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
 }
 
@@ -223,7 +223,7 @@
 
 .msg__who {
   font-size: 0.78rem;
-  color: var(--text-3);
+  color: var(--text-2);
   letter-spacing: 0.02em;
 }
 
@@ -242,7 +242,7 @@
 
 .msg--user .msg__body {
   background: var(--surface-2);
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   padding: 11px 14px;
   border-radius: var(--radius-lg);
 }
@@ -262,7 +262,7 @@
   align-items: center;
   gap: 9px;
   padding: 8px 11px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
   font-size: 0.85rem;
@@ -278,7 +278,7 @@
 .tool-call svg {
   width: 15px;
   height: 15px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .chat__composer {
@@ -345,7 +345,7 @@
   align-items: center;
   gap: 10px;
   justify-content: space-between;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
   flex-wrap: wrap;
 }
@@ -357,7 +357,7 @@
 }
 
 .suggestion {
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-2);
   border-radius: 99px;
@@ -377,7 +377,7 @@
   gap: 7px;
   padding: 5px 10px;
   border-radius: 99px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text-2);
   font-size: 0.8125rem;
@@ -417,7 +417,7 @@
 }
 
 .tool-list > div {
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   background: var(--surface);
@@ -429,7 +429,7 @@
 }
 
 .tool-list p {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
   margin-top: 3px;
 }
@@ -523,7 +523,7 @@
 .file-tab {
   border: 0;
   background: none;
-  color: var(--text-3);
+  color: var(--text-2);
   font-family: var(--mono);
   font-size: 0.8125rem;
   padding: 5px 9px;
@@ -574,7 +574,7 @@
 }
 
 .diff {
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   overflow: hidden;
   font-family: var(--mono);
@@ -604,7 +604,7 @@
   padding: 1px 10px;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 
 .diff__line--add {
@@ -655,7 +655,7 @@
 
 .template__shot {
   position: relative;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   background: #fff;
@@ -686,7 +686,7 @@
 }
 
 .template__meta span {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
 }
 
@@ -720,7 +720,7 @@
 }
 
 .board__head b {
-  color: var(--text-3);
+  color: var(--text-2);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -747,7 +747,7 @@
   padding: 11px 12px;
   border-radius: var(--radius);
   background: var(--surface);
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   cursor: grab;
 }
 
@@ -768,13 +768,13 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
   flex-wrap: wrap;
 }
 
 .board__empty {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
   padding: 10px 4px;
 }
@@ -785,7 +785,7 @@
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
@@ -887,7 +887,7 @@
 }
 
 .thread p {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -912,7 +912,7 @@
   padding: 12px 14px;
   border-radius: var(--radius);
   background: var(--surface);
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   font-size: 0.9rem;
 }
 
@@ -925,7 +925,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.8125rem;
 }
 
@@ -940,7 +940,7 @@
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 1px;
   background: var(--line-soft);
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -978,7 +978,7 @@
 }
 
 .cal__day.is-outside {
-  opacity: 0.4;
+  opacity: 0.68;
 }
 
 .cal__day.is-today > span {
@@ -1095,8 +1095,8 @@
 
 .tag {
   font-size: 0.78rem;
-  color: var(--text-3);
-  border: 1px solid var(--line-soft);
+  color: var(--text-2);
+  border: 1px solid var(--line);
   border-radius: 5px;
   padding: 1px 7px;
 }
@@ -1112,7 +1112,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 16px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   cursor: pointer;
@@ -1129,7 +1129,7 @@
 }
 
 .note p {
-  color: var(--text-3);
+  color: var(--text-2);
   font-size: 0.875rem;
   display: -webkit-box;
   -webkit-line-clamp: 4;

@@ -1,30 +1,40 @@
 /* Design tokens. One calm neutral dark theme, one restrained accent,
-   semantic colour only for success / warning / problem. */
+   semantic colour only for success / warning / problem.
+
+   Every text token clears WCAG AA (4.5:1) against every surface it is allowed
+   to sit on — including --surface-3, the lightest background in the system —
+   and control borders clear 3:1 so inputs and buttons stay findable. */
 :root {
   color-scheme: dark;
 
-  --bg: #0e0e11;
-  --bg-raised: #131317;
-  --surface: #17171c;
-  --surface-2: #1d1d23;
-  --surface-3: #24242c;
-  --line: #27272f;
-  --line-soft: #1f1f26;
+  --bg: #0d0d10;
+  --bg-raised: #14141a;
+  --surface: #191920;
+  --surface-2: #212129;
+  --surface-3: #2b2b35;
 
-  --text: #ecedef;
-  --text-2: #a6a7b0;
-  --text-3: #75757f;
+  /* --line-soft separates rows, --line outlines cards, --line-strong is for
+     anything the eye has to find: inputs, selects, buttons, chips. */
+  --line-soft: #32323c;
+  --line: #43434f;
+  --line-strong: #666673;
 
-  --accent: #5b83f0;
-  --accent-quiet: rgba(91, 131, 240, 0.14);
-  --accent-line: rgba(91, 131, 240, 0.4);
+  /* Contrast on --surface-3 (the worst case): 13.2 / 8.6 / 4.9 */
+  --text: #f7f8fa;
+  --text-2: #c9cbd4;
+  --text-3: #9799a4;
 
-  --green: #5eb98a;
-  --green-quiet: rgba(94, 185, 138, 0.13);
-  --amber: #d8a24c;
-  --amber-quiet: rgba(216, 162, 76, 0.13);
-  --red: #d97169;
-  --red-quiet: rgba(217, 113, 105, 0.13);
+  --accent: #6b8ff7;
+  --accent-text: #a9c0ff;
+  --accent-quiet: rgba(107, 143, 247, 0.16);
+  --accent-line: rgba(140, 168, 250, 0.55);
+
+  --green: #6ecf9c;
+  --green-quiet: rgba(110, 207, 156, 0.15);
+  --amber: #e8b45c;
+  --amber-quiet: rgba(232, 180, 92, 0.15);
+  --red: #ef8d84;
+  --red-quiet: rgba(239, 141, 132, 0.15);
 
   --radius-sm: 6px;
   --radius: 10px;
@@ -45,6 +55,20 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Respect an explicit request for more contrast: push every text token to the
+   top of the scale and make each boundary unambiguous. */
+@media (prefers-contrast: more) {
+  :root {
+    --text: #ffffff;
+    --text-2: #e2e4ea;
+    --text-3: #b9bbc6;
+    --accent-text: #c6d5ff;
+    --line-soft: #45454f;
+    --line: #5c5c68;
+    --line-strong: #8a8a97;
+  }
 }
 
 @media (max-width: 900px) {

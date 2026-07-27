@@ -6,6 +6,9 @@
  * boundary where an OpenScout place becomes an Operations Workflow record.
  */
 
+import { getState } from "../../core/state.js";
+import { fetchMapsKey } from "../api.js";
+
 const ENGINE_VERSION = "openscout-2026-07-25";
 
 export function getOpenScout() {
@@ -22,6 +25,33 @@ export function getStoredApiKey() {
 
 export function setStoredApiKey(value) {
   return getOpenScout().storage?.setApiKey?.(value) || "";
+}
+
+/** True when the Cloudflare Worker reports it is holding a Google Maps key. */
+export function workerHoldsMapsKey() {
+  return getState().services?.providers?.google_maps === true;
+}
+
+let workerKey = "";
+
+/**
+ * The Google Maps key to search with.
+ *
+ * Prefers the Worker's key so one key serves every browser and none of them
+ * need it pasted in; falls back to whatever this browser has stored. A Maps
+ * JavaScript key is public either way — restrict it by HTTP referrer.
+ */
+export async function resolveMapsKey() {
+  if (workerHoldsMapsKey()) {
+    if (workerKey) return workerKey;
+    try {
+      workerKey = await fetchMapsKey();
+      if (workerKey) return workerKey;
+    } catch (error) {
+      console.warn("Worker Maps key unavailable, falling back to this browser's key", error);
+    }
+  }
+  return getStoredApiKey();
 }
 
 export async function guessLocation() {

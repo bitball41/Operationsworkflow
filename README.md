@@ -11,11 +11,16 @@ JavaScript, no framework, no build step, no dependencies at runtime.
 ## Running it
 
 ```bash
-python3 -m http.server 4173
-# open http://localhost:4173
+npx wrangler dev     # dashboard + the /api worker that holds the keys
+# open http://localhost:8787
 ```
 
-The dashboard opens straight into the workspace. There is no sign-in wall.
+`python3 -m http.server 4173` still serves the dashboard, but without the worker
+there is no `/api`, so every key-backed feature reports itself as not connected.
+
+The dashboard opens straight into the workspace. There is no sign-in wall. The
+first run is genuinely empty — no invented leads, clients or revenue. Load the
+sample workspace from Settings if you want something to look at.
 
 ```bash
 npm test   # 49 OpenScout engine tests + 68 application tests
@@ -25,6 +30,7 @@ npm test   # 49 OpenScout engine tests + 68 application tests
 
 ```text
 index.html
+worker/          the Cloudflare Worker: every API key lives here, only here
 styles/          tokens, base primitives, layout shell, feature surfaces
 js/
   app.js         boot, routing, render loop
@@ -34,6 +40,7 @@ js/
   components/    ui primitives, shell, modal forms, command palette
   pages/         one module per area, each returning an HTML string
   services/
+    api.js           client for the worker's /api routes
     data.js          storage (Supabase when signed in, local otherwise)
     operations.js    every business action, exactly once
     integrations.js  "is this service actually connected?"
@@ -53,8 +60,9 @@ state changes trigger a coalesced re-render. That is the whole architecture.
 
 `services/data.js` has two backends behind one CRUD API:
 
-- **Local** (default) — everything persists to `localStorage`. Works offline,
-  starts instantly, seeded with a realistic starter workspace on first run.
+- **Local** (default) — everything persists to `localStorage`. Works offline and
+  starts instantly. A new workspace starts empty; the sample workspace is a
+  button in Settings, never something the dashboard invents for you.
 - **Cloud** — used automatically when a Supabase session exists in the browser.
   Sign in from Settings if you want sync; the Supabase SDK is not even
   downloaded until then.
@@ -105,10 +113,13 @@ A full-page workspace at `#/assistant`. Three parts already work:
 - **Commands** (`services/ai/commands.js`) — `go`, `go 12`, `stop`, `status`,
   `next`, `revenue`, `inbox` run real operations with no model involved.
 
-No model provider is connected and no key is in this repository. Anything that
-is not a known command is not answered — the assistant says so instead of
-inventing a reply. `runAssistantTurn({ messages, context, tools })` is the one
-function to fill in.
+`runAssistantTurn({ messages, context, tools })` posts the conversation, the
+context snapshot and the tool schema to the worker, which adds the key and calls
+Anthropic (or OpenAI). Tool calls come back and run through the same registry the
+commands use, so the model can only do what the application can already do.
+
+With no key on the worker, anything that is not a known command is not answered
+— the assistant says so instead of inventing a reply.
 
 ## Websites
 
@@ -140,8 +151,13 @@ minimum confidence, minimum rating, verification, phone requirement and
 deduplication live under **Advanced** with defaults that match the business
 model (no website, has a phone, skip businesses already saved).
 
-Lead discovery needs a Google Maps browser key with Places enabled. It is
-stored only in that browser's `localStorage`.
+Lead discovery needs a Google Maps browser key with Places enabled. Set
+`GOOGLE_MAPS_API_KEY` on the worker and every browser gets it; otherwise paste
+one on the Lead Discovery page and it stays in that browser's `localStorage`.
+
+A Maps JavaScript key cannot be kept secret — the SDK runs in the page, so the
+key is visible in network traffic wherever it is stored. Restrict it by HTTP
+referrer in Google Cloud and enable only Maps JavaScript API and Places API.
 
 ## Outreach
 
@@ -174,13 +190,47 @@ Every sent email can create its follow-up automatically.
 Each of these has its UI, records and tool calls in place, and refuses to fake
 a result until credentials exist:
 
-| Service | Boundary |
+| Service | Boundary | Key |
+| --- | --- | --- |
+| Model provider | `services/ai/provider.js` → `runAssistantTurn` | worker |
+| Google Maps | `services/openscout/adapter.js` → `resolveMapsKey` | worker |
+| Whop | `services/api.js` → `whopGet` | worker |
+| Gmail | `services/email/outreach.js` → `sendEmail` | not wired |
+| Cloudflare hosting | `services/sites/publish.js` → `publishBundle` | not wired |
+| Research tool | `services/research/research.js` → `researchBusiness` | not wired |
+| MCP | `services/ai/tools.js` → `toolSchema` | not wired |
+
+## API keys
+
+Every key lives in the Cloudflare Worker (`worker/index.js`) as a secret. The
+browser never receives one; it calls `/api/...` on the same origin and the worker
+adds the credential on the way out.
+
+```bash
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put WHOP_API_KEY
+npx wrangler secret put GOOGLE_MAPS_API_KEY
+```
+
+Locally, copy `.dev.vars.example` to `.dev.vars` (git-ignored) and fill in what
+you have. `GET /api/status` reports which keys exist — never their values — and
+Integrations reads it, so a service shows as connected only when the worker can
+actually reach it.
+
+| Route | Upstream |
 | --- | --- |
-| Model provider | `services/ai/provider.js` → `runAssistantTurn` |
-| Gmail | `services/email/outreach.js` → `sendEmail` |
-| Cloudflare | `services/sites/publish.js` → `publishBundle` |
-| Research tool | `services/research/research.js` → `researchBusiness` |
-| MCP | `services/ai/tools.js` → `toolSchema` |
+| `GET /api/status` | which providers have a key |
+| `GET /api/maps/key` | the Google Maps browser key |
+| `POST /api/maps/places/search-text` | Places API (New) |
+| `POST /api/ai/anthropic/messages` | Anthropic Messages API |
+| `POST /api/ai/openai/responses` | OpenAI Responses API |
+| `GET /api/whop/*` | Whop v5, read-only, allow-listed paths |
+
+Every route refuses cross-origin requests, never echoes a key back, and returns
+503 with the exact secret name to set when one is missing. Worker source,
+migrations, tests and `.dev.vars` are excluded from the static assets in
+`.assetsignore`, so none of them are reachable over HTTP.
 
 ## Supabase
 
@@ -190,8 +240,10 @@ browser only ever uses the publishable key.
 
 ## Known limits
 
-- Sending, hosting, research and model replies are boundaries, not features yet.
+- Sending, hosting and research are boundaries, not features yet.
 - Live discovery needs a Google Maps key and available Places quota.
+- Preview links point at this app's own origin until a real preview domain is
+  set in Settings, and nothing is hosted until Cloudflare Pages is wired up.
 - Local storage is capped by the browser; a warning appears if a write fails.
 - Website verification only runs direct probes on local previews; hosted builds
   keep a narrow CSP.

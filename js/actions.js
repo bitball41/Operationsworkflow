@@ -1,5 +1,13 @@
 /* Single delegated event router: clicks, form submits and control changes. */
 import { PIPELINE_STAGES } from "./config.js";
+
+/* Worker secret name per integration, so "Set up" can say exactly what to run. */
+const WORKER_SECRET_NAMES = Object.freeze({
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  whop: "WHOP_API_KEY",
+});
+
 import { closePalette, isPaletteOpen } from "./components/command-palette.js";
 import {
   openCalendarForm,
@@ -28,7 +36,9 @@ import { navigate, setParam } from "./core/router.js";
 import { getState, setAssistant, setDiscovery, setState, setStudio } from "./core/state.js";
 import { isoOffset, safeJson, slugify, uid } from "./core/utils.js";
 import { matchCommand, runCommand } from "./services/ai/commands.js";
-import { providerReady } from "./services/ai/provider.js";
+import { buildContext } from "./services/ai/context.js";
+import { providerReady, runAssistantTurn } from "./services/ai/provider.js";
+import { runTool, toolSchema } from "./services/ai/tools.js";
 import { AUTOMATION_DEFAULTS } from "./config.js";
 import {
   runOnce,
@@ -52,7 +62,7 @@ import {
   updateRecord,
 } from "./services/data.js";
 import { canSend } from "./services/email/outreach.js";
-import { discoverWithOpenScout, getStoredApiKey, setStoredApiKey } from "./services/openscout/adapter.js";
+import { discoverWithOpenScout, resolveMapsKey, setStoredApiKey } from "./services/openscout/adapter.js";
 import {
   classifyReply,
   createOrUpdateDemo,
@@ -162,13 +172,18 @@ export async function onClick(event) {
       });
       break;
     }
-    case "integration-setup":
+    case "integration-setup": {
+      const provider = target.dataset.provider;
+      const secret = WORKER_SECRET_NAMES[provider];
       toast(
-        `${target.dataset.provider} is not connected`,
-        "Credentials are deliberately not in this project. The interface, records and tool calls for it already exist.",
+        `${provider} is not connected`,
+        secret
+          ? `Add the key to the Cloudflare Worker — wrangler secret put ${secret} — then reload. No credential is ever stored in this project.`
+          : "Credentials are deliberately not in this project. The interface, records and tool calls for it already exist.",
         "info",
       );
       break;
+    }
 
     /* --- automation --- */
     case "automation-start": {
@@ -998,30 +1013,71 @@ async function handleAssistant(rawMessage, form) {
     return;
   }
 
-  setAssistant({
-    pending: false,
-    messages: [...messages, {
-      id: uid(),
-      role: "system",
-      blocked: true,
-      who: "Not answered",
-      text: providerReady()
-        ? "A provider is connected but the request layer is not implemented yet."
-        : "No AI provider is connected, so this was not answered. Commands like “go”, “stop”, “status”, “next” and “revenue” work now and run real operations.",
-      at: new Date().toISOString(),
-    }],
-  });
+  if (!providerReady()) {
+    setAssistant({
+      pending: false,
+      messages: [...messages, {
+        id: uid(),
+        role: "system",
+        blocked: true,
+        who: "Not answered",
+        text: "No AI provider is connected, so this was not answered. Commands like “go”, “stop”, “status”, “next” and “revenue” work now and run real operations.",
+        at: new Date().toISOString(),
+      }],
+    });
+    return;
+  }
+
+  try {
+    const turn = await runAssistantTurn({
+      messages,
+      context: buildContext(),
+      tools: toolSchema(),
+    });
+
+    /* Tool calls run through the same registry the commands use, so the model
+       can only do things the application can already do. */
+    const toolMessages = [];
+    for (const call of turn.toolCalls || []) {
+      const result = await runTool(call.name, call.args || {});
+      toolMessages.push({ id: uid(), role: "tool", tool: call.name, result, at: new Date().toISOString() });
+    }
+
+    const reply = turn.text
+      ? [{ id: uid(), role: "assistant", text: turn.text, at: new Date().toISOString() }]
+      : [];
+
+    setAssistant({ pending: false, messages: [...messages, ...toolMessages, ...reply] });
+  } catch (error) {
+    console.error(error);
+    setAssistant({
+      pending: false,
+      messages: [...messages, {
+        id: uid(),
+        role: "system",
+        blocked: true,
+        who: error.blocked ? "Not connected" : "Request failed",
+        text: error.message || "The assistant request did not complete.",
+        at: new Date().toISOString(),
+      }],
+    });
+  }
 }
 
 /* ---------- discovery ---------- */
 
 async function runDiscovery(values) {
-  const apiKey = String(values.api_key || getStoredApiKey() || "").trim();
+  /* A key typed into the form wins, then the Worker's, then this browser's. */
+  if (values.api_key) setStoredApiKey(String(values.api_key).trim());
+  const apiKey = String(values.api_key || (await resolveMapsKey()) || "").trim();
   if (!apiKey) {
-    setDiscovery({ status: "idle", error: "Add a Google Maps browser key to search.", progress: null });
+    setDiscovery({
+      status: "idle",
+      progress: null,
+      error: "No Google Maps key available. Set GOOGLE_MAPS_API_KEY on the Cloudflare Worker, or paste a browser key below.",
+    });
     return;
   }
-  if (values.api_key) setStoredApiKey(apiKey);
 
   const query = {
     location: values.location,

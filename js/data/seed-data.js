@@ -8,6 +8,7 @@
 import { CONFIG } from "../config.js";
 import { slugify } from "../core/utils.js";
 import { buildBundleForLead } from "../services/sites/bundle.js";
+import { previewUrl } from "../services/sites/publish.js";
 import { TEMPLATE_CATALOG, templateByKey } from "./site-templates.js";
 
 const stamp = (days = 0, hours = 0) => new Date(Date.now() + days * 86_400_000 + hours * 3_600_000).toISOString();
@@ -92,7 +93,7 @@ function demoFor(n, leadRecord, templateKey, templateId, status, { viewed = null
     name: `${leadRecord.business_name} website`,
     slug,
     status,
-    preview_url: `https://${CONFIG.previewDomain}/${slug}`,
+    preview_url: previewUrl(slug, CONFIG.previewDomain),
     production_url: "",
     business_info: {
       name: built.site.business,
@@ -109,7 +110,7 @@ function demoFor(n, leadRecord, templateKey, templateId, status, { viewed = null
       layout_key: entry.key,
       publish: {
         slug,
-        url: `https://${CONFIG.previewDomain}/${slug}`,
+        url: previewUrl(slug, CONFIG.previewDomain),
         hosted: false,
         state: "pending_hosting",
         at: stamp(created),
@@ -319,7 +320,7 @@ export function createSeedData() {
 }
 
 function draft(n, leadRecord, status, price, days) {
-  const link = `https://${CONFIG.previewDomain}/${slugify(`${leadRecord.business_name}-${leadRecord.city}`)}`;
+  const link = previewUrl(slugify(`${leadRecord.business_name}-${leadRecord.city}`), CONFIG.previewDomain);
   return {
     id: id(n),
     lead_id: leadRecord.id,
@@ -356,13 +357,15 @@ function thread(n, leadRecord, subject, classification, senderName, senderEmail,
 }
 
 function email(n, threadId, leadRecord, direction, subject, body, days) {
+  const contactEmail = leadRecord.email || `contact@${slugify(leadRecord.business_name)}.example`;
+  const ownerEmail = `${slugify(CONFIG.owner)}@operations.example`;
   return {
     id: id(n),
     thread_id: id(threadId),
     lead_id: leadRecord.id,
     direction,
-    sender: direction === "inbound" ? "prospect@example.com" : "connor@business.example",
-    recipients: direction === "inbound" ? ["connor@business.example"] : ["prospect@example.com"],
+    sender: direction === "inbound" ? contactEmail : ownerEmail,
+    recipients: direction === "inbound" ? [ownerEmail] : [contactEmail],
     subject,
     body,
     status: direction === "inbound" ? "received" : "sent",

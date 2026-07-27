@@ -16,10 +16,56 @@ import {
   textarea,
 } from "../components/ui.js";
 import { integrationList } from "../services/integrations.js";
+import { connectedProvider, providerReady } from "../services/ai/provider.js";
 import { preferences } from "../services/data.js";
-import { getStoredApiKey } from "../services/openscout/adapter.js";
+import { getStoredApiKey, workerHoldsMapsKey } from "../services/openscout/adapter.js";
 import { listTools } from "../services/ai/tools.js";
 import { contextSections } from "../services/ai/context.js";
+import { WORKER_PROVIDERS } from "../services/api.js";
+
+/* The four keys the Cloudflare Worker can hold, and the secret name for each. */
+const WORKER_SECRETS = Object.freeze({
+  anthropic: { label: "Anthropic", secret: "ANTHROPIC_API_KEY", detail: "Assistant replies and model-driven tool calls" },
+  openai: { label: "OpenAI", secret: "OPENAI_API_KEY", detail: "Alternate model provider" },
+  whop: { label: "Whop", secret: "WHOP_API_KEY", detail: "Payment events and receipts, read-only" },
+  google_maps: { label: "Google Maps", secret: "GOOGLE_MAPS_API_KEY", detail: "Lead discovery through the Places API" },
+});
+
+function mapsKeySource() {
+  if (workerHoldsMapsKey()) return "Served by the Cloudflare Worker to every browser";
+  if (getStoredApiKey()) return "Saved in this browser only — move it to the Worker to share it";
+  return "Not set — add GOOGLE_MAPS_API_KEY to the Worker, or paste one on Lead Discovery";
+}
+
+/** The Worker's key inventory, reported by /api/status. Values never leave it. */
+function workerSection() {
+  const { services } = getState();
+
+  if (!services.reachable) {
+    return section("API keys", {
+      subtitle: "Held by the Cloudflare Worker, never by this browser",
+      body: notice(
+        "The API worker is not answering",
+        "Serving the dashboard from a plain static server means there is no /api route, so no key-backed feature can work. Run `npx wrangler dev` locally, or deploy with `npx wrangler deploy`.",
+        { tone: "warn", iconName: "plug" },
+      ),
+    });
+  }
+
+  return section("API keys", {
+    subtitle: "Held by the Cloudflare Worker, never by this browser",
+    body: rows(WORKER_PROVIDERS.map((provider) => {
+      const entry = WORKER_SECRETS[provider];
+      const present = services.providers[provider] === true;
+      return row({
+        main: entry.label,
+        sub: present ? entry.detail : `Not set — run: wrangler secret put ${entry.secret}`,
+        iconName: "plug",
+        side: pill(present ? "connected" : "not_connected"),
+      });
+    })),
+  });
+}
 
 export function renderIntegrations() {
   const integrations = integrationList();
@@ -32,6 +78,8 @@ export function renderIntegrations() {
         "Everything else is wired up behind a boundary: the UI, records and tool calls exist, and each one refuses to pretend an external action happened.",
         { iconName: "plug" },
       )}
+
+      ${workerSection()}
 
       ${section("Services", {
         body: rows(integrations.map((item) => row({
@@ -46,7 +94,12 @@ export function renderIntegrations() {
         body: rows([
           row({ main: "Deterministic operations", sub: "Lead selection, demo build, publish, draft, send, follow-up, pipeline, inbox, money", iconName: "tool" }),
           row({ main: "Application context", sub: `${contextSections().length} sections exposed on every assistant turn`, iconName: "layers" }),
-          row({ main: "Model provider", sub: "Not connected — no key is stored in this project", iconName: "sparkle", side: pill("not_connected") }),
+          row({
+            main: "Model provider",
+            sub: providerReady() ? `${connectedProvider().name}, keyed by the Worker` : "Not connected — no key is stored in this project",
+            iconName: "sparkle",
+            side: pill(providerReady() ? "connected" : "not_connected"),
+          }),
         ]),
       })}
     </div>
@@ -80,9 +133,9 @@ export function renderSettings() {
           }),
           row({
             main: "Google Maps key",
-            sub: getStoredApiKey() ? "Saved in this browser for lead discovery" : "Not set — add it on the Lead Discovery page",
+            sub: mapsKeySource(),
             iconName: "radar",
-            side: pill(getStoredApiKey() ? "connected" : "not_connected"),
+            side: pill(workerHoldsMapsKey() || getStoredApiKey() ? "connected" : "not_connected"),
           }),
         ]),
       })}
