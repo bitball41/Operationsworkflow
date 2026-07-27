@@ -100,7 +100,7 @@ export function renderHome() {
       ${data.leads.length ? "" : section("Get started", {
         body: rows([
           row({ main: "Find leads", sub: "Search a niche and location with OpenScout", iconName: "radar", action: "navigate", attrs: 'data-route-target="discovery"', side: icon("chevron") }),
-          row({ main: "Load the starter workspace", sub: "Realistic sample records to look around", iconName: "layers", action: "load-sample", side: icon("chevron") }),
+          row({ main: "Connect a model", sub: "Add a key to the worker, then pick a model in Settings", iconName: "sparkle", action: "navigate", attrs: 'data-route-target="settings"', side: icon("chevron") }),
         ]),
       })}
     </div>

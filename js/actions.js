@@ -37,7 +37,8 @@ import { getState, setAssistant, setDiscovery, setState, setStudio } from "./cor
 import { isoOffset, safeJson, slugify, uid } from "./core/utils.js";
 import { matchCommand, runCommand } from "./services/ai/commands.js";
 import { buildContext } from "./services/ai/context.js";
-import { providerReady, runAssistantTurn } from "./services/ai/provider.js";
+import { activeModel, providerReady, runAssistantTurn } from "./services/ai/provider.js";
+import { formatPerMTok } from "./data/models.js";
 import { runTool, toolSchema } from "./services/ai/tools.js";
 import { AUTOMATION_DEFAULTS } from "./config.js";
 import {
@@ -53,7 +54,6 @@ import {
   deleteRecord,
   failDiscoveryRun,
   findRecord,
-  loadSampleWorkspace,
   logActivity,
   preferences,
   rejectDiscoveryCandidates,
@@ -153,9 +153,6 @@ export async function onClick(event) {
       break;
     case "close-palette":
       closePalette();
-      break;
-    case "load-sample":
-      await run(loadSampleWorkspace, "Starter workspace loaded");
       break;
     case "sign-out":
       await run(async () => {
@@ -643,6 +640,17 @@ export async function onChange(event) {
   }
   if (action === "thread-classify") {
     await run(() => classifyReply(target.dataset.id, target.value), "Reply classified");
+    return;
+  }
+  /* Model and effort switch in place, from the assistant bar or Settings, so
+     you can drop to a cheaper model mid-conversation without leaving the page. */
+  if (action === "model-select" || action === "effort-select") {
+    const key = action === "model-select" ? "model" : "effort";
+    await run(async () => {
+      await savePreferences({ [key]: target.value });
+      const { model, effort } = activeModel();
+      toast("Model updated", `${model.label}${model.supportsEffort ? ` · ${effort} effort` : ""} · ${formatPerMTok(model)}`);
+    });
   }
 }
 
@@ -958,6 +966,8 @@ export async function onSubmit(event) {
           batch_target: number(values.batch_target, 48),
           preview_domain: values.preview_domain,
           timezone: values.timezone,
+          model: values.model,
+          effort: values.effort,
           follow_up_days: String(values.follow_up_days || "")
             .split(",")
             .map((part) => number(part.trim()))

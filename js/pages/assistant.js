@@ -5,10 +5,11 @@
  */
 import { getState } from "../core/state.js";
 import { escapeHtml, formatNumber } from "../core/utils.js";
-import { advanced, btn, dot, icon, notice } from "../components/ui.js";
+import { advanced, btn, dot, icon, notice, select } from "../components/ui.js";
 import { COMMAND_HINTS } from "../services/ai/commands.js";
 import { contextSections, contextSummary, contextTokenEstimate } from "../services/ai/context.js";
-import { providerReady } from "../services/ai/provider.js";
+import { activeModel, providerReady } from "../services/ai/provider.js";
+import { EFFORT_LEVELS, formatPerMTok, modelsForProvider } from "../data/models.js";
 import { toolGroups } from "../services/ai/tools.js";
 
 const EXAMPLES = [
@@ -90,6 +91,23 @@ function emptyConversation() {
   `;
 }
 
+/**
+ * Model and effort, switchable without leaving the conversation. Cost is on the
+ * label so the expensive choice is never the invisible one.
+ */
+function modelSwitcher() {
+  const { model, effort } = activeModel();
+  const options = modelsForProvider(model?.provider || "anthropic")
+    .map((entry) => ({ value: entry.id, label: `${entry.label} · ${formatPerMTok(entry)}` }));
+
+  return `
+    ${select("model", options, model?.id, { attrs: 'data-action="model-select" class="select-sm"' })}
+    ${model?.supportsEffort
+      ? select("effort", EFFORT_LEVELS.map((level) => ({ value: level.id, label: `${level.label} effort` })), effort, { attrs: 'data-action="effort-select" class="select-sm"' })
+      : ""}
+  `;
+}
+
 export function renderAssistant() {
   const { assistant } = getState();
   const ready = providerReady();
@@ -98,6 +116,7 @@ export function renderAssistant() {
     <div class="chat">
       <div class="chat__bar">
         <span class="pill${ready ? " pill--green" : ""}">${ready ? "Provider connected" : "Provider not connected"}</span>
+        ${ready ? modelSwitcher() : ""}
         <button class="context-chip" type="button" data-action="assistant-toggle-context">
           ${icon("layers")} Context: ${escapeHtml(contextSummary())} ${icon(assistant.contextOpen ? "chevron-down" : "chevron")}
         </button>

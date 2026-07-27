@@ -8,6 +8,8 @@
  */
 import { callAnthropic, callOpenAI, ApiError } from "../api.js";
 import { NotConnectedError, integrationStatus } from "../integrations.js";
+import { DEFAULT_EFFORT, costOf, resolveModel } from "../../data/models.js";
+import { createRecord, preferences } from "../data.js";
 
 export const MODEL_PROVIDERS = Object.freeze([
   { id: "anthropic", name: "Anthropic", note: "Recommended for the operations assistant" },
@@ -23,9 +25,51 @@ export function providerReady() {
 }
 
 export function providerNotice() {
-  return providerReady()
-    ? `${connectedProvider().name} is connected.`
-    : "No AI provider is connected, so the assistant cannot answer yet. Tools, context and commands all work.";
+  if (!providerReady()) {
+    return "No AI provider is connected, so the assistant cannot answer yet. Tools, context and commands all work.";
+  }
+  const { model, effort } = activeModel();
+  return `${connectedProvider().name} · ${model.label}${model.supportsEffort ? ` · ${effort} effort` : ""}`;
+}
+
+/**
+ * The model and effort every turn runs on. Chosen in Settings, or the catalogue
+ * default; always narrowed to a model the connected provider actually serves,
+ * so switching provider can never send an Anthropic id to OpenAI.
+ */
+export function activeModel() {
+  const provider = connectedProvider()?.id || "anthropic";
+  const settings = preferences();
+  return {
+    provider,
+    model: resolveModel(settings.model, provider),
+    effort: settings.effort || DEFAULT_EFFORT,
+  };
+}
+
+/**
+ * Records what a turn actually cost, so the Costs page shows real spend rather
+ * than an estimate. Never allowed to fail a turn that already succeeded.
+ */
+async function recordUsage({ model, task, usage }) {
+  const input = Number(usage?.input_tokens ?? usage?.input_tokens_total ?? 0);
+  const output = Number(usage?.output_tokens ?? 0);
+  if (!input && !output) return;
+
+  try {
+    await createRecord("aiUsage", {
+      provider: model.provider,
+      model: model.id,
+      task,
+      request_count: 1,
+      input_tokens: input,
+      output_tokens: output,
+      cost: Number(costOf(model.id, { input, output }).toFixed(6)),
+      occurred_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn("Could not record AI usage", error);
+  }
 }
 
 const SYSTEM_PROMPT = `You are the operations assistant for a one-person website-selling business.
@@ -127,17 +171,24 @@ export async function runAssistantTurn({ messages, context, tools, signal } = {}
       : turn
   ));
 
+  const { model, effort } = activeModel();
+
   try {
     if (provider.id === "anthropic") {
       const payload = await callAnthropic({
+        model: model.id,
+        effort,
         system: SYSTEM_PROMPT,
         messages: withContext,
         tools: anthropicTools(tools),
       }, { signal });
-      return anthropicResult(payload);
+      const result = anthropicResult(payload);
+      await recordUsage({ model, task: "assistant_turn", usage: result.usage });
+      return { ...result, model: model.id };
     }
 
     const payload = await callOpenAI({
+      model: model.id,
       instructions: SYSTEM_PROMPT,
       input: withContext,
       tools: (tools || []).map((tool) => ({
@@ -147,7 +198,9 @@ export async function runAssistantTurn({ messages, context, tools, signal } = {}
         parameters: tool.input_schema || tool.parameters || { type: "object", properties: {} },
       })),
     }, { signal });
-    return openAiResult(payload);
+    const result = openAiResult(payload);
+    await recordUsage({ model, task: "assistant_turn", usage: result.usage });
+    return { ...result, model: model.id };
   } catch (error) {
     if (error instanceof ApiError && error.blocked) {
       throw new NotConnectedError(error.provider || provider.id, error.message);

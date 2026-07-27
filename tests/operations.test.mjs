@@ -22,7 +22,7 @@ await import("../js/services/openscout/verify.js");
 await import("../js/services/openscout/location.js");
 await import("../js/services/openscout/google-places.js");
 
-const { createSeedData } = await import("../js/data/seed-data.js");
+const { createSeedData } = await import("./fixtures/sample-workspace.js");
 const { getState, setData, setState } = await import("../js/core/state.js");
 const { buildBundleForLead, chooseTemplate, composeDocument, BUNDLE_FILES } = await import("../js/services/sites/bundle.js");
 const { TEMPLATE_CATALOG, templateByKey } = await import("../js/data/site-templates.js");

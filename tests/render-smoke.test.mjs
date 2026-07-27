@@ -25,7 +25,7 @@ await import("../js/services/openscout/location.js");
 await import("../js/services/openscout/google-places.js");
 
 const { NAV_GROUPS, ROUTES, FULL_BLEED_ROUTES } = await import("../js/config.js");
-const { createSeedData } = await import("../js/data/seed-data.js");
+const { createSeedData } = await import("./fixtures/sample-workspace.js");
 const { getState, setData, setState, setStudio } = await import("../js/core/state.js");
 const home = await import("../js/pages/home.js");
 const assistant = await import("../js/pages/assistant.js");

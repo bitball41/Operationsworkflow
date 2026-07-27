@@ -1,15 +1,19 @@
 /**
- * Starter workspace. Used the first time the dashboard opens with local storage
- * so every page has realistic content, and available as a reset from Settings.
+ * Test fixture only.
  *
- * Demo records carry real generated bundles, so the Studio preview is showing
- * actual HTML/CSS/JS from the first load.
+ * This is a full, realistic workspace used to exercise every page renderer and
+ * every operation. It is deliberately NOT reachable from the application — the
+ * dashboard never invents leads, emails, revenue or statistics, so there is no
+ * code path that can put these records in front of the person using it.
+ *
+ * Demo records carry real generated bundles, so bundle and Studio assertions
+ * run against actual HTML/CSS/JS.
  */
-import { CONFIG } from "../config.js";
-import { slugify } from "../core/utils.js";
-import { buildBundleForLead } from "../services/sites/bundle.js";
-import { previewUrl } from "../services/sites/publish.js";
-import { TEMPLATE_CATALOG, templateByKey } from "./site-templates.js";
+import { CONFIG } from "../../js/config.js";
+import { slugify } from "../../js/core/utils.js";
+import { buildBundleForLead } from "../../js/services/sites/bundle.js";
+import { previewUrl } from "../../js/services/sites/publish.js";
+import { TEMPLATE_CATALOG, templateByKey } from "../../js/data/site-templates.js";
 
 const stamp = (days = 0, hours = 0) => new Date(Date.now() + days * 86_400_000 + hours * 3_600_000).toISOString();
 const day = (days = 0) => stamp(days).slice(0, 10);

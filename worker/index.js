@@ -18,6 +18,7 @@
  */
 
 import { ANTHROPIC, OPENAI, WHOP, PLACES } from "./upstreams.js";
+import { getModel, resolveModel } from "../js/data/models.js";
 
 /** Secret name per provider, and whether the browser may read its value. */
 const PROVIDERS = Object.freeze({
@@ -138,10 +139,11 @@ async function handlePlacesSearch(request, env) {
 /**
  * Anthropic Messages API.
  *
- * The Worker owns the model, the API version and the key; the caller owns the
- * conversation. Adaptive thinking is on by default on Claude Opus 5, so no
- * thinking configuration is sent — `budget_tokens` and the sampling parameters
- * are rejected by this model family.
+ * The caller picks the model and the effort, but only from the shared catalogue
+ * — an unknown model id is rejected here rather than forwarded, so a typo can
+ * never quietly bill against something expensive. Adaptive thinking is on by
+ * default on the current models, so no thinking configuration is sent;
+ * `budget_tokens` and the sampling parameters are rejected by this family.
  */
 async function handleAnthropic(request, env) {
   const key = secretFor(env, "anthropic");
@@ -152,6 +154,11 @@ async function handleAnthropic(request, env) {
     return json({ error: "invalid_request", message: "messages must be a non-empty array." }, 400);
   }
 
+  const model = payload.model ? getModel(payload.model) : resolveModel(ANTHROPIC.defaultModel, "anthropic");
+  if (!model || model.provider !== "anthropic") {
+    return json({ error: "unknown_model", message: `"${payload.model}" is not an Anthropic model in this project's catalogue.` }, 400);
+  }
+
   const response = await fetch(ANTHROPIC.messages, {
     method: "POST",
     headers: {
@@ -160,16 +167,24 @@ async function handleAnthropic(request, env) {
       "anthropic-version": ANTHROPIC.version,
     },
     body: JSON.stringify({
-      model: payload.model || ANTHROPIC.defaultModel,
+      model: model.id,
       max_tokens: Math.min(Number(payload.max_tokens) || 8000, 16000),
       messages: payload.messages,
       ...(payload.system ? { system: payload.system } : {}),
       ...(Array.isArray(payload.tools) && payload.tools.length ? { tools: payload.tools } : {}),
       ...(payload.tool_choice ? { tool_choice: payload.tool_choice } : {}),
-      output_config: { effort: payload.effort || ANTHROPIC.defaultEffort },
+      /* Only the current models take an effort level; sending one to a model
+         that has no effort control is a 400 from the provider. */
+      ...(model.supportsEffort ? { output_config: { effort: effortOrDefault(payload.effort) } } : {}),
     }),
   });
   return relay(response);
+}
+
+const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+function effortOrDefault(value) {
+  return EFFORTS.has(value) ? value : ANTHROPIC.defaultEffort;
 }
 
 /** OpenAI Responses API, used only when Anthropic is not the selected provider. */
@@ -182,11 +197,16 @@ async function handleOpenAI(request, env) {
     return json({ error: "invalid_request", message: "input or messages is required." }, 400);
   }
 
+  const model = payload.model ? getModel(payload.model) : resolveModel(OPENAI.defaultModel, "openai");
+  if (!model || model.provider !== "openai") {
+    return json({ error: "unknown_model", message: `"${payload.model}" is not an OpenAI model in this project's catalogue.` }, 400);
+  }
+
   const response = await fetch(OPENAI.responses, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: payload.model || OPENAI.defaultModel,
+      model: model.id,
       input: payload.input || payload.messages,
       ...(payload.instructions ? { instructions: payload.instructions } : {}),
       ...(Array.isArray(payload.tools) && payload.tools.length ? { tools: payload.tools } : {}),
