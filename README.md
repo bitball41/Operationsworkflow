@@ -301,9 +301,10 @@ write-only and the Inbox stays empty forever.
 
 `OUTLOOK_TOKENS` is a Workers KV binding declared in `wrangler.jsonc`; it holds
 one-time OAuth state and AES-GCM-encrypted tokens keyed by the verified Supabase
-user id. **It must resolve to a real namespace.** Wrangler can provision one
-during an interactive deploy, but a CI or dashboard build has nobody to answer
-the prompt, so create it once and paste the id into `wrangler.jsonc`:
+user id. This repository is already bound to the existing
+`operationsworkflow-outlook-tokens` namespace so unattended Git builds do not
+need a provisioning prompt. A deployment to another Cloudflare account must
+create its own namespace and replace the configured id:
 
 ```bash
 npx wrangler kv namespace create OUTLOOK_TOKENS
