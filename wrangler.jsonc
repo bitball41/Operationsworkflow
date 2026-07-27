@@ -13,5 +13,12 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  // OAuth state and encrypted per-user Outlook tokens. Wrangler provisions the
+  // namespace on deploy when no id is present.
+  "kv_namespaces": [
+    {
+      "binding": "OUTLOOK_TOKENS"
+    }
+  ]
 }

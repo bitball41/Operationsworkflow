@@ -92,9 +92,9 @@ typing `go` to the assistant. Settings (daily target, price, niche and location
 filters, follow-up cadence, pacing) live behind one disclosure with working
 defaults.
 
-**Gmail is not connected**, so the send step cannot complete. Automation runs
-every other step for real and leaves each email in `ready`. Nothing is ever
-marked as sent, and the page says so.
+**Outlook sends through Microsoft Graph.** The send step remains blocked until
+the signed-in Supabase user connects a Microsoft mailbox from Integrations.
+Nothing is marked as sent unless Graph accepts the request.
 
 ## AI Assistant
 
@@ -226,7 +226,7 @@ a result until credentials exist:
 | Model provider | `services/ai/provider.js` → `runAssistantTurn` | worker |
 | Google Maps | `services/openscout/adapter.js` → `resolveMapsKey` | worker |
 | Whop | `services/api.js` → `whopGet` | worker |
-| Gmail | `services/email/outreach.js` → `sendEmail` | not wired |
+| Outlook | `services/email/outreach.js` → `sendEmail` | worker OAuth + Graph |
 | Cloudflare hosting | `services/sites/publish.js` → `publishBundle` | not wired |
 | Research tool | `services/research/research.js` → `researchBusiness` | not wired |
 | MCP | `services/ai/tools.js` → `toolSchema` | not wired |
@@ -242,7 +242,16 @@ npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put WHOP_API_KEY
 npx wrangler secret put GOOGLE_MAPS_API_KEY
+npx wrangler secret put MICROSOFT_CLIENT_ID
+npx wrangler secret put MICROSOFT_CLIENT_SECRET
+npx wrangler secret put OUTLOOK_TOKEN_ENCRYPTION_KEY
 ```
+
+Set `MICROSOFT_TENANT=common` in `.dev.vars` locally or as a non-secret Worker
+variable. The Entra app must register the exact production callback
+`https://operations.conno.fun/api/outlook/callback`. `OUTLOOK_TOKENS` is a
+Workers KV binding declared in `wrangler.jsonc`; it holds one-time OAuth state
+and AES-GCM-encrypted tokens keyed by the verified Supabase user id.
 
 Locally, copy `.dev.vars.example` to `.dev.vars` (git-ignored) and fill in what
 you have. `GET /api/status` reports which keys exist — never their values — and
@@ -252,6 +261,10 @@ actually reach it.
 | Route | Upstream |
 | --- | --- |
 | `GET /api/status` | which providers have a key |
+| `POST /api/outlook/connect` | begin Microsoft OAuth for the signed-in user |
+| `GET /api/outlook/callback` | validate OAuth state and store encrypted tokens |
+| `POST /api/outlook/send` | send one message through Microsoft Graph |
+| `POST /api/outlook/disconnect` | remove the signed-in user's Outlook tokens |
 | `GET /api/maps/key` | the Google Maps browser key |
 | `POST /api/maps/places/search-text` | Places API (New) |
 | `POST /api/ai/anthropic/messages` | Anthropic Messages API |

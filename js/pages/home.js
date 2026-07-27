@@ -24,7 +24,7 @@ function automationStrip() {
 
   const detail = running
     ? `${automation.currentLeadName || "Selecting lead"} · ${automation.currentStep || "starting"}`
-    : automation.stopReason || (canSend() ? "Ready to start" : "Ready to start · emails stop at “ready” until Gmail is connected");
+    : automation.stopReason || (canSend() ? "Ready to start" : "Ready to start · emails stop at “ready” until Outlook is connected");
 
   return `
     <div class="control-strip">

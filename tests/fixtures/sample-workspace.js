@@ -230,7 +230,7 @@ export function createSeedData() {
       { id: id(100), agent_type: "orchestrator", title: "Outreach automation", objective: "Prepare and send up to 48 outreach emails", status: "completed", current_step: "Batch finished", progress: 100, estimated_cost: 0, context: { settings: { batchTarget: 12 }, sendConnected: false }, completed_steps: [], upcoming_steps: [], messages: [], started_at: stamp(-1, -3), completed_at: stamp(-1, -2), created_at: stamp(-1, -3), updated_at: stamp(-1, -2) },
     ],
     agentEvents: [
-      { id: 1, run_id: id(100), agent_type: "orchestrator", event_type: "lead_prepared", title: "GreenLine Landscaping prepared", detail: "Template Evergreen · demo ready · Gmail not connected so the email stopped at ready.", created_at: stamp(-1, -2) },
+      { id: 1, run_id: id(100), agent_type: "orchestrator", event_type: "lead_prepared", title: "GreenLine Landscaping prepared", detail: "Template Evergreen · demo ready · Outlook not connected so the email stopped at ready.", created_at: stamp(-1, -2) },
       { id: 2, run_id: id(100), agent_type: "orchestrator", event_type: "run_finished", title: "Batch finished", detail: "3 leads processed, 0 sent (email transport not connected).", created_at: stamp(-1, -2) },
     ],
     notifications: [],
@@ -312,7 +312,7 @@ export function createSeedData() {
     ],
     integrations: [
       integration(240, "openscout", "connected", -0.01),
-      integration(241, "gmail", "not_connected"),
+      integration(241, "outlook", "not_connected"),
       integration(242, "cloudflare", "not_connected"),
       integration(243, "anthropic", "not_connected"),
       integration(244, "openai", "not_connected"),
@@ -334,7 +334,7 @@ function draft(n, leadRecord, status, price, days) {
     status,
     scheduled_for: null,
     sent_at: status === "sent" ? stamp(days) : null,
-    error_message: status === "ready" ? "Gmail is not connected, so no email was sent." : null,
+    error_message: status === "ready" ? "Outlook is not connected, so no email was sent." : null,
     created_at: stamp(days),
     updated_at: stamp(days),
   };

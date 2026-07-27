@@ -12,6 +12,7 @@ import { getState } from "../core/state.js";
  * left is the integration id; the value is the name the Worker reports.
  */
 const WORKER_BACKED = Object.freeze({
+  outlook: "outlook",
   anthropic: "anthropic",
   openai: "openai",
   whop: "whop",
@@ -64,5 +65,5 @@ export function requireIntegration(provider) {
 
 /** Providers that must be connected before automation can send real email. */
 export function missingForFullAutomation() {
-  return ["gmail", "cloudflare"].filter((provider) => !isConnected(provider));
+  return ["outlook", "cloudflare"].filter((provider) => !isConnected(provider));
 }

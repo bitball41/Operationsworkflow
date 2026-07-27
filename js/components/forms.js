@@ -125,7 +125,7 @@ export function openLeadDetails(lead) {
         }),
         row({
           main: threads.length ? `${threads.length} repl${threads.length === 1 ? "y" : "ies"}` : "No replies",
-          sub: threads[0]?.subject || "Replies appear once Gmail is connected",
+          sub: threads[0]?.subject || "Replies appear after Outlook inbox sync is added",
           iconName: "inbox",
           side: threads[0] ? btn("Open", { action: "thread-open", size: "sm", attrs: `data-id="${threads[0].id}"` }) : "",
         }),

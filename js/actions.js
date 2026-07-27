@@ -40,6 +40,7 @@ import { buildContext } from "./services/ai/context.js";
 import { activeModel, providerReady, runAssistantTurn } from "./services/ai/provider.js";
 import { formatPerMTok } from "./data/models.js";
 import { runTool, toolSchema } from "./services/ai/tools.js";
+import { connectOutlook, disconnectOutlook, fetchServiceStatus } from "./services/api.js";
 import { AUTOMATION_DEFAULTS } from "./config.js";
 import {
   runOnce,
@@ -181,12 +182,21 @@ export async function onClick(event) {
       );
       break;
     }
+    case "outlook-connect":
+      await run(connectOutlook);
+      break;
+    case "outlook-disconnect":
+      await run(async () => {
+        await disconnectOutlook();
+        setState({ services: await fetchServiceStatus() });
+      }, "Outlook disconnected", "No further email can be sent until it is reconnected.");
+      break;
 
     /* --- automation --- */
     case "automation-start": {
       const result = await startAutomation();
       if (!result.ok) toast("Automation did not start", result.reason, "error");
-      else if (!canSend()) toast("Automation started", "Gmail is not connected, so emails will stop at “ready”.", "info");
+      else if (!canSend()) toast("Automation started", "Outlook is not connected, so emails will stop at “ready”.", "info");
       else toast("Automation started");
       break;
     }
@@ -756,7 +766,7 @@ export async function onSubmit(event) {
           status: "ready",
         });
         await updateRecord("emailThreads", form.dataset.threadId, { is_unread: false });
-        toast("Reply saved as ready", canSend() ? "Send it from Outreach." : "Gmail is not connected yet.");
+        toast("Reply saved as ready", canSend() ? "Send it from Outreach." : "Outlook is not connected yet.");
         form.reset();
         if (!draft) break;
         break;

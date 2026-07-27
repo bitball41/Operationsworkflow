@@ -4,7 +4,7 @@
   "version": "3.0.0",
   "description": "Personal operations system for a website-selling business. Plain HTML, CSS and JavaScript.",
   "scripts": {
-    "test": "node tests/openscout-engine.test.cjs && node --test tests/render-smoke.test.mjs tests/operations.test.mjs tests/models.test.mjs tests/local-workspace.test.mjs",
+    "test": "node tests/openscout-engine.test.cjs && node --test tests/render-smoke.test.mjs tests/operations.test.mjs tests/models.test.mjs tests/local-workspace.test.mjs tests/outlook-worker.test.mjs",
     "check": "npm test"
   }
 }

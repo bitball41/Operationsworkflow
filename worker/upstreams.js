@@ -45,3 +45,25 @@ export const PLACES = Object.freeze({
     "places.googleMapsUri",
   ].join(","),
 });
+
+export const SUPABASE = Object.freeze({
+  user: "https://yswxdsagoywzevwgarbf.supabase.co/auth/v1/user",
+  publishableKey: "sb_publishable_Ah6QGx7Tpr-rBvaa4cQcPw_7djryJ9K",
+});
+
+export const OUTLOOK = Object.freeze({
+  authorize(tenant = "common") {
+    return `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize`;
+  },
+  token(tenant = "common") {
+    return `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
+  },
+  sendMail: "https://graph.microsoft.com/v1.0/me/sendMail",
+  scopes: Object.freeze([
+    "openid",
+    "profile",
+    "email",
+    "offline_access",
+    "https://graph.microsoft.com/Mail.Send",
+  ]),
+});
