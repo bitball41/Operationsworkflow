@@ -12,6 +12,7 @@ import { initRouter } from "./core/router.js";
 import { getState, setState, subscribe } from "./core/state.js";
 import { debounce } from "./core/utils.js";
 import { setParam } from "./core/router.js";
+import { fetchServiceStatus } from "./services/api.js";
 import { initWorkspace, reloadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
 import { renderAssistant, mountAssistant } from "./pages/assistant.js";
 import { renderAutomation } from "./pages/automation.js";
@@ -136,6 +137,10 @@ async function init() {
     document.getElementById("page")?.focus({ preventScroll: true });
     window.scrollTo({ top: 0 });
   });
+
+  /* Which API keys the Worker holds. Not awaited with the workspace: the
+     dashboard must open at the same speed whether or not the Worker answers. */
+  fetchServiceStatus().then((services) => setState({ services }));
 
   try {
     const storage = await initWorkspace();

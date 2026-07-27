@@ -75,6 +75,12 @@ const state = {
   /* "cloud" once a Supabase session is present, otherwise "local". */
   storage: "local",
   connection: { ok: true, message: "" },
+  /* Which API keys the Cloudflare Worker holds. Filled in once at boot from
+     /api/status; every provider stays false when the Worker is not there. */
+  services: {
+    reachable: false,
+    providers: { anthropic: false, openai: false, whop: false, google_maps: false },
+  },
   user: null,
   route: "home",
   routeParams: {},

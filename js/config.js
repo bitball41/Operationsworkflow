@@ -7,7 +7,10 @@ export const CONFIG = Object.freeze({
   owner: "Connor",
   defaultPrice: 500,
   defaultBatchTarget: 48,
-  previewDomain: "preview.example.com",
+  /* Empty on purpose: no fake domain is baked into preview links. Until a real
+     host is set in Settings, preview URLs are built from wherever the app is
+     actually served. */
+  previewDomain: "",
 });
 
 /* Sidebar is the only navigation system. Groups map 1:1 to routes. */

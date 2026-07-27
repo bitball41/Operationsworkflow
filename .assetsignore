@@ -1,12 +1,26 @@
+# Anything listed here is never uploaded as a static asset. Secrets, server
+# code, database migrations and tooling must never be reachable over HTTP.
 **/.git
 **/.git/**
 **/.wrangler
 **/.wrangler/**
 **/node_modules
 **/node_modules/**
+.dev.vars
+.dev.vars.*
+**/.dev.vars
+**/.dev.vars.*
+.env
+.env.*
+worker
+worker/**
 supabase
 supabase/**
+tests
+tests/**
 README.md
 wrangler.jsonc
+package.json
+package-lock.json
 .gitignore
 .assetsignore

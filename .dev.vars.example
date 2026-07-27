@@ -1,0 +1,23 @@
+# Local Worker secrets. Copy to .dev.vars (git-ignored) for `wrangler dev`.
+# In production these are Worker secrets, not variables:
+#
+#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put OPENAI_API_KEY
+#   wrangler secret put WHOP_API_KEY
+#   wrangler secret put GOOGLE_MAPS_API_KEY
+#
+# Never commit real values. Every key below is read only inside the Worker.
+
+# Anthropic — the assistant and automation model provider.
+ANTHROPIC_API_KEY=
+
+# OpenAI — alternate model provider. Optional if Anthropic is set.
+OPENAI_API_KEY=
+
+# Whop — payment events and receipts. Read-only in this Worker.
+WHOP_API_KEY=
+
+# Google Maps — lead discovery. This one reaches the browser, because the Maps
+# JavaScript SDK runs in the page. Restrict it by HTTP referrer in Google Cloud
+# and enable only "Maps JavaScript API" and "Places API (New)".
+GOOGLE_MAPS_API_KEY=

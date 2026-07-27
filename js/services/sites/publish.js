@@ -14,9 +14,16 @@ export function previewSlug(demo, lead) {
   return demo?.slug || slugify(lead?.business_name || demo?.name || "demo");
 }
 
+/**
+ * Builds the preview link for a demo. With no preview domain configured it
+ * falls back to the origin the app is actually served from, so the URL is never
+ * a domain nobody owns.
+ */
 export function previewUrl(slug, previewDomain) {
-  const host = String(previewDomain || "preview.example.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
-  return `https://${host}/${slug}`;
+  const configured = String(previewDomain || "").replace(/^https?:\/\//, "").replace(/\/+$/, "").trim();
+  if (configured) return `https://${configured}/${slug}`;
+  const origin = String(globalThis.location?.origin || "").replace(/\/+$/, "");
+  return origin ? `${origin}/p/${slug}` : `/p/${slug}`;
 }
 
 export function hostingConnected() {

@@ -240,7 +240,9 @@ test("a demo can be built, published and drafted end to end", async () => {
   const published = await runTool("publish_demo", { demo_id: demo.id });
   assert.equal(published.ok, true);
   assert.equal(published.blocked, true, "hosting is not connected");
-  assert.match(getState().data.demos.find((item) => item.id === demo.id).preview_url, /^https:\/\//);
+  /* No preview domain is configured and there is no browser origin under the
+     test runner, so the link is root-relative rather than a domain nobody owns. */
+  assert.match(getState().data.demos.find((item) => item.id === demo.id).preview_url, /^\/p\/[a-z0-9-]+$/);
 
   const drafted = await runTool("draft_email", { lead_id: lead.id });
   assert.equal(drafted.ok, true);

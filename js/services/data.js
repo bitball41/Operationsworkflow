@@ -171,16 +171,19 @@ export async function initWorkspace() {
   return "local";
 }
 
+/**
+ * Opens the local workspace. A first run starts genuinely empty — no invented
+ * leads, clients or revenue — so every number on screen is a real one. The
+ * sample workspace is available on demand from Settings.
+ */
 export function loadLocalWorkspace() {
-  const stored = readLocal();
-  const data = stored || createSeedData();
+  const data = readLocal() || { profile: null };
   const next = { profile: data.profile || null };
   COLLECTION_KEYS.forEach((key) => {
     next[key] = Array.isArray(data[key]) ? [...data[key]].sort(compare(key)) : [];
   });
   setState({ storage: "local" }, { silent: true });
   setData(next, { silent: true });
-  if (!stored) persist();
   return next;
 }
 

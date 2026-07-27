@@ -1,10 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "operationsworkflow",
+  "main": "worker/index.js",
   "compatibility_date": "2026-07-26",
   "assets": {
     "directory": ".",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    // The Worker owns routing for anything that is not a file on disk, so it
+    // can serve /api/* itself instead of the asset layer swallowing it as an
+    // SPA fallback. worker/index.js falls back to index.html for page GETs.
+    "not_found_handling": "none"
   },
   "observability": {
     "enabled": true
