@@ -17,6 +17,8 @@ export const WORKER_PROVIDERS = Object.freeze(["outlook", "anthropic", "openai",
 const EMPTY_STATUS = Object.freeze({
   reachable: false,
   providers: Object.freeze({ outlook: false, anthropic: false, openai: false, whop: false, google_maps: false }),
+  /* Why Outlook is unusable, when it is. See handleStatus in worker/index.js. */
+  outlook: Object.freeze({ configured: false, connected: false, signed_in: false, missing: [], account: "", can_read_mail: false }),
 });
 
 export class ApiError extends Error {
@@ -87,14 +89,19 @@ export async function fetchServiceStatus() {
     const data = await request("/status", { optionalAuth: true });
     const providers = {};
     for (const name of WORKER_PROVIDERS) providers[name] = data?.providers?.[name] === true;
-    return { reachable: true, providers, at: data?.at || new Date().toISOString() };
+    return {
+      reachable: true,
+      providers,
+      outlook: { ...EMPTY_STATUS.outlook, ...(data?.outlook || {}) },
+      at: data?.at || new Date().toISOString(),
+    };
   } catch {
-    return { ...EMPTY_STATUS, providers: { ...EMPTY_STATUS.providers } };
+    return emptyServiceStatus();
   }
 }
 
 export function emptyServiceStatus() {
-  return { ...EMPTY_STATUS, providers: { ...EMPTY_STATUS.providers } };
+  return { ...EMPTY_STATUS, providers: { ...EMPTY_STATUS.providers }, outlook: { ...EMPTY_STATUS.outlook } };
 }
 
 /**
@@ -136,4 +143,14 @@ export async function disconnectOutlook() {
 
 export async function sendOutlookEmail(payload) {
   return request("/outlook/send", { method: "POST", body: payload, auth: true });
+}
+
+export async function replyToOutlookMessage(payload) {
+  return request("/outlook/reply", { method: "POST", body: payload, auth: true });
+}
+
+export async function fetchOutlookMessages({ since = "", limit = 25 } = {}) {
+  const query = new URLSearchParams({ limit: String(limit), ...(since ? { since } : {}) });
+  const data = await request(`/outlook/messages?${query}`, { auth: true });
+  return Array.isArray(data?.messages) ? data.messages : [];
 }

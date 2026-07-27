@@ -17,6 +17,7 @@ import {
   select,
   textarea,
 } from "./ui.js";
+import { outlookBlocker } from "../services/integrations.js";
 
 function localDateTime(value = new Date()) {
   const date = new Date(value);
@@ -173,6 +174,39 @@ export function openDraftForm(draft) {
       <button class="btn" type="submit" form="draft-form" data-mode="draft">Save draft</button>
       <button class="btn" type="submit" form="draft-form" data-mode="ready">Mark ready</button>
       <button class="btn btn--primary" type="submit" form="draft-form" data-mode="send">Send</button>
+    `,
+  });
+}
+
+/**
+ * A free-form email to any address.
+ *
+ * The outreach composer only ever addresses a lead, which left no way at all to
+ * email a client, a supplier or anyone who is not in the pipeline. Selecting a
+ * lead here is optional and only decides what the email gets filed against.
+ */
+export function openDirectEmailForm({ to = "", subject = "", body = "", leadId = "" } = {}) {
+  const { data } = getState();
+  const blocker = outlookBlocker();
+  openModal({
+    title: "New email",
+    subtitle: "Sends through the connected Outlook mailbox",
+    wide: true,
+    body: `
+      ${blocker ? notice("This cannot send yet", blocker, { tone: "warn", iconName: "mail" }) : ""}
+      <form id="direct-email-form" data-form="direct-email">
+        <div class="field-grid">
+          ${field("To", input("to", to, { type: "email", required: true, placeholder: "someone@example.com" }))}
+          ${field("CC", input("cc", "", { placeholder: "optional, comma separated" }))}
+        </div>
+        ${field("Subject", input("subject", subject, { required: true }))}
+        ${field("Body", textarea("body", body, { required: true, attrs: 'rows="14"' }))}
+        ${field("File against a lead", select("lead_id", leadOptions(data.leads), leadId, { placeholder: "Not linked to a lead" }), { hint: "optional" })}
+      </form>
+    `,
+    footer: `
+      ${btn("Cancel", { action: "close-modal", variant: "quiet" })}
+      <button class="btn btn--primary" type="submit" form="direct-email-form"${blocker ? " disabled" : ""}>Send</button>
     `,
   });
 }

@@ -14,11 +14,22 @@
   "observability": {
     "enabled": true
   },
-  // OAuth state and encrypted per-user Outlook tokens. Wrangler provisions the
-  // namespace on deploy when no id is present.
+  // OAuth state and encrypted per-user Outlook tokens.
+  //
+  // This binding must resolve to a real namespace or every Outlook route
+  // answers 503 with OUTLOOK_TOKENS in the missing list — the connection can
+  // never be stored. Wrangler can provision a namespace during an interactive
+  // `wrangler deploy`, but a CI or dashboard build has nobody to answer the
+  // prompt, so create it once and paste the id here:
+  //
+  //   npx wrangler kv namespace create OUTLOOK_TOKENS
+  //
+  // and set the id below. `/api/status` reports the binding as missing until
+  // then, and Integrations names it on screen.
   "kv_namespaces": [
     {
       "binding": "OUTLOOK_TOKENS"
+      // "id": "<paste the id from `wrangler kv namespace create` here>"
     }
   ]
 }

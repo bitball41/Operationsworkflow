@@ -30,6 +30,8 @@ import {
   handleOutlookCallback,
   handleOutlookConnect,
   handleOutlookDisconnect,
+  handleOutlookMessages,
+  handleOutlookReply,
   handleOutlookSend,
   outlookConnectionStatus,
 } from "./outlook.js";
@@ -103,13 +105,22 @@ async function relay(response) {
 
 /* ---------- routes ---------- */
 
-/** What the browser is allowed to know: which providers are usable, never the keys. */
+/**
+ * What the browser is allowed to know: which providers are usable, never the
+ * keys.
+ *
+ * Outlook reports twice on purpose. `providers.outlook` answers "can this user
+ * send mail right now", which is what every send path checks. The `outlook`
+ * object answers "why not" — missing Worker secrets, no Supabase session, or
+ * simply no mailbox connected yet — three states that used to be one `false`
+ * and left Integrations blaming missing secrets that were actually present.
+ */
 async function handleStatus(request, env) {
   const providers = {};
   for (const name of Object.keys(PROVIDERS)) providers[name] = Boolean(secretFor(env, name));
   const outlook = await outlookConnectionStatus(request, env);
   providers.outlook = outlook.connected;
-  return json({ providers, at: new Date().toISOString() });
+  return json({ providers, outlook, at: new Date().toISOString() });
 }
 
 /**
@@ -279,6 +290,12 @@ async function handleApi(request, env, url) {
     if (path === "/api/outlook/disconnect" && isPost) return await handleOutlookDisconnect(request, env);
     if (path === "/api/outlook/send" && isPost) {
       return await handleOutlookSend(request, env, await readJson(request, 120_000));
+    }
+    if (path === "/api/outlook/reply" && isPost) {
+      return await handleOutlookReply(request, env, await readJson(request, 120_000));
+    }
+    if (path === "/api/outlook/messages" && request.method === "GET") {
+      return await handleOutlookMessages(request, env, url);
     }
     if (path === "/api/maps/key" && request.method === "GET") return handleMapsKey(env);
     if (path === "/api/maps/places/search-text" && isPost) return await handlePlacesSearch(request, env);

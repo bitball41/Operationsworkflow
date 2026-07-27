@@ -80,6 +80,7 @@ const state = {
   services: {
     reachable: false,
     providers: { outlook: false, anthropic: false, openai: false, whop: false, google_maps: false },
+    outlook: { configured: false, connected: false, signed_in: false, missing: [], account: "", can_read_mail: false },
   },
   user: null,
   route: "home",

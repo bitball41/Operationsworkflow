@@ -165,8 +165,9 @@ export async function initWorkspace() {
   if (session?.user) {
     setState({ storage: "cloud", user: session.user }, { silent: true });
     try {
+      /* loadCloudWorkspace sets `connection` itself: it can succeed with some
+         tables unreadable, and that partial state must survive to the UI. */
       await loadCloudWorkspace(session.user);
-      setState({ connection: { ok: true, message: "" } }, { silent: true });
       return "cloud";
     } catch (error) {
       console.error(error);
@@ -226,16 +227,133 @@ async function ensureProfile(client, user) {
   return data;
 }
 
+/**
+ * Reads the whole workspace from Supabase.
+ *
+ * Collections are settled independently. One table erroring — a migration that
+ * has not been applied, a policy that changed — used to reject the whole load
+ * and drop the session back to local storage, so a single broken table looked
+ * exactly like "Supabase is down". Now the rest of the workspace still opens
+ * and the failures are named.
+ */
 export async function loadCloudWorkspace(user = getState().user) {
   const client = await getSupabase();
-  const results = await Promise.all([
+  const [profile, ...collections] = await Promise.allSettled([
     ensureProfile(client, user),
     ...COLLECTION_KEYS.map((key) => fetchCollection(client, key)),
   ]);
-  const next = { profile: results[0] };
-  COLLECTION_KEYS.forEach((key, index) => { next[key] = results[index + 1]; });
+
+  if (profile.status === "rejected") throw profile.reason;
+
+  const next = { profile: profile.value };
+  const failed = [];
+  COLLECTION_KEYS.forEach((key, index) => {
+    const result = collections[index];
+    if (result.status === "fulfilled") {
+      next[key] = result.value;
+      return;
+    }
+    failed.push(COLLECTIONS[key]);
+    next[key] = [];
+    console.error(`Could not read ${COLLECTIONS[key]}`, result.reason);
+  });
+
   setData(next);
+  setState({
+    connection: failed.length
+      ? { ok: false, message: `Signed in, but ${failed.length} table${failed.length === 1 ? "" : "s"} could not be read: ${failed.slice(0, 4).join(", ")}.` }
+      : { ok: true, message: "" },
+  }, { silent: true });
   return next;
+}
+
+/* Records that exist only to describe other records, and are rebuilt from them
+   rather than copied. Uploading them would duplicate history, not preserve it. */
+const DERIVED_COLLECTIONS = new Set(["settings", "integrations", "aiUsage"]);
+
+/**
+ * Copies this browser's workspace into Supabase.
+ *
+ * Signing in used to silently swap the local workspace for an empty cloud one,
+ * which reads exactly like losing every lead you had. This is the missing
+ * bridge: it uploads local records, rewrites the ids the database assigns so
+ * relations survive, and leaves local storage untouched so nothing is at risk
+ * if the upload fails halfway.
+ */
+export async function pushLocalWorkspaceToCloud() {
+  if (!isCloud()) throw new Error("Sign in to Supabase before uploading this workspace.");
+
+  const local = readLocal();
+  if (!local) return { uploaded: 0, collections: [], skipped: [] };
+
+  const client = await getSupabase();
+  const idMap = new Map();
+  const uploadedPer = [];
+  const skipped = [];
+  let uploaded = 0;
+
+  /* Parents first: a child's foreign key is remapped through ids already
+     assigned to its parent, so order is the whole correctness argument here. */
+  const ORDER = [
+    "leads", "templates", "clients", "projects", "demos", "discoveryRuns", "discoveryResults",
+    "demoVersions", "drafts", "emailThreads", "emails", "followUps", "approvals", "agentRuns",
+    "agentEvents", "notifications", "clientSites", "projectTasks", "maintenanceSubscriptions",
+    "maintenanceRequests", "payments", "expenses", "pricingExperiments", "activity", "tasks",
+    "calendarEvents", "notes", "deployments",
+  ];
+
+  const RELATION_KEYS = [
+    "lead_id", "client_id", "project_id", "demo_id", "template_id", "draft_id", "thread_id",
+    "run_id", "site_id", "duplicate_of_lead_id", "maintenance_subscription_id",
+  ];
+
+  const existingKeys = new Set(getState().data.leads.map((lead) => String(lead.source_key || "")).filter(Boolean));
+
+  for (const key of ORDER) {
+    if (DERIVED_COLLECTIONS.has(key)) continue;
+    const records = Array.isArray(local[key]) ? local[key] : [];
+    if (!records.length) continue;
+
+    const payload = records.map((record) => {
+      const { id, user_id: _ignoredUser, created_at: createdAt, updated_at: updatedAt, ...rest } = record;
+      const mapped = { ...rest };
+      RELATION_KEYS.forEach((relation) => {
+        if (mapped[relation]) mapped[relation] = idMap.get(String(mapped[relation])) ?? null;
+      });
+      return {
+        local_id: String(id),
+        row: { ...mapped, user_id: userId(), ...(createdAt ? { created_at: createdAt } : {}), ...(updatedAt ? { updated_at: updatedAt } : {}) },
+      };
+    }).filter((entry) => !(key === "leads" && entry.row.source_key && existingKeys.has(String(entry.row.source_key))));
+
+    if (!payload.length) continue;
+
+    const { data, error } = await client
+      .from(COLLECTIONS[key])
+      .insert(payload.map((entry) => entry.row))
+      .select();
+
+    if (error) {
+      skipped.push(`${COLLECTIONS[key]} (${error.message})`);
+      continue;
+    }
+
+    /* The returned rows line up with the values that were sent, which is what
+       makes the id remapping work. If they ever did not, mapping by position
+       would attach a child to the wrong parent — so a length mismatch stops
+       the mapping for this collection instead of guessing. */
+    const rows = data || [];
+    if (rows.length === payload.length) {
+      rows.forEach((row, index) => idMap.set(payload[index].local_id, row.id));
+    } else {
+      skipped.push(`${COLLECTIONS[key]} relations (inserted ${rows.length} of ${payload.length})`);
+    }
+    uploaded += rows.length;
+    uploadedPer.push(`${rows.length} ${COLLECTIONS[key]}`);
+  }
+
+  await loadCloudWorkspace();
+  return { uploaded, collections: uploadedPer, skipped };
 }
 
 export async function reloadWorkspace() {

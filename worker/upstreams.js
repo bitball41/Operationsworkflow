@@ -27,7 +27,14 @@ export const OPENAI = Object.freeze({
 export const WHOP = Object.freeze({
   base: "https://api.whop.com/api/v5",
   /* Read-only surfaces this dashboard uses: who bought, and what was paid. */
-  allowedPaths: Object.freeze(["me", "company/memberships", "company/payments", "company/products"]),
+  allowedPaths: Object.freeze([
+    "me",
+    "company",
+    "company/memberships",
+    "company/payments",
+    "company/products",
+    "company/plans",
+  ]),
 });
 
 export const PLACES = Object.freeze({
@@ -59,11 +66,32 @@ export const OUTLOOK = Object.freeze({
     return `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
   },
   sendMail: "https://graph.microsoft.com/v1.0/me/sendMail",
+  messages: "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages",
+  reply(messageId) {
+    return `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/reply`;
+  },
+  /* The fields the Inbox actually renders. Asking for the whole message body of
+     every mail would cost far more bandwidth than the dashboard can use. */
+  messageFields: [
+    "id",
+    "conversationId",
+    "subject",
+    "from",
+    "toRecipients",
+    "receivedDateTime",
+    "bodyPreview",
+    "isRead",
+    "webLink",
+  ].join(","),
+  /* Mail.Read is what turns the Inbox from an empty page into replies you can
+     classify. Adding it changes the consent screen, so an existing connection
+     has to be reconnected once before inbox sync works. */
   scopes: Object.freeze([
     "openid",
     "profile",
     "email",
     "offline_access",
     "https://graph.microsoft.com/Mail.Send",
+    "https://graph.microsoft.com/Mail.Read",
   ]),
 });

@@ -23,6 +23,7 @@ import {
   textarea,
 } from "../components/ui.js";
 import { canSend, draftOutreach } from "../services/email/outreach.js";
+import { canReadOutlookMail, outlookBlocker } from "../services/integrations.js";
 import { preferences } from "../services/data.js";
 import { byId, demoForLead, filterSelect, leadName, searchInput, viewTabs } from "./shared.js";
 
@@ -67,7 +68,11 @@ export function renderOutreach() {
       )}
 
       ${section("Compose", {
-        actions: btn("Prepare a batch", { action: "outreach-batch", iconName: "layers", size: "sm" }),
+        subtitle: "The standard offer, addressed to a lead",
+        actions: `
+          ${btn("Email anyone", { action: "email-new", iconName: "mail", size: "sm" })}
+          ${btn("Prepare a batch", { action: "outreach-batch", iconName: "layers", size: "sm" })}
+        `,
         body: selectedLead ? `
           <form class="stack--tight" data-form="outreach" data-lead-id="${selectedLead.id}">
             <div class="field-grid">
@@ -120,6 +125,8 @@ export function renderOutreach() {
 
 export function renderInbox() {
   const { data, routeParams } = getState();
+  const inboxBlocker = outlookBlocker()
+    || (canReadOutlookMail() ? "" : "This Outlook connection can send but not read. Disconnect and reconnect it from Integrations to grant Mail.Read.");
   const query = (routeParams.q || "").toLowerCase();
   const classification = routeParams.classification || "all";
   const threads = data.emailThreads
@@ -135,11 +142,14 @@ export function renderInbox() {
 
   return `
     <div class="stack">
+      ${inboxBlocker ? notice("Inbox cannot sync yet", inboxBlocker, { tone: "warn", iconName: "inbox" }) : ""}
+
       <div class="toolbar">
         ${searchInput("Search replies", routeParams.q || "")}
         ${filterSelect("classification", REPLY_CLASSIFICATIONS.map((value) => ({ value, label: statusLabel(value) })), classification, "All replies")}
         <span class="toolbar__spacer"></span>
         <span class="faint">${formatNumber(data.emailThreads.filter((thread) => thread.is_unread).length)} unread</span>
+        ${btn("Sync inbox", { action: "inbox-sync", iconName: "refresh", size: "sm", variant: "primary", attrs: inboxBlocker ? "disabled" : "" })}
       </div>
 
       <div class="inbox">
@@ -150,7 +160,10 @@ export function renderInbox() {
               <p>${escapeHtml(thread.subject || "(no subject)")}</p>
               <span>${pill(thread.classification)}</span>
             </button>
-          `).join("") || empty({ title: "No replies", message: "Outlook inbox sync is not connected yet." })}
+          `).join("") || empty({
+            title: "No replies",
+            message: inboxBlocker || "Nothing new. Sync the inbox to pull the latest messages from Outlook.",
+          })}
         </div>
 
         <div class="stack">

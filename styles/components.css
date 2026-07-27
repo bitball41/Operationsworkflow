@@ -253,6 +253,15 @@
   padding-left: 13px;
 }
 
+/* The assistant's own words, as opposed to the tool trace around them. */
+.msg--assistant {
+  max-width: min(720px, 100%);
+}
+
+.msg--assistant .msg__body {
+  color: var(--text-1);
+}
+
 .msg--blocked .msg__body {
   border-left-color: var(--amber);
 }

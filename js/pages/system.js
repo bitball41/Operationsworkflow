@@ -15,9 +15,9 @@ import {
   select,
   textarea,
 } from "../components/ui.js";
-import { integrationList } from "../services/integrations.js";
+import { integrationList, isConnected, outlookBlocker } from "../services/integrations.js";
 import { connectedProvider, providerReady } from "../services/ai/provider.js";
-import { preferences } from "../services/data.js";
+import { hasLocalWorkspace, preferences } from "../services/data.js";
 import { getStoredApiKey, workerHoldsMapsKey } from "../services/openscout/adapter.js";
 import { listTools } from "../services/ai/tools.js";
 import { contextSections } from "../services/ai/context.js";
@@ -45,6 +45,53 @@ function mapsKeySource() {
   return "Not set — add GOOGLE_MAPS_API_KEY to the Worker, or paste one on Lead Discovery";
 }
 
+/**
+ * Outlook's row, which has three states rather than two.
+ *
+ * The Worker reports them separately now: whether the Microsoft secrets and KV
+ * binding are present, whether there is a Supabase session to attach a mailbox
+ * to, and whether a mailbox is actually connected. Collapsing them into one
+ * boolean meant a fully configured Worker still said its secrets were missing.
+ */
+function outlookRow() {
+  const { services } = getState();
+  const outlook = services.outlook || {};
+  const entry = WORKER_SECRETS.outlook;
+
+  if (!outlook.configured) {
+    return row({
+      main: entry.label,
+      sub: outlook.missing?.length
+        ? `Not configured — the Worker is missing ${outlook.missing.join(", ")}`
+        : `Not configured — requires ${entry.secret}`,
+      iconName: "plug",
+      side: pill("not_connected"),
+    });
+  }
+  if (!outlook.signed_in) {
+    return row({
+      main: entry.label,
+      sub: "Configured on the Worker. Sign in to Supabase to attach a mailbox — connections are stored per user.",
+      iconName: "plug",
+      side: pill("warning", "Sign in"),
+    });
+  }
+  if (!outlook.connected) {
+    return row({
+      main: entry.label,
+      sub: "Configured and ready. No mailbox connected yet.",
+      iconName: "plug",
+      side: pill("warning", "Not connected"),
+    });
+  }
+  return row({
+    main: entry.label,
+    sub: `${outlook.account || entry.detail}${outlook.can_read_mail ? "" : " · send only, reconnect to read the inbox"}`,
+    iconName: "plug",
+    side: pill("connected"),
+  });
+}
+
 /** The Worker's key inventory, reported by /api/status. Values never leave it. */
 function workerSection() {
   const { services } = getState();
@@ -63,6 +110,7 @@ function workerSection() {
   return section("API keys", {
     subtitle: "Held by the Cloudflare Worker, never by this browser",
     body: rows(WORKER_PROVIDERS.map((provider) => {
+      if (provider === "outlook") return outlookRow();
       const entry = WORKER_SECRETS[provider];
       const present = services.providers[provider] === true;
       return row({
@@ -77,12 +125,21 @@ function workerSection() {
 
 function integrationAction(item) {
   if (item.provider === "outlook") {
+    const outlook = getState().services.outlook || {};
+    if (!outlook.configured) {
+      return btn("Set up", { action: "integration-setup", size: "sm", attrs: 'data-provider="outlook"' });
+    }
     if (getState().storage !== "cloud") {
-      return btn("Sign in first", { action: "navigate", size: "sm", attrs: 'data-route-target="settings"' });
+      return btn("Sign in first", { action: "navigate", size: "sm", variant: "primary", attrs: 'data-route-target="settings"' });
     }
     return item.status === "connected"
       ? btn("Disconnect", { action: "outlook-disconnect", size: "sm" })
       : btn("Connect", { action: "outlook-connect", size: "sm", variant: "primary" });
+  }
+  if (item.provider === "whop") {
+    return isConnected("whop")
+      ? btn("Sync payments", { action: "whop-sync", size: "sm" })
+      : btn("Set up", { action: "integration-setup", size: "sm", attrs: 'data-provider="whop"' });
   }
   return item.manage
     ? btn("Manage", { action: "navigate", size: "sm", attrs: `data-route-target="${item.manage}"` })
@@ -102,9 +159,18 @@ export function renderIntegrations() {
         ? notice("Outlook connection cancelled", "No mailbox access was saved.", { tone: "warn", iconName: "mail" })
         : "";
 
+  const blocker = outlookBlocker();
+
   return `
     <div class="stack">
       ${outlookNotice}
+      ${blocker ? notice("Email is not sending", blocker, {
+        tone: "warn",
+        iconName: "mail",
+        actions: state.storage === "cloud"
+          ? ""
+          : btn("Sign in", { action: "navigate", size: "sm", attrs: 'data-route-target="settings"' }),
+      }) : ""}
       ${notice(
         `${connected} of ${integrations.length} services connected`,
         "Everything else is wired up behind a boundary: the UI, records and tool calls exist, and each one refuses to pretend an external action happened.",
@@ -201,10 +267,16 @@ export function renderSettings() {
             main: cloud ? "Synced to Supabase" : "Stored in this browser",
             sub: cloud
               ? `Signed in as ${state.user?.email || "owner"}`
-              : "Records are saved to local storage. Sign in to sync them to Supabase — the dashboard works either way.",
+              : "Records are saved to local storage. Sign in below to sync them to Supabase — the dashboard works either way.",
             iconName: "layers",
             side: pill(cloud ? "connected" : "warning", cloud ? "Cloud" : "Local"),
           }),
+          ...(cloud && hasLocalWorkspace() ? [row({
+            main: "This browser still holds a local workspace",
+            sub: "Copy it into Supabase so the leads, demos and drafts saved before signing in are not left behind.",
+            iconName: "upload",
+            side: btn("Upload to Supabase", { action: "cloud-upload", size: "sm", variant: "primary" }),
+          })] : []),
           row({
             main: "Google Maps key",
             sub: mapsKeySource(),
@@ -212,6 +284,23 @@ export function renderSettings() {
             side: pill(workerHoldsMapsKey() || getStoredApiKey() ? "connected" : "not_connected"),
           }),
         ]),
+      })}
+
+      ${cloud ? "" : section("Supabase account", {
+        subtitle: "Cloud sync, and the mailbox Outlook attaches to",
+        body: `
+          <p class="faint">The dashboard never blocks on this. Signing in syncs this workspace to Supabase and lets Outlook store a mailbox connection against your account.</p>
+          <form class="stack--tight" data-form="sign-in">
+            <div class="field-grid">
+              ${field("Email", input("email", "", { type: "email", required: true }))}
+              ${field("Password", input("password", "", { type: "password", required: true, attrs: 'minlength="8"' }))}
+            </div>
+            <div class="btn-row">
+              ${btn("Sign in", { type: "submit", variant: "primary" })}
+              ${btn("Create account", { action: "sign-up" })}
+            </div>
+          </form>
+        `,
       })}
 
       ${modelSection()}
@@ -249,22 +338,10 @@ export function renderSettings() {
         </div>
       </form>
 
-      ${advanced("Supabase account", `
+      ${advanced("Supabase project", `
         ${cloud ? rows([
           row({ main: "Signed in", sub: escapeHtml(state.user?.email || ""), iconName: "user", side: btn("Sign out", { action: "sign-out", size: "sm" }) }),
-        ]) : `
-          <p class="faint">Signing in only enables cloud sync. The dashboard never blocks on it.</p>
-          <form class="stack--tight" data-form="sign-in">
-            <div class="field-grid">
-              ${field("Email", input("email", "", { type: "email", required: true }))}
-              ${field("Password", input("password", "", { type: "password", required: true, attrs: 'minlength="8"' }))}
-            </div>
-            <div class="btn-row">
-              ${btn("Sign in", { type: "submit" })}
-              ${btn("Create account", { action: "sign-up" })}
-            </div>
-          </form>
-        `}
+        ]) : ""}
         <p class="faint">Project <code>${escapeHtml(CONFIG.supabaseUrl.replace("https://", "").split(".")[0])}</code> · publishable key only, never a service key.</p>
       `)}
     </div>

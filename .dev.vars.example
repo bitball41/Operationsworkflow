@@ -18,6 +18,8 @@ ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
 # Whop — payment events and receipts. Read-only in this Worker.
+# A company API key from the Whop dashboard. Payments > Sync from Whop imports
+# real charges; without it the Payments page only shows what you typed in.
 WHOP_API_KEY=
 
 # Google Maps — lead discovery. This one reaches the browser, because the Maps
@@ -28,6 +30,14 @@ GOOGLE_MAPS_API_KEY=
 # Outlook — Microsoft Entra confidential web app. `common` supports personal
 # Microsoft accounts and work/school accounts. The callback URI is derived from
 # the origin serving the Worker: /api/outlook/callback.
+#
+# The app registration needs delegated Mail.Send AND Mail.Read. Mail.Send alone
+# gives a write-only mailbox: outreach goes out, no reply ever comes back, and
+# the Inbox stays permanently empty.
+#
+# Sending also needs the OUTLOOK_TOKENS KV namespace to exist — see
+# wrangler.jsonc. It stores each user's encrypted tokens; with no namespace
+# bound there is nowhere to keep a connection and every route answers 503.
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=
 MICROSOFT_TENANT=common
