@@ -87,7 +87,7 @@ export function renderAutomation() {
         ${stats([
           ["Processed", `${automation.processed}<span class="faint"> / ${settings.batchTarget}</span>`, running ? "this run" : "last run"],
           ["Sent today", formatNumber(today.sent), `target ${settings.batchTarget}`],
-          ["Prepared", formatNumber(automation.processed - automation.sent), "waiting on Gmail"],
+          ["Prepared", formatNumber(automation.processed - automation.sent), "waiting on Outlook"],
           ["Failed", formatNumber(automation.failures.length), automation.failures.length ? "needs a look" : "none"],
         ])}
 
@@ -96,7 +96,7 @@ export function renderAutomation() {
 
       ${canSend() ? "" : notice(
         "Emails stop at “ready”",
-        "Gmail is not connected, so automation completes every step except the send and leaves each email ready. Nothing is marked as sent.",
+        "Outlook is not connected, so automation completes every step except the send and leaves each email ready. Nothing is marked as sent.",
         { tone: "warn", iconName: "mail", actions: btn("Integrations", { action: "navigate", attrs: 'data-route-target="integrations"', size: "sm" }) },
       )}
 

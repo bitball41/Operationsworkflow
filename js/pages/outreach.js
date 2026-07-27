@@ -61,7 +61,7 @@ export function renderOutreach() {
       })}
 
       ${canSend() ? "" : notice(
-        "Gmail is not connected",
+        "Outlook is not connected",
         "Drafts, links and states are real. The send button will tell you it is blocked rather than marking anything as sent.",
         { iconName: "mail", actions: btn("Connect", { action: "navigate", attrs: 'data-route-target="integrations"', size: "sm" }) },
       )}
@@ -150,7 +150,7 @@ export function renderInbox() {
               <p>${escapeHtml(thread.subject || "(no subject)")}</p>
               <span>${pill(thread.classification)}</span>
             </button>
-          `).join("") || empty({ title: "No replies", message: "Replies appear here once Gmail is connected." })}
+          `).join("") || empty({ title: "No replies", message: "Outlook inbox sync is not connected yet." })}
         </div>
 
         <div class="stack">

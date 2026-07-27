@@ -122,7 +122,7 @@ export const REPLY_CLASSIFICATIONS = Object.freeze([
 export const INTEGRATIONS = Object.freeze([
   { provider: "supabase", name: "Supabase", detail: "Database, storage and realtime sync", status: "connected", manage: "settings" },
   { provider: "openscout", name: "OpenScout", detail: "Google Places lead discovery engine", status: "connected", manage: "discovery" },
-  { provider: "gmail", name: "Gmail", detail: "Sends outreach and syncs replies", status: "not_connected" },
+  { provider: "outlook", name: "Outlook", detail: "Sends outreach through Microsoft Graph", status: "not_connected" },
   { provider: "cloudflare", name: "Cloudflare", detail: "Publishes demos and client sites", status: "not_connected" },
   { provider: "anthropic", name: "Anthropic", detail: "Model provider for the assistant and automation", status: "not_connected" },
   { provider: "openai", name: "OpenAI", detail: "Alternate model provider", status: "not_connected" },

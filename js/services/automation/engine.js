@@ -309,7 +309,7 @@ export async function startAutomation(overrides = {}) {
     title: "Automation started",
     detail: canSend()
       ? `Target ${settings.batchTarget} emails.`
-      : `Target ${settings.batchTarget}. Gmail is not connected, so emails stop at "ready".`,
+      : `Target ${settings.batchTarget}. Outlook is not connected, so emails stop at "ready".`,
   });
 
   controller = { stop: false, reason: "" };

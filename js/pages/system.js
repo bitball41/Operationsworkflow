@@ -26,8 +26,13 @@ import { EFFORT_LEVELS, estimatedTurnCost, formatPerMTok, getModel, modelsForPro
 import { activeModel } from "../services/ai/provider.js";
 import { formatCurrency, isSameMonth } from "../core/utils.js";
 
-/* The four keys the Cloudflare Worker can hold, and the secret name for each. */
+/* External capabilities reported by the Cloudflare Worker. */
 const WORKER_SECRETS = Object.freeze({
+  outlook: {
+    label: "Outlook",
+    secret: "Microsoft OAuth secrets + OUTLOOK_TOKENS KV",
+    detail: "Outreach through Microsoft Graph, isolated per signed-in user",
+  },
   anthropic: { label: "Anthropic", secret: "ANTHROPIC_API_KEY", detail: "Assistant replies and model-driven tool calls" },
   openai: { label: "OpenAI", secret: "OPENAI_API_KEY", detail: "Alternate model provider" },
   whop: { label: "Whop", secret: "WHOP_API_KEY", detail: "Payment events and receipts, read-only" },
@@ -62,7 +67,7 @@ function workerSection() {
       const present = services.providers[provider] === true;
       return row({
         main: entry.label,
-        sub: present ? entry.detail : `Not set — run: wrangler secret put ${entry.secret}`,
+        sub: present ? entry.detail : `Not connected — requires ${entry.secret}`,
         iconName: "plug",
         side: pill(present ? "connected" : "not_connected"),
       });
@@ -70,12 +75,36 @@ function workerSection() {
   });
 }
 
+function integrationAction(item) {
+  if (item.provider === "outlook") {
+    if (getState().storage !== "cloud") {
+      return btn("Sign in first", { action: "navigate", size: "sm", attrs: 'data-route-target="settings"' });
+    }
+    return item.status === "connected"
+      ? btn("Disconnect", { action: "outlook-disconnect", size: "sm" })
+      : btn("Connect", { action: "outlook-connect", size: "sm", variant: "primary" });
+  }
+  return item.manage
+    ? btn("Manage", { action: "navigate", size: "sm", attrs: `data-route-target="${item.manage}"` })
+    : btn("Set up", { action: "integration-setup", size: "sm", attrs: `data-provider="${item.provider}"` });
+}
+
 export function renderIntegrations() {
+  const state = getState();
   const integrations = integrationList();
   const connected = integrations.filter((item) => item.status === "connected").length;
+  const outlookResult = state.routeParams?.outlook;
+  const outlookNotice = outlookResult === "connected"
+    ? notice("Outlook connected", "Outreach can now send through the Microsoft account you approved.", { tone: "success", iconName: "mail" })
+    : outlookResult === "failed"
+      ? notice("Outlook did not connect", state.routeParams?.detail || "Try the connection again.", { tone: "error", iconName: "alert" })
+      : outlookResult === "cancelled"
+        ? notice("Outlook connection cancelled", "No mailbox access was saved.", { tone: "warn", iconName: "mail" })
+        : "";
 
   return `
     <div class="stack">
+      ${outlookNotice}
       ${notice(
         `${connected} of ${integrations.length} services connected`,
         "Everything else is wired up behind a boundary: the UI, records and tool calls exist, and each one refuses to pretend an external action happened.",
@@ -88,7 +117,7 @@ export function renderIntegrations() {
         body: rows(integrations.map((item) => row({
           main: item.name,
           sub: item.detail,
-          side: `${pill(item.status)}${item.manage ? btn("Manage", { action: "navigate", size: "sm", attrs: `data-route-target="${item.manage}"` }) : btn("Set up", { action: "integration-setup", size: "sm", attrs: `data-provider="${item.provider}"` })}`,
+          side: `${pill(item.status)}${integrationAction(item)}`,
         }))),
       })}
 

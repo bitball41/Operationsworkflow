@@ -3,11 +3,12 @@
  *
  * Drafting is deterministic — the default email is a fixed template, so neither
  * the composer nor automation needs a model to produce it. Sending is a real
- * integration boundary that refuses to pretend when Gmail is not connected.
+ * integration boundary that refuses to pretend when Outlook is not connected.
  */
 import { FOLLOW_UP_BODY, OUTREACH_BODY, OUTREACH_SUBJECT } from "../../config.js";
 import { fillTemplate } from "../../core/utils.js";
 import { NotConnectedError, isConnected } from "../integrations.js";
+import { ApiError, sendOutlookEmail } from "../api.js";
 
 export function draftOutreach({ lead, demo, price, owner }) {
   const values = {
@@ -37,15 +38,21 @@ export function draftFollowUp({ lead, demo, price, owner, attempt = 2 }) {
 }
 
 export function canSend() {
-  return isConnected("gmail");
+  return isConnected("outlook");
 }
 
 /**
- * The single place a real email would leave the system. Swap the body of this
- * function for a Gmail API call once credentials exist; every caller already
- * handles the blocked case.
+ * The single place a real email leaves the system. The Worker verifies the
+ * current Supabase session and owns the encrypted Microsoft OAuth tokens.
  */
 export async function sendEmail({ to, subject, body }) {
-  if (!canSend()) throw new NotConnectedError("gmail", "Gmail is not connected, so no email was sent.");
-  throw new NotConnectedError("gmail", `Gmail transport is not implemented yet (would send "${subject}" to ${to}).`);
+  if (!canSend()) throw new NotConnectedError("outlook", "Outlook is not connected, so no email was sent.");
+  try {
+    return await sendOutlookEmail({ to, subject, body });
+  } catch (error) {
+    if (error instanceof ApiError && error.blocked) {
+      throw new NotConnectedError("outlook", error.message);
+    }
+    throw error;
+  }
 }

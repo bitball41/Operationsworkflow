@@ -12,6 +12,13 @@
  *   OPENAI_API_KEY        - OpenAI Responses API
  *   WHOP_API_KEY          - Whop v5 API
  *   GOOGLE_MAPS_API_KEY   - Google Maps / Places (browser key, referrer-locked)
+ *   MICROSOFT_CLIENT_ID   - Microsoft Entra application id
+ *   MICROSOFT_CLIENT_SECRET - Microsoft Entra confidential-client secret
+ *   MICROSOFT_TENANT      - OAuth tenant selector (`common` by default)
+ *   OUTLOOK_TOKEN_ENCRYPTION_KEY - encrypts OAuth tokens before KV storage
+ *
+ * Bindings:
+ *   OUTLOOK_TOKENS        - per-Supabase-user OAuth state and encrypted tokens
  *
  * Nothing here fakes a result. A missing secret returns 503 with the exact name
  * to set, which is what the rest of the application already knows how to show.
@@ -19,6 +26,13 @@
 
 import { ANTHROPIC, OPENAI, WHOP, PLACES } from "./upstreams.js";
 import { getModel, resolveModel } from "../js/data/models.js";
+import {
+  handleOutlookCallback,
+  handleOutlookConnect,
+  handleOutlookDisconnect,
+  handleOutlookSend,
+  outlookConnectionStatus,
+} from "./outlook.js";
 
 /** Secret name per provider, and whether the browser may read its value. */
 const PROVIDERS = Object.freeze({
@@ -90,9 +104,11 @@ async function relay(response) {
 /* ---------- routes ---------- */
 
 /** What the browser is allowed to know: which providers are usable, never the keys. */
-function handleStatus(env) {
+async function handleStatus(request, env) {
   const providers = {};
   for (const name of Object.keys(PROVIDERS)) providers[name] = Boolean(secretFor(env, name));
+  const outlook = await outlookConnectionStatus(request, env);
+  providers.outlook = outlook.connected;
   return json({ providers, at: new Date().toISOString() });
 }
 
@@ -257,7 +273,13 @@ async function handleApi(request, env, url) {
   const isPost = request.method === "POST";
 
   try {
-    if (path === "/api/status" && request.method === "GET") return handleStatus(env);
+    if (path === "/api/status" && request.method === "GET") return await handleStatus(request, env);
+    if (path === "/api/outlook/connect" && isPost) return await handleOutlookConnect(request, env);
+    if (path === "/api/outlook/callback" && request.method === "GET") return await handleOutlookCallback(request, env);
+    if (path === "/api/outlook/disconnect" && isPost) return await handleOutlookDisconnect(request, env);
+    if (path === "/api/outlook/send" && isPost) {
+      return await handleOutlookSend(request, env, await readJson(request, 120_000));
+    }
     if (path === "/api/maps/key" && request.method === "GET") return handleMapsKey(env);
     if (path === "/api/maps/places/search-text" && isPost) return await handlePlacesSearch(request, env);
     if (path === "/api/ai/anthropic/messages" && isPost) return await handleAnthropic(request, env);

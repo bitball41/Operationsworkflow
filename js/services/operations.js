@@ -225,7 +225,7 @@ export async function createOutreachDraft(leadOrId, { price, status = "ready", k
 }
 
 /**
- * Attempts a real send. When Gmail is not connected the draft is left in
+ * Attempts a real send. When Outlook is not connected the draft is left in
  * `ready` and the blocked reason is returned — nothing is marked as sent.
  */
 export async function sendDraft(draftId) {

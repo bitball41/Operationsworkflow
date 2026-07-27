@@ -5,6 +5,9 @@
 #   wrangler secret put OPENAI_API_KEY
 #   wrangler secret put WHOP_API_KEY
 #   wrangler secret put GOOGLE_MAPS_API_KEY
+#   wrangler secret put MICROSOFT_CLIENT_ID
+#   wrangler secret put MICROSOFT_CLIENT_SECRET
+#   wrangler secret put OUTLOOK_TOKEN_ENCRYPTION_KEY
 #
 # Never commit real values. Every key below is read only inside the Worker.
 
@@ -21,3 +24,14 @@ WHOP_API_KEY=
 # JavaScript SDK runs in the page. Restrict it by HTTP referrer in Google Cloud
 # and enable only "Maps JavaScript API" and "Places API (New)".
 GOOGLE_MAPS_API_KEY=
+
+# Outlook — Microsoft Entra confidential web app. `common` supports personal
+# Microsoft accounts and work/school accounts. The callback URI is derived from
+# the origin serving the Worker: /api/outlook/callback.
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+MICROSOFT_TENANT=common
+
+# Any high-entropy value of at least 32 characters. The Worker derives an
+# AES-GCM key from it before storing OAuth tokens in OUTLOOK_TOKENS KV.
+OUTLOOK_TOKEN_ENCRYPTION_KEY=

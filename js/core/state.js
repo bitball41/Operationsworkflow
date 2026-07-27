@@ -79,7 +79,7 @@ const state = {
      /api/status; every provider stays false when the Worker is not there. */
   services: {
     reachable: false,
-    providers: { anthropic: false, openai: false, whop: false, google_maps: false },
+    providers: { outlook: false, anthropic: false, openai: false, whop: false, google_maps: false },
   },
   user: null,
   route: "home",
