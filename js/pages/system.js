@@ -19,7 +19,7 @@ import { integrationList, isConnected, outlookBlocker } from "../services/integr
 import { connectedProvider, providerReady } from "../services/ai/provider.js";
 import { preferences } from "../services/data.js";
 import { workerHoldsMapsKey } from "../services/openscout/adapter.js";
-import { listTools } from "../services/ai/tools.js";
+import { AI_PERMISSION_MODES, aiPermissionMode, listTools, permissionAllows, permissionDefinition } from "../services/ai/tools.js";
 import { contextSections } from "../services/ai/context.js";
 import { WORKER_PROVIDERS } from "../services/api.js";
 import { EFFORT_LEVELS, estimatedTurnCost, formatPerMTok, getModel, modelsForProvider } from "../data/models.js";
@@ -264,6 +264,37 @@ function modelSection() {
   });
 }
 
+function aiAccessSection() {
+  const current = aiPermissionMode();
+  const permission = permissionDefinition(current);
+  const tools = listTools();
+  const allowed = tools.filter((tool) => permissionAllows(tool, current)).length;
+
+  return section("AI access", {
+    subtitle: "Controls model-chosen actions across the workspace",
+    body: `
+      <div class="field-grid">
+        ${field("Permission mode", select(
+          "ai_permission_mode",
+          AI_PERMISSION_MODES.map((mode) => ({ value: mode.id, label: mode.label })),
+          current,
+          { attrs: 'data-action="ai-permission-select"' },
+        ), { hint: permission.description })}
+        ${field("Available tools", input("ai_tool_count", `${allowed} of ${tools.length}`, { attrs: "disabled" }), { hint: "Direct commands you type remain explicit user actions." })}
+      </div>
+      <div class="permission-cards">
+        ${AI_PERMISSION_MODES.map((mode) => `
+          <div class="permission-card${mode.id === current ? " is-active" : ""}">
+            <span>${escapeHtml(mode.label)}</span>
+            <p>${escapeHtml(mode.description)}</p>
+            <small>${tools.filter((tool) => permissionAllows(tool, mode.id)).length} tools</small>
+          </div>
+        `).join("")}
+      </div>
+    `,
+  });
+}
+
 export function renderSettings() {
   const state = getState();
   const settings = preferences();
@@ -290,6 +321,7 @@ export function renderSettings() {
       })}
 
       ${modelSection()}
+      ${aiAccessSection()}
 
       <form class="stack" data-form="settings">
         ${section("Business", {
