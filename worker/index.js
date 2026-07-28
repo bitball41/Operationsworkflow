@@ -83,6 +83,20 @@ function sameOrigin(request, url) {
   }
 }
 
+/**
+ * The public demo hostname is intentionally a different security boundary from
+ * the private operations dashboard. It must never fall through to dashboard
+ * assets or any credential-backed API route when Cloudflare Access is not in
+ * front of that hostname.
+ */
+function isPublicDemoHost(url, env) {
+  const demoDomain = String(env?.DEMO_DOMAIN || "demos.conno.fun")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  return url.host.toLowerCase() === demoDomain;
+}
+
 async function readJson(request, limitBytes = 2_000_000) {
   const raw = await request.text();
   if (raw.length > limitBytes) throw new Error("Request body is too large.");
@@ -322,6 +336,16 @@ async function handleApi(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    /* Demos are public. Restrict this hostname to numbered R2-backed sites so
+       a public Access exemption can never expose the dashboard or its APIs. */
+    if (isPublicDemoHost(url, env)) {
+      const demo = await servePublicDemo(request, env);
+      return demo || new Response("Not found", {
+        status: 404,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
 
     if (url.pathname === "/mcp") return handleMcp(request, env);
 
