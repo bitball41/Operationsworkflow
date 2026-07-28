@@ -215,8 +215,15 @@ normalised lead schema and keeps the source evidence.
 
 The page asks for three things: niche, location, how many. Radius, depth,
 minimum confidence, minimum rating, verification, phone requirement and
-deduplication live under **Advanced** with defaults that match the business
-model (no website, has a phone, skip businesses already saved).
+deduplication live under **Advanced**. The current business rule is mandatory:
+every surfaced candidate has no listed website and has a publicly linked email
+address; businesses without a verified public email never enter the review queue.
+
+Google Places does not expose business email addresses. After OpenScout finds
+siteless candidates, the existing Browser Run binding searches public results
+for an address shown beside matching business-name, city, phone, or domain
+evidence. It never guesses an address, and stores the source evidence with the
+candidate.
 
 Lead discovery needs a Google Maps browser key with Places enabled. Set
 `GOOGLE_MAPS_API_KEY` on the worker and every browser gets it; otherwise paste
@@ -324,6 +331,7 @@ actually reach it.
 | `GET /api/maps/key` | the Google Maps browser key |
 | `POST /api/maps/places/search-text` | Places API (New) |
 | `POST /api/browser/research` | authenticated public-page research through Browser Run |
+| `POST /api/browser/contact-email` | evidence-matched public business email lookup |
 | `POST /api/demos/publish` | authenticated multipart demo bundle upload to R2 |
 | `POST /api/ai/anthropic/messages` | Anthropic Messages API |
 | `POST /api/ai/openai/responses` | OpenAI Responses API |
@@ -373,6 +381,6 @@ API directly.
   reconciliation path.
 - Outlook connections made before `Mail.Read` was requested can send but not
   read. Disconnect and reconnect from Integrations to re-consent.
-- Live discovery needs a Google Maps key and available Places quota.
+- Live discovery needs a Google Maps key, Places quota, and the Browser Run binding; email-only discovery may return fewer leads than requested when public addresses are unavailable.
 - Website verification only runs direct probes on local previews; hosted builds
   keep a narrow CSP.

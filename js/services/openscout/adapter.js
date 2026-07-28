@@ -7,7 +7,7 @@
  */
 
 import { getState } from "../../core/state.js";
-import { fetchMapsKey } from "../api.js";
+import { fetchMapsKey, lookupBusinessEmail } from "../api.js";
 
 const ENGINE_VERSION = "openscout-2026-07-25";
 
@@ -79,12 +79,14 @@ export async function discoverWithOpenScout(options, onProgress) {
   }));
 
   if (options.mustHavePhone) leads = leads.filter((lead) => Boolean(lead.phone));
-  if (options.mustHaveEmail) leads = leads.filter((lead) => Boolean(lead.email));
   if (options.strictlyBlankWebsite) {
     leads = leads.filter((lead) => lead.source_metadata?.openscout?.leadCategory === "none");
   }
 
   const requested = Math.max(1, Math.min(250, Number(options.limit) || 50));
+  if (options.mustHaveEmail) {
+    leads = await enrichLeadsWithPublicEmails(leads, { limit: requested, onProgress });
+  }
   leads = leads.slice(0, requested);
 
   return {
@@ -93,6 +95,81 @@ export async function discoverWithOpenScout(options, onProgress) {
     leads,
     engineVersion: ENGINE_VERSION,
   };
+}
+
+/**
+ * Finds public email addresses for siteless OpenScout candidates. Google Places
+ * does not expose email, so the Worker searches public pages and returns only
+ * addresses that appear beside matching business identity signals. Guesses are
+ * never generated.
+ */
+export async function enrichLeadsWithPublicEmails(leads, { limit = 50, onProgress } = {}) {
+  const candidates = Array.isArray(leads) ? leads : [];
+  if (!candidates.length) return [];
+
+  const matches = [];
+  let cursor = 0;
+  let completed = 0;
+  let failed = 0;
+  let firstError = null;
+  const workerCount = Math.min(4, candidates.length);
+
+  const runWorker = async () => {
+    while (cursor < candidates.length && matches.length < limit) {
+      const order = cursor;
+      const lead = candidates[cursor];
+      cursor += 1;
+      try {
+        const found = await lookupBusinessEmail({
+          business_name: lead.business_name,
+          phone: lead.phone,
+          address: lead.address,
+          city: lead.city,
+          region: lead.region,
+          listing_url: lead.listing_url,
+        });
+        if (found?.email) {
+          const evidence = {
+            source_url: found.source_url || "",
+            evidence: found.evidence || "",
+            score: Number(found.score) || 0,
+            checked_at: new Date().toISOString(),
+          };
+          matches.push({
+            order,
+            lead: {
+              ...lead,
+              email: String(found.email).trim().toLowerCase(),
+              source_payload: { ...lead.source_payload, email: evidence },
+              source_metadata: { ...lead.source_metadata, email: evidence },
+            },
+          });
+        }
+      } catch (error) {
+        failed += 1;
+        firstError ||= error;
+      } finally {
+        completed += 1;
+        onProgress?.({
+          phase: "email",
+          completed,
+          total: candidates.length,
+          scanned: completed,
+          leads: matches.length,
+        });
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+  if (completed && failed === completed && firstError) {
+    throw new Error("Public email lookup could not run: " + (firstError.message || "research unavailable"));
+  }
+
+  return matches
+    .sort((a, b) => a.order - b.order)
+    .slice(0, limit)
+    .map((match) => match.lead);
 }
 
 export function canUseDirectWebsiteVerification() {
@@ -113,7 +190,7 @@ export function normalizeLead(place, context = {}) {
   return {
     business_name: String(place.name || "Unnamed business").trim(),
     contact_name: "",
-    email: "",
+    email: String(place.email || "").trim(),
     phone: String(place.phone || "").trim(),
     address: String(place.address || "").trim(),
     city: address.city,

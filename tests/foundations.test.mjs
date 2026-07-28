@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { buildBundleForTemplateRecord, composeDocument } from "../js/services/sites/bundle.js";
 import { normalizeTemplateAssetPaths } from "../js/services/sites/templates.js";
-import { safeResearchUrl } from "../worker/browser.js";
+import { findPublicBusinessEmail, safeResearchUrl } from "../worker/browser.js";
 import { handleDemoPublish, servePublicDemo } from "../worker/demos.js";
 import worker from "../worker/index.js";
 import { handleMcp } from "../worker/mcp.js";
@@ -60,6 +60,29 @@ test("browser research refuses local and private network targets", () => {
   assert.equal(safeResearchUrl("http://[fc00::1]"), null);
   assert.equal(safeResearchUrl("file:///etc/passwd"), null);
   assert.equal(safeResearchUrl("https://example.com/path#fragment").toString(), "https://example.com/path");
+});
+
+test("public email extraction requires matching business evidence", () => {
+  const markdown = [
+    "[Northstar Plumbing directory profile](https://directory.example/northstar)",
+    "Northstar Plumbing serves Austin, TX. Email northstarplumbing@gmail.com or call (512) 555-0138.",
+    "Search help: support@bing.com",
+  ].join("\n");
+
+  const match = findPublicBusinessEmail(markdown, {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    region: "TX",
+    phone: "(512) 555-0138",
+  });
+  assert.equal(match.email, "northstarplumbing@gmail.com");
+  assert.equal(match.source_url, "https://directory.example/northstar");
+
+  const unrelated = findPublicBusinessEmail("Someone else: randomperson@gmail.com", {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+  });
+  assert.equal(unrelated, null);
 });
 
 test("the public demo hostname cannot reach the dashboard or Worker APIs", async () => {
