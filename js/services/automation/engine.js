@@ -9,7 +9,7 @@
 import { AUTOMATION_DEFAULTS } from "../../config.js";
 import { INITIAL_AUTOMATION, getState, setAutomation } from "../../core/state.js";
 import { sleep, uid } from "../../core/utils.js";
-import { createRecord, logActivity, preferences, updateRecord } from "../data.js";
+import { createRecord, logActivity, preferences, savePreferences, updateRecord } from "../data.js";
 import {
   createFollowUp,
   createOrUpdateDemo,
@@ -37,32 +37,21 @@ export const AUTOMATION_STEPS = Object.freeze([
   { id: "followup", label: "Schedule follow-up" },
 ]);
 
-const SETTINGS_KEY = "operations.automation";
 const MAX_EVENTS = 80;
 
 let controller = null;
 
 export function automationSettings() {
   if (getState().automationSettings) return getState().automationSettings;
-  let stored = {};
-  try {
-    stored = JSON.parse(globalThis.localStorage?.getItem(SETTINGS_KEY) || "{}");
-  } catch {
-    stored = {};
-  }
-  const settings = { ...AUTOMATION_DEFAULTS, ...stored };
+  const settings = { ...AUTOMATION_DEFAULTS, ...(preferences().automation || {}) };
   getState().automationSettings = settings;
   return settings;
 }
 
-export function saveAutomationSettings(patch) {
+export async function saveAutomationSettings(patch) {
   const next = { ...automationSettings(), ...patch };
   getState().automationSettings = next;
-  try {
-    globalThis.localStorage?.setItem(SETTINGS_KEY, JSON.stringify(next));
-  } catch {
-    /* Settings are non-critical; ignore storage failures. */
-  }
+  await savePreferences({ automation: next });
   setAutomation({});
   return next;
 }
@@ -271,7 +260,7 @@ async function finish(runId, status, reason) {
 export async function startAutomation(overrides = {}) {
   if (isRunning()) return { ok: false, reason: "Automation is already running." };
 
-  const settings = saveAutomationSettings(overrides);
+  const settings = await saveAutomationSettings(overrides);
   const first = getNextLead({ niche: settings.niche, location: settings.location });
   if (!first) {
     return { ok: false, reason: "No qualified uncontacted leads available. Run Lead Discovery first." };

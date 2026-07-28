@@ -19,14 +19,6 @@ export function getOpenScout() {
   return engine;
 }
 
-export function getStoredApiKey() {
-  return getOpenScout().storage?.getApiKey?.() || "";
-}
-
-export function setStoredApiKey(value) {
-  return getOpenScout().storage?.setApiKey?.(value) || "";
-}
-
 /** True when the Cloudflare Worker reports it is holding a Google Maps key. */
 export function workerHoldsMapsKey() {
   return getState().services?.providers?.google_maps === true;
@@ -37,9 +29,8 @@ let workerKey = "";
 /**
  * The Google Maps key to search with.
  *
- * Prefers the Worker's key so one key serves every browser and none of them
- * need it pasted in; falls back to whatever this browser has stored. A Maps
- * JavaScript key is public either way — restrict it by HTTP referrer.
+ * The Worker is the only source for the Maps key. It is still a browser key by
+ * API design, so restrict it by HTTP referrer in Google Cloud.
  */
 export async function resolveMapsKey() {
   if (workerHoldsMapsKey()) {
@@ -48,10 +39,10 @@ export async function resolveMapsKey() {
       workerKey = await fetchMapsKey();
       if (workerKey) return workerKey;
     } catch (error) {
-      console.warn("Worker Maps key unavailable, falling back to this browser's key", error);
+      console.warn("Worker Maps key unavailable", error);
     }
   }
-  return getStoredApiKey();
+  return "";
 }
 
 export async function guessLocation() {

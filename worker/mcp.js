@@ -66,7 +66,7 @@ function safeStatus(env) {
     providers: {
       anthropic: Boolean(env?.ANTHROPIC_API_KEY),
       openai: Boolean(env?.OPENAI_API_KEY),
-      whop: Boolean(env?.WHOP_API_KEY),
+      whop: Boolean(env?.WHOP_WEBHOOK_SECRET && env?.SUPABASE_SERVICE_ROLE_KEY && env?.WHOP_OWNER_USER_ID),
       google_maps: Boolean(env?.GOOGLE_MAPS_API_KEY),
       outlook: Boolean(
         env?.MICROSOFT_CLIENT_ID

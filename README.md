@@ -18,9 +18,9 @@ npx wrangler dev     # dashboard + the /api worker that holds the keys
 `python3 -m http.server 4173` still serves the dashboard, but without the worker
 there is no `/api`, so every key-backed feature reports itself as not connected.
 
-The dashboard opens straight into the workspace. There is no sign-in wall, and
-it is empty until you put something in it — there is no sample data anywhere in
-the application, so every lead, email, number and statistic on screen is real.
+The dashboard requires a Supabase session before it opens. There is no sample
+data anywhere in the application, so every lead, email, number and statistic on
+screen comes from the database.
 The realistic workspace used to exercise the pages lives in
 `tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
@@ -43,7 +43,7 @@ js/
   pages/         one module per area, each returning an HTML string
   services/
     api.js           client for the worker's /api routes
-    data.js          storage (Supabase when signed in, local otherwise)
+    data.js          Supabase-only workspace storage
     operations.js    every business action, exactly once
     integrations.js  "is this service actually connected?"
     automation/      the batch engine
@@ -58,23 +58,15 @@ js/
 Pages render strings, `actions.js` mutates through `services/operations.js`, and
 state changes trigger a coalesced re-render. That is the whole architecture.
 
-## Data: local first, cloud when you want it
+## Data: Supabase only
 
-`services/data.js` has two backends behind one CRUD API:
-
-- **Local** (default) — everything persists to `localStorage`. Works offline and
-  starts instantly. A new workspace is empty and nothing in the application can
-  seed it. A browser still holding records from the old starter workspace has
-  them swept out on load, so invented emails and revenue cannot reappear.
-- **Cloud** — used automatically when a Supabase session exists in the browser.
-  Sign in from Settings and the workspace loads from Supabase, subscribes to
-  changes for every collection, and continuously writes normal CRUD operations
-  back to the database. A local-only workspace is uploaded automatically when
-  the cloud is empty. If both sides already contain records the app stops and
-  warns instead of risking duplicate customers, payments or demos.
-
-If the database cannot be read, the app keeps working locally and shows a small
-warning in the sidebar. It never replaces the dashboard with a login screen.
+`services/data.js` uses Supabase as the only source of operational records. A
+missing session, missing configuration, or failed database connection shows a
+sign-in/error gate instead of a workspace. Leads, payments, templates, demos,
+statistics, and assistant history are never cached, queued, or recovered from
+browser storage. On release, the legacy workspace keys are erased without being
+imported; only the Supabase auth session and UI preferences remain in the
+browser.
 
 ## Automation
 
@@ -119,7 +111,7 @@ A full-page workspace at `#/assistant`. Three parts already work:
     or not), `reply_to_thread`, `sync_inbox`, `create_followup`, `get_inbox`,
     `classify_reply`
   - *Business* — `get_clients`, `get_payments`, `get_revenue`, `get_tasks`,
-    `get_status`, `get_follow_ups`, `get_integrations`, `sync_whop_payments`,
+    `get_status`, `get_follow_ups`, `get_integrations`,
     `record_payment`, `record_expense`
   - *Workspace* — `create_task`, `complete_task`, `create_note`,
     `create_calendar_event`, `get_activity`
@@ -145,7 +137,7 @@ With no key on the worker, anything that is not a known command is not answered
 — the assistant says so instead of inventing a reply.
 
 Conversation history is provider-neutral and persistent. Each conversation is
-saved locally or in the owner-scoped `assistant_conversations` Supabase table,
+saved in the owner-scoped `assistant_conversations` Supabase table,
 can be selected after a reload, and can be deleted from the assistant toolbar.
 Large tool payloads are trimmed before they enter the transcript.
 
@@ -228,7 +220,7 @@ model (no website, has a phone, skip businesses already saved).
 
 Lead discovery needs a Google Maps browser key with Places enabled. Set
 `GOOGLE_MAPS_API_KEY` on the worker and every browser gets it; otherwise paste
-one on the Lead Discovery page and it stays in that browser's `localStorage`.
+it must be configured on the Cloudflare Worker; the browser does not retain it.
 
 A Maps JavaScript key cannot be kept secret — the SDK runs in the page, so the
 key is visible in network traffic wherever it is stored. Restrict it by HTTP
@@ -269,7 +261,7 @@ a result until credentials exist:
 | --- | --- | --- |
 | Model provider | `services/ai/provider.js` → `runAssistantTurn` | worker |
 | Google Maps | `services/openscout/adapter.js` → `resolveMapsKey` | worker |
-| Whop | `services/payments/whop.js` → immediate + 5-minute visible-tab sync | worker |
+| Whop | `https://hooks.conno.fun/whop` → signed Worker webhook → Supabase receipt RPC | Worker secrets |
 | Outlook (send) | `services/email/outreach.js` → `sendEmail` | worker OAuth + Graph |
 | Outlook (inbox) | `services/email/inbox.js` → `syncInbox` | worker OAuth + Graph |
 | Cloudflare hosting | `services/sites/publish.js` → R2 versioned bundles | R2 binding |
@@ -285,7 +277,9 @@ adds the credential on the way out.
 ```bash
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
-npx wrangler secret put WHOP_API_KEY
+npx wrangler secret put WHOP_WEBHOOK_SECRET
+npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx wrangler secret put WHOP_OWNER_USER_ID
 npx wrangler secret put GOOGLE_MAPS_API_KEY
 npx wrangler secret put MICROSOFT_CLIENT_ID
 npx wrangler secret put MICROSOFT_CLIENT_SECRET
@@ -333,7 +327,7 @@ actually reach it.
 | `POST /api/demos/publish` | authenticated multipart demo bundle upload to R2 |
 | `POST /api/ai/anthropic/messages` | Anthropic Messages API |
 | `POST /api/ai/openai/responses` | OpenAI Responses API |
-| `GET /api/whop/*` | Whop v5, read-only, allow-listed paths |
+| `POST https://hooks.conno.fun/whop` | signed Whop webhook receiver only |
 | `POST /mcp` | JSON-RPC MCP foundation (`operations_api_status`, `browser_research`) |
 
 Every route refuses cross-origin requests, never echoes a key back, and returns
@@ -347,22 +341,15 @@ Migrations are in `supabase/migrations/` and are applied to the connected
 project. Browser-facing tables are owner-scoped with row-level security, and the
 browser only ever uses the publishable key.
 
-Signing in is optional and never blocks the dashboard, but two things depend on
-it: cloud sync, and Outlook — a mailbox connection is stored against the
-verified Supabase user id, so there is nowhere to put one until you are signed
-in. The form is on Settings, and Integrations links to it when Outlook is
-waiting on it.
+Signing in is mandatory. Outlook mailbox connections are stored against the
+verified Supabase user id, and all operational records stay owner-scoped in the
+database. A missing session or unreadable/missing table holds the dashboard at
+the sign-in/error gate. The app intentionally does not import legacy browser
+records or expose an upload/merge escape hatch.
 
-Work done before signing in stays in this browser. On first cloud connection,
-an empty Supabase workspace receives the local records automatically:
-parents-first inserts and foreign-key rewriting keep leads attached to demos and
-demos attached to drafts. The manual **Upload to Supabase** button remains as a
-recovery tool. If the cloud already contains business records, automatic merge
-is deliberately skipped because blindly combining both sides can duplicate
-payments and outreach.
-
-A table that cannot be read no longer takes the whole workspace down with it.
-The rest still opens and the connection banner names what failed.
+The Whop receipt table is RLS-protected, has no browser grants, and can only be
+written through the service-role webhook RPC. The payments unique index keeps a
+Whop transaction id idempotent per workspace owner.
 
 Apply `20260727174211_complete_operations_foundations.sql` before deploying this
 code. It adds custom template files, stable numeric demo URLs, assistant
@@ -380,12 +367,12 @@ API directly.
 - The MCP endpoint is a deployable two-tool foundation protected by
   `MCP_API_TOKEN`. A public third-party MCP release still needs OAuth 2.1 and the
   rest of the application tool registry exposed intentionally.
-- Whop synchronizes immediately and every five minutes while the dashboard is
-  open. True closed-app, 24/7 updates still need verified Whop webhooks (plus a
-  scheduled reconciliation job) and a configured webhook secret.
+- Whop automatic updates start after its dashboard webhook is created with API
+  version `v1` and the generated signing secret plus the Supabase service-role
+  key are saved as Worker secrets. There is intentionally no manual or polling
+  reconciliation path.
 - Outlook connections made before `Mail.Read` was requested can send but not
   read. Disconnect and reconnect from Integrations to re-consent.
 - Live discovery needs a Google Maps key and available Places quota.
-- Local storage is capped by the browser; a warning appears if a write fails.
 - Website verification only runs direct probes on local previews; hosted builds
   keep a narrow CSP.

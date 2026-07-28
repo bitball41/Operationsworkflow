@@ -73,8 +73,9 @@ export const INITIAL_AUTOMATION = {
 };
 
 const state = {
-  /* "cloud" once a Supabase session is present, otherwise "local". */
-  storage: "local",
+  /* Operational records are always stored in Supabase. */
+  storage: "cloud",
+  workspace: { status: "loading", message: "" },
   connection: { ok: true, message: "" },
   /* Which API keys the Cloudflare Worker holds. Filled in once at boot from
      /api/status; every provider stays false when the Worker is not there. */

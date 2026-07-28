@@ -67,10 +67,10 @@ export async function runDiscoverySearch(input = {}, { onProgress, onRunCreated 
   if (!query.location) throw new DiscoveryError("A location is required, e.g. \"Austin, TX\".");
   if (!query.businessType) throw new DiscoveryError("A business type is required, e.g. \"plumber\".");
 
-  const apiKey = String(input.apiKey || (await resolveMapsKey()) || "").trim();
+  const apiKey = String((await resolveMapsKey()) || "").trim();
   if (!apiKey) {
     throw new DiscoveryError(
-      "No Google Maps key available. Set GOOGLE_MAPS_API_KEY on the Cloudflare Worker, or paste a browser key on Lead Discovery.",
+      "No Google Maps key available. Set GOOGLE_MAPS_API_KEY on the Cloudflare Worker.",
       { blocked: true },
     );
   }

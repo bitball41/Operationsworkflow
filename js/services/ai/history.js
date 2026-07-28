@@ -1,9 +1,8 @@
 /**
  * Persistent assistant conversations.
  *
- * The transcript remains provider-neutral, exactly like the agent loop. Local
- * workspaces keep conversations in localStorage through the normal data
- * backend; signed-in workspaces keep the same records in Supabase.
+ * The transcript remains provider-neutral, exactly like the agent loop, and is
+ * stored in the owner-scoped Supabase workspace.
  */
 import { getState, setAssistant } from "../../core/state.js";
 import { createRecord, deleteRecord, findRecord, updateRecord } from "../data.js";

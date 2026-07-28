@@ -21,6 +21,7 @@ globalThis.localStorage = {
   },
 };
 globalThis.window = {};
+globalThis.__OPERATIONS_TEST_MEMORY__ = true;
 
 const { getState, setData, setState } = await import("../js/core/state.js");
 const { runAgentLoop } = await import("../js/services/ai/agent.js");

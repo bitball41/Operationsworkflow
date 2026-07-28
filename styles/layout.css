@@ -9,6 +9,49 @@
   --sidebar-w: 62px;
 }
 
+.app--auth {
+  display: block;
+}
+
+.app--auth .sidebar,
+.app--auth .topbar,
+.app--auth .scrim {
+  display: none;
+}
+
+.app--auth .main {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+.app--auth .page {
+  width: min(100%, 520px);
+  padding: 24px;
+}
+
+.auth-gate {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.auth-gate h1 {
+  margin: 0 0 8px;
+}
+
+.auth-gate__brand {
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.auth-gate__brand small {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
 /* ---------- sidebar ---------- */
 .sidebar {
   position: sticky;

@@ -18,8 +18,14 @@
     "enabled": true
   },
   "vars": {
-    "DEMO_DOMAIN": "demos.conno.fun"
+    "DEMO_DOMAIN": "demos.conno.fun",
+    "WHOP_WEBHOOK_DOMAIN": "hooks.conno.fun"
   },
+  "routes": [
+    { "pattern": "operations.conno.fun", "custom_domain": true },
+    { "pattern": "demos.conno.fun", "custom_domain": true },
+    { "pattern": "hooks.conno.fun", "custom_domain": true }
+  ],
   // Cloudflare Browser Run powers the assistant's public-page research tool.
   "browser": {
     "binding": "BROWSER"

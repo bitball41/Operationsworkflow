@@ -127,7 +127,7 @@ export const INTEGRATIONS = Object.freeze([
   { provider: "anthropic", name: "Anthropic", detail: "Model provider for the assistant and automation", status: "not_connected" },
   { provider: "openai", name: "OpenAI", detail: "Alternate model provider", status: "not_connected" },
   { provider: "research", name: "Business research", detail: "Browser-based public research tool", status: "not_connected" },
-  { provider: "whop", name: "Whop", detail: "Payment events and receipts", status: "not_connected" },
+  { provider: "whop", name: "Whop", detail: "Signed payment and refund webhooks", status: "not_connected" },
   { provider: "mcp", name: "MCP tool server", detail: "Exposes the same tools to external agents", status: "not_connected" },
 ]);
 

@@ -15,6 +15,7 @@ globalThis.localStorage = {
   },
 };
 globalThis.window = {};
+globalThis.__OPERATIONS_TEST_MEMORY__ = true;
 
 await import("../js/services/openscout/storage.js");
 await import("../js/services/openscout/classify.js");
@@ -400,7 +401,7 @@ test("the tool registry covers the work the business actually does", () => {
      the business but never move it forward. */
   for (const name of [
     "discover_leads", "create_lead", "update_lead", "send_email", "send_draft",
-    "sync_inbox", "reply_to_thread", "sync_whop_payments", "record_payment",
+    "sync_inbox", "reply_to_thread", "record_payment",
     "record_expense", "create_task", "create_note", "create_calendar_event",
   ]) {
     assert.ok(names.has(name), `${name} is missing from the tool registry`);
