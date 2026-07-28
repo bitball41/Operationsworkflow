@@ -309,13 +309,28 @@ export function renderAssistant() {
 
       <section class="chat">
         <header class="chat__bar">
+          <div class="chat__mobile-head">
+            <div class="chat__mobile-title">
+              <div class="chat__identity-mark">${icon("sparkle")}</div>
+              <div>
+                <strong>Operations AI</strong>
+                <span>${ready ? "Ready to work" : "Direct commands available"}</span>
+              </div>
+            </div>
+            <div class="chat__mobile-actions">
+              ${btn("", { action: "assistant-new", iconName: "plus", size: "sm", variant: "quiet", attrs: 'aria-label="New conversation"' })}
+              <button class="context-chip${assistant.contextOpen ? " is-active" : ""}" type="button" data-action="assistant-toggle-context" aria-label="Workspace context">
+                ${icon("layers")}<span>Context</span>
+              </button>
+            </div>
+          </div>
           <div class="chat__mobile-conversations">
             ${conversations.length ? select(
               "conversation",
               conversations.map((conversation) => ({ value: conversation.id, label: conversation.title || "Untitled" })),
               assistant.activeConversationId,
               { attrs: 'data-action="assistant-conversation" class="select-sm"', placeholder: "New conversation" },
-            ) : ""}
+            ) : '<span class="chat__mobile-conversation-empty">New conversation</span>'}
           </div>
           <div class="chat__identity">
             <div class="chat__identity-mark">${icon("sparkle")}</div>
