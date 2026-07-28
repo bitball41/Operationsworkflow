@@ -147,6 +147,10 @@ export async function browserResearch(url, { signal } = {}) {
   return request("/browser/research", { method: "POST", body: { url }, signal, auth: true });
 }
 
+export async function lookupBusinessEmail(payload, { signal } = {}) {
+  return request("/browser/contact-email", { method: "POST", body: payload, signal, auth: true });
+}
+
 export async function callAnthropic(payload, { signal } = {}) {
   return request("/ai/anthropic/messages", { method: "POST", body: payload, signal });
 }
