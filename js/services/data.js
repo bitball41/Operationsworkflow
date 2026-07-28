@@ -325,7 +325,6 @@ export function preferences() {
     model: DEFAULT_MODEL_ID,
     effort: DEFAULT_EFFORT,
     ai_permission_mode: "full",
-    ai_permission_mode_version: 2,
     ...(data.settings.find((item) => item.key === "workspace")?.value || {}),
     ...(data.profile?.preferences || {}),
   };
