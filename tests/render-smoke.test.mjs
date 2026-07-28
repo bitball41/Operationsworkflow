@@ -182,6 +182,17 @@ test("assistant page exposes conversations, access and tools without faking answ
   assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
 });
 
+test("assistant has a dedicated mobile chat structure", () => {
+  const page = readFileSync(new URL("../js/pages/assistant.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../styles/components.css", import.meta.url), "utf8");
+  assert.match(page, /class="chat__mobile-head"/);
+  assert.match(page, /class="chat__mobile-actions"/);
+  assert.match(css, /grid-template-areas:\s*[\s\S]*mobile-head mobile-head/);
+  assert.match(css, /grid-area: conversations/);
+  assert.match(css, /font-size: 16px/);
+  assert.match(css, /max-height: min\(78dvh, 680px\)/);
+});
+
 test("assistant response text supports safe Markdown formatting", () => {
   const previousAssistant = structuredClone(getState().assistant);
   try {
