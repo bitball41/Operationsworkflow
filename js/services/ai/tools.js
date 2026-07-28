@@ -42,11 +42,50 @@ import {
   updatePipeline,
 } from "../operations.js";
 import { researchBusiness } from "../research/research.js";
-import { findRecord, saveDiscoveryCandidates } from "../data.js";
+import { findRecord, preferences, saveDiscoveryCandidates } from "../data.js";
 import { discoverAndSaveLeads, runDiscoverySearch } from "../discovery.js";
 import { syncInbox } from "../email/inbox.js";
 
 const registry = new Map();
+
+export const AI_PERMISSION_MODES = Object.freeze([
+  {
+    id: "view",
+    label: "View only",
+    shortLabel: "View",
+    description: "Read workspace data. No records change and nothing leaves the app.",
+    kinds: ["read"],
+  },
+  {
+    id: "work",
+    label: "Work in workspace",
+    shortLabel: "Work",
+    description: "Read and update workspace records. Sending, publishing, research and outreach stay blocked.",
+    kinds: ["read", "write"],
+  },
+  {
+    id: "full",
+    label: "Full control",
+    shortLabel: "Full",
+    description: "Use every connected tool, including sending email, publishing demos and running automation.",
+    kinds: ["read", "write", "external"],
+  },
+]);
+
+export function aiPermissionMode() {
+  const configured = String(preferences().ai_permission_mode || "work");
+  return AI_PERMISSION_MODES.some((mode) => mode.id === configured) ? configured : "work";
+}
+
+export function permissionDefinition(mode = aiPermissionMode()) {
+  return AI_PERMISSION_MODES.find((entry) => entry.id === mode) || AI_PERMISSION_MODES[1];
+}
+
+export function permissionAllows(toolOrName, mode = aiPermissionMode()) {
+  const tool = typeof toolOrName === "string" ? registry.get(toolOrName) : toolOrName;
+  if (!tool) return false;
+  return permissionDefinition(mode).kinds.includes(tool.kind || "read");
+}
 
 function define(definition) {
   registry.set(definition.name, { params: [], kind: "read", group: "General", ...definition });
@@ -56,9 +95,9 @@ export function listTools() {
   return [...registry.values()];
 }
 
-export function toolGroups() {
+export function toolGroups(mode = null) {
   const groups = new Map();
-  listTools().forEach((tool) => {
+  listTools().filter((tool) => !mode || permissionAllows(tool, mode)).forEach((tool) => {
     if (!groups.has(tool.group)) groups.set(tool.group, []);
     groups.get(tool.group).push(tool);
   });
@@ -80,8 +119,8 @@ function propertySchema(param) {
 }
 
 /** Tool schema in the shape a model API expects. */
-export function toolSchema() {
-  return listTools().map((tool) => ({
+export function toolSchema(mode = null) {
+  return listTools().filter((tool) => !mode || permissionAllows(tool, mode)).map((tool) => ({
     name: tool.name,
     description: tool.summary,
     input_schema: {
@@ -93,9 +132,20 @@ export function toolSchema() {
 }
 
 /** Runs a tool by name. Never throws for expected outcomes. */
-export async function runTool(name, input = {}) {
+export async function runTool(name, input = {}, { permissionMode = null } = {}) {
   const tool = getTool(name);
   if (!tool) return { ok: false, error: `Unknown tool "${name}".` };
+  if (permissionMode && !permissionAllows(tool, permissionMode)) {
+    const mode = permissionDefinition(permissionMode);
+    return {
+      ok: false,
+      blocked: true,
+      permission: true,
+      required_kind: tool.kind,
+      permission_mode: mode.id,
+      error: `${tool.name} is blocked by ${mode.label}. Change AI access to a mode that allows ${tool.kind} tools.`,
+    };
+  }
 
   const missing = tool.params.filter((param) => param.required && (input[param.name] === undefined || input[param.name] === ""));
   if (missing.length) {
@@ -372,7 +422,7 @@ define({
 define({
   name: "publish_demo",
   group: "Websites",
-  kind: "write",
+  kind: "external",
   summary: "Publish or refresh a demo's preview link.",
   params: [{ name: "demo_id", required: true }],
   run: async ({ demo_id: demoId }) => {
@@ -728,7 +778,7 @@ define({
 define({
   name: "start_automation",
   group: "Automation",
-  kind: "write",
+  kind: "external",
   summary: "Start the outreach batch: pick leads, build demos, publish, draft and send.",
   params: [
     { name: "batchTarget", type: "number", description: "How many leads to process" },
@@ -759,7 +809,7 @@ define({
 define({
   name: "run_one_lead",
   group: "Automation",
-  kind: "write",
+  kind: "external",
   summary: "Run the full sequence once for a single lead.",
   params: [{ name: "lead_id" }],
   run: async ({ lead_id: leadId }) => {
