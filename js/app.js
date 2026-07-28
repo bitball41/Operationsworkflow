@@ -6,16 +6,15 @@
 import { bindBoardDrag, onChange, onClick, onSubmit } from "./actions.js";
 import { closePalette, isPaletteOpen, openPalette } from "./components/command-palette.js";
 import { renderShell, setNav } from "./components/shell.js";
-import { closeDrawer, closeModal, renderInto, toast } from "./components/ui.js";
+import { closeDrawer, closeModal, renderInto } from "./components/ui.js";
 import { hydrateIcons } from "./core/icons.js";
 import { initRouter } from "./core/router.js";
 import { getState, setState, subscribe } from "./core/state.js";
-import { debounce } from "./core/utils.js";
+import { debounce, escapeHtml } from "./core/utils.js";
 import { setParam } from "./core/router.js";
 import { fetchServiceStatus } from "./services/api.js";
 import { initWorkspace, reloadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
 import { hydrateAssistantHistory } from "./services/ai/history.js";
-import { startWhopAutoSync } from "./services/payments/whop.js";
 import { renderAssistant, mountAssistant } from "./pages/assistant.js";
 import { renderAutomation } from "./pages/automation.js";
 import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
@@ -65,11 +64,48 @@ const MOUNTS = {
 
 let rendering = false;
 
+function renderWorkspaceGate() {
+  const { workspace } = getState();
+  document.getElementById("app").classList.add("app--auth");
+
+  const waiting = workspace.status === "loading";
+  const signedOut = workspace.status === "signed_out";
+  const title = waiting ? "Opening workspace" : signedOut ? "Sign in to Operations" : "Supabase is unavailable";
+  const message = workspace.message || (waiting ? "Connecting to your workspace…" : "Try again.");
+  const body = signedOut ? `
+    <form class="stack--tight" data-form="sign-in">
+      <div class="field-grid">
+        <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
+        <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" minlength="8" required></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn--primary" type="submit">Sign in</button>
+        <button class="btn" type="button" data-action="sign-up">Create account</button>
+      </div>
+    </form>
+  ` : waiting
+    ? '<div class="faint">Connecting securely…</div>'
+    : '<div class="btn-row"><button class="btn btn--primary" type="button" data-action="workspace-retry">Try again</button></div>';
+
+  renderInto(document.getElementById("page"), `
+    <section class="auth-gate stack">
+      <div class="auth-gate__brand">Connor <small>/ Operations</small></div>
+      <div><h1>${title}</h1><p class="faint">${escapeHtml(message)}</p></div>
+      ${body}
+    </section>
+  `);
+}
+
 function render() {
   if (rendering) return;
   rendering = true;
   try {
-    const { route } = getState();
+    const { route, workspace } = getState();
+    if (workspace.status !== "ready") {
+      renderWorkspaceGate();
+      return;
+    }
+    document.getElementById("app").classList.remove("app--auth");
     renderShell();
     renderInto(document.getElementById("page"), (PAGES[route] || renderHome)());
     MOUNTS[route]?.();
@@ -152,18 +188,21 @@ async function init() {
 
   try {
     const storage = await initWorkspace();
-    hydrateAssistantHistory();
     render();
     if (storage === "cloud") {
+      hydrateAssistantHistory();
+      render();
       const reload = debounce(() => reloadWorkspace().catch(console.error), 600);
       subscribeToWorkspaceChanges(reload);
+      await servicesReady;
     }
-    await servicesReady;
-    startWhopAutoSync();
   } catch (error) {
     console.error(error);
-    setState({ connection: { ok: false, message: "Could not load the workspace. Working from local data." } });
-    toast("Workspace could not load", error.message || "Working from local data.", "error");
+    setState({
+      workspace: { status: "error", message: error.message || "Could not load Supabase." },
+      connection: { ok: false, message: error.message || "Could not load Supabase." },
+    });
+    render();
   }
 }
 

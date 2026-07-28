@@ -1,56 +1,31 @@
 (function () {
-  const KEY = "openscout.googleMapsApiKey";
-  const LOCATION_KEY = "openscout.lastLocationGuess";
+  /* OpenScout may keep a location only for the current page session. Operational
+     records and API keys are never written to browser storage. */
+  let locationGuess = null;
 
   window.OpenScout = window.OpenScout || {};
   window.OpenScout.storage = {
     getApiKey() {
-      return localStorage.getItem(KEY) || "";
+      return "";
     },
-    setApiKey(value) {
-      const key = String(value || "").trim();
-
-      if (key) {
-        localStorage.setItem(KEY, key);
-      } else {
-        localStorage.removeItem(KEY);
-      }
-
-      return key;
+    setApiKey() {
+      return "";
     },
     getLocationGuess() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(LOCATION_KEY) || "null");
-        const isUsable =
-          saved &&
-          typeof saved.label === "string" &&
-          Number.isFinite(saved.lat) &&
-          Number.isFinite(saved.lng);
-
-        return isUsable ? saved : null;
-      } catch {
-        return null;
-      }
+      return locationGuess;
     },
     setLocationGuess(value) {
-      const guess = {
+      const next = {
         label: String(value?.label || "").trim(),
         lat: Number(value?.lat),
         lng: Number(value?.lng),
         accuracy: Number(value?.accuracy) || null,
-        savedAt: Date.now(),
       };
-
-      if (!guess.label || !Number.isFinite(guess.lat) || !Number.isFinite(guess.lng)) {
-        localStorage.removeItem(LOCATION_KEY);
-        return null;
-      }
-
-      localStorage.setItem(LOCATION_KEY, JSON.stringify(guess));
-      return guess;
+      locationGuess = next.label && Number.isFinite(next.lat) && Number.isFinite(next.lng) ? next : null;
+      return locationGuess;
     },
     clearLocationGuess() {
-      localStorage.removeItem(LOCATION_KEY);
+      locationGuess = null;
     },
   };
 })();

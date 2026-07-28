@@ -10,7 +10,9 @@
  * Secrets read here:
  *   ANTHROPIC_API_KEY     - Anthropic Messages API
  *   OPENAI_API_KEY        - OpenAI Responses API
- *   WHOP_API_KEY          - Whop v5 API
+ *   WHOP_WEBHOOK_SECRET   - verifies signed Whop webhook deliveries
+ *   SUPABASE_SERVICE_ROLE_KEY - server-only webhook database access
+ *   WHOP_OWNER_USER_ID    - the single Operations workspace owner
  *   GOOGLE_MAPS_API_KEY   - Google Maps / Places (browser key, referrer-locked)
  *   MICROSOFT_CLIENT_ID   - Microsoft Entra application id
  *   MICROSOFT_CLIENT_SECRET - Microsoft Entra confidential-client secret
@@ -24,11 +26,12 @@
  * to set, which is what the rest of the application already knows how to show.
  */
 
-import { ANTHROPIC, OPENAI, WHOP, PLACES } from "./upstreams.js";
+import { ANTHROPIC, OPENAI, PLACES } from "./upstreams.js";
 import { getModel, resolveModel } from "../js/data/models.js";
 import { handleBrowserResearch } from "./browser.js";
 import { demoHostingStatus, handleDemoPublish, servePublicDemo } from "./demos.js";
 import { handleMcp } from "./mcp.js";
+import { handleWhopWebhook, whopWebhookConfigured } from "./whop.js";
 import {
   handleOutlookCallback,
   handleOutlookConnect,
@@ -43,7 +46,7 @@ import {
 const PROVIDERS = Object.freeze({
   anthropic: { secret: "ANTHROPIC_API_KEY", exposed: false },
   openai: { secret: "OPENAI_API_KEY", exposed: false },
-  whop: { secret: "WHOP_API_KEY", exposed: false },
+  whop: { secret: "WHOP_WEBHOOK_SECRET", exposed: false },
   google_maps: { secret: "GOOGLE_MAPS_API_KEY", exposed: true },
 });
 
@@ -97,6 +100,14 @@ function isPublicDemoHost(url, env) {
   return url.host.toLowerCase() === demoDomain;
 }
 
+function isWhopWebhookHost(url, env) {
+  const webhookDomain = String(env?.WHOP_WEBHOOK_DOMAIN || "hooks.conno.fun")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  return url.host.toLowerCase() === webhookDomain;
+}
+
 async function readJson(request, limitBytes = 2_000_000) {
   const raw = await request.text();
   if (raw.length > limitBytes) throw new Error("Request body is too large.");
@@ -135,6 +146,7 @@ async function relay(response) {
 async function handleStatus(request, env) {
   const providers = {};
   for (const name of Object.keys(PROVIDERS)) providers[name] = Boolean(secretFor(env, name));
+  providers.whop = whopWebhookConfigured(env);
   const outlook = await outlookConnectionStatus(request, env);
   providers.outlook = outlook.connected;
   const hosting = demoHostingStatus(env);
@@ -264,36 +276,6 @@ async function handleOpenAI(request, env) {
   return relay(response);
 }
 
-/**
- * Whop, for payment events and receipts.
- *
- * Only the paths this application actually reads are forwarded — an open proxy
- * in front of a payments key is not something to ship.
- */
-async function handleWhop(request, env, url) {
-  const key = secretFor(env, "whop");
-  if (!key) return notConnected("whop");
-
-  const path = url.pathname.replace(/^\/api\/whop\/?/, "");
-
-  /* The allow list matches on prefix, so a traversal segment would let
-     "company/payments/../../anything" pass the check and then resolve
-     somewhere else once the URL is built. Reject those outright. */
-  const traversal = path.startsWith("/") || path.split("/").some((segment) => segment === "." || segment === "..");
-  const allowed = !traversal && WHOP.allowedPaths.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-  if (!allowed) {
-    return json({ error: "not_allowed", message: `Whop path "${path}" is not on this Worker's allow list.` }, 403);
-  }
-  if (request.method !== "GET") {
-    return json({ error: "method_not_allowed", message: "Whop is read-only through this Worker." }, 405);
-  }
-
-  const target = new URL(`${WHOP.base}/${path}`);
-  url.searchParams.forEach((value, name) => target.searchParams.set(name, value));
-  const response = await fetch(target, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
-  return relay(response);
-}
-
 /* ---------- router ---------- */
 
 async function handleApi(request, env, url) {
@@ -326,7 +308,9 @@ async function handleApi(request, env, url) {
     if (path === "/api/demos/publish" && isPost) return await handleDemoPublish(request, env);
     if (path === "/api/ai/anthropic/messages" && isPost) return await handleAnthropic(request, env);
     if (path === "/api/ai/openai/responses" && isPost) return await handleOpenAI(request, env);
-    if (path === "/api/whop" || path.startsWith("/api/whop/")) return await handleWhop(request, env, url);
+    if (path === "/api/whop" || path.startsWith("/api/whop/")) {
+      return json({ error: "gone", message: "Whop payments are webhook-only and cannot be manually synced." }, 410);
+    }
     return json({ error: "not_found", message: `No API route for ${request.method} ${path}.` }, 404);
   } catch (error) {
     return json({ error: "request_failed", message: error?.message || "The request could not be completed." }, 502);
@@ -336,6 +320,13 @@ async function handleApi(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (isWhopWebhookHost(url, env)) {
+      if (url.pathname !== "/whop") {
+        return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+      }
+      return handleWhopWebhook(request, env);
+    }
 
     /* Demos are public. Restrict this hostname to numbered R2-backed sites so
        a public Access exemption can never expose the dashboard or its APIs. */

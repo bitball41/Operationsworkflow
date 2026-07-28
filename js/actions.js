@@ -5,7 +5,7 @@ import { PIPELINE_STAGES } from "./config.js";
 const WORKER_SECRET_NAMES = Object.freeze({
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
-  whop: "WHOP_API_KEY",
+  whop: "WHOP_WEBHOOK_SECRET",
   google_maps: "GOOGLE_MAPS_API_KEY",
   mcp: "MCP_API_TOKEN",
 });
@@ -63,7 +63,6 @@ import {
   findRecord,
   logActivity,
   preferences,
-  pushLocalWorkspaceToCloud,
   rejectDiscoveryCandidates,
   saveDiscoveryCandidates,
   savePreferences,
@@ -73,8 +72,6 @@ import { runDiscoverySearch } from "./services/discovery.js";
 import { canSend } from "./services/email/outreach.js";
 import { providerName } from "./services/integrations.js";
 import { syncInbox } from "./services/email/inbox.js";
-import { syncWhopPayments } from "./services/payments/whop.js";
-import { setStoredApiKey } from "./services/openscout/adapter.js";
 import {
   classifyReply,
   createOrUpdateDemo,
@@ -179,12 +176,15 @@ export async function onClick(event) {
         location.reload();
       });
       break;
+    case "workspace-retry":
+      location.reload();
+      break;
     case "sign-up": {
       const form = target.closest("form");
       const values = form ? formValues(form) : {};
       await run(async () => {
         await signUp(values.email, values.password);
-        toast("Account created", "Sign in to sync this workspace.");
+        toast("Account created", "Sign in to open your workspace.");
       });
       break;
     }
@@ -223,38 +223,6 @@ export async function onClick(event) {
         );
       });
       break;
-    case "whop-sync":
-      await run(async () => {
-        const result = await syncWhopPayments();
-        toast(
-          "Whop synced",
-          `${result.imported} new payment${result.imported === 1 ? "" : "s"}, ${result.updated} updated, ${result.scanned} scanned.`,
-        );
-      });
-      break;
-    case "cloud-upload":
-      if (target.dataset.confirmed !== "true") {
-        confirmAction({
-          title: "Copy this browser's workspace to Supabase?",
-          message: "Every local lead, demo, draft and payment is inserted into your Supabase project. Local storage is left untouched.",
-          confirmLabel: "Upload",
-          action: "cloud-upload",
-          danger: false,
-          attrs: 'data-confirmed="true"',
-        });
-        break;
-      }
-      closeModal();
-      await run(async () => {
-        const result = await pushLocalWorkspaceToCloud();
-        toast(
-          "Workspace uploaded",
-          result.uploaded
-            ? `${result.uploaded} record${result.uploaded === 1 ? "" : "s"} copied${result.skipped.length ? `. Skipped: ${result.skipped.join(", ")}` : "."}`
-            : "Nothing local left to upload.",
-        );
-      });
-      break;
     case "email-new":
       openDirectEmailForm();
       break;
@@ -281,7 +249,7 @@ export async function onClick(event) {
       setState({ automation: { ...getState().automation, failures: [] } });
       break;
     case "automation-reset-settings":
-      saveAutomationSettings({ ...AUTOMATION_DEFAULTS });
+      await saveAutomationSettings({ ...AUTOMATION_DEFAULTS });
       toast("Settings reset");
       break;
 
@@ -809,7 +777,7 @@ export async function onSubmit(event) {
       }
 
       case "automation-settings":
-        saveAutomationSettings({
+        await saveAutomationSettings({
           batchTarget: number(values.batchTarget, 48),
           price: number(values.price, 500),
           followUpDays: number(values.followUpDays, 3),
@@ -1131,7 +1099,7 @@ export async function onSubmit(event) {
             .map((part) => number(part.trim()))
             .filter((day) => day > 0),
         });
-        saveAutomationSettings({ batchTarget: number(values.batch_target, 48), price: number(values.default_site_price, 500) });
+        await saveAutomationSettings({ batchTarget: number(values.batch_target, 48), price: number(values.default_site_price, 500) });
         toast("Settings saved");
         break;
       }
@@ -1230,9 +1198,6 @@ async function handleAssistant(rawMessage, form) {
 /* ---------- discovery ---------- */
 
 async function runDiscovery(values) {
-  /* A key typed into the form wins, then the Worker's, then this browser's. */
-  if (values.api_key) setStoredApiKey(String(values.api_key).trim());
-
   setDiscovery({
     status: "running",
     runId: null,

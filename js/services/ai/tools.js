@@ -45,7 +45,6 @@ import { researchBusiness } from "../research/research.js";
 import { findRecord, saveDiscoveryCandidates } from "../data.js";
 import { discoverAndSaveLeads, runDiscoverySearch } from "../discovery.js";
 import { syncInbox } from "../email/inbox.js";
-import { syncWhopPayments } from "../payments/whop.js";
 
 const registry = new Map();
 
@@ -571,20 +570,6 @@ define({
     return {
       data: { attention, today, automation: getState().automation.status },
       summary: `${attention.length} item(s) need attention · ${today.sent}/${today.target} sent today.`,
-    };
-  },
-});
-
-define({
-  name: "sync_whop_payments",
-  group: "Business",
-  kind: "external",
-  summary: "Import real payments from Whop so revenue and profit reflect what was actually charged.",
-  run: async () => {
-    const result = await syncWhopPayments();
-    return {
-      data: result,
-      summary: `${result.imported} new payment(s), ${result.updated} updated, ${result.scanned} scanned.`,
     };
   },
 });

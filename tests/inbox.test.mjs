@@ -14,6 +14,7 @@ globalThis.localStorage = {
   },
 };
 globalThis.window = {};
+globalThis.__OPERATIONS_TEST_MEMORY__ = true;
 
 const { getState, setData, setState } = await import("../js/core/state.js");
 const { syncInbox } = await import("../js/services/email/inbox.js");

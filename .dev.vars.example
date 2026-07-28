@@ -3,7 +3,9 @@
 #
 #   wrangler secret put ANTHROPIC_API_KEY
 #   wrangler secret put OPENAI_API_KEY
-#   wrangler secret put WHOP_API_KEY
+#   wrangler secret put WHOP_WEBHOOK_SECRET
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   wrangler secret put WHOP_OWNER_USER_ID
 #   wrangler secret put GOOGLE_MAPS_API_KEY
 #   wrangler secret put MICROSOFT_CLIENT_ID
 #   wrangler secret put MICROSOFT_CLIENT_SECRET
@@ -18,10 +20,13 @@ ANTHROPIC_API_KEY=
 # OpenAI — alternate model provider. Optional if Anthropic is set.
 OPENAI_API_KEY=
 
-# Whop — payment events and receipts. Read-only in this Worker.
-# A company API key from the Whop dashboard. Payments > Sync from Whop imports
-# real charges; without it the Payments page only shows what you typed in.
-WHOP_API_KEY=
+# Whop — signed webhook delivery only. Set this to the signing secret Whop
+# shows after creating https://hooks.conno.fun/whop with API version v1.
+WHOP_WEBHOOK_SECRET=
+# Server-only Supabase key for the webhook RPC. Never put this in browser code.
+SUPABASE_SERVICE_ROLE_KEY=
+# The single Operations workspace owner id; created from existing Whop data.
+WHOP_OWNER_USER_ID=
 
 # Google Maps — lead discovery. This one reaches the browser, because the Maps
 # JavaScript SDK runs in the page. Restrict it by HTTP referrer in Google Cloud

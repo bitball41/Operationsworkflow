@@ -17,8 +17,8 @@ import {
 } from "../components/ui.js";
 import { integrationList, isConnected, outlookBlocker } from "../services/integrations.js";
 import { connectedProvider, providerReady } from "../services/ai/provider.js";
-import { hasLocalWorkspace, preferences } from "../services/data.js";
-import { getStoredApiKey, workerHoldsMapsKey } from "../services/openscout/adapter.js";
+import { preferences } from "../services/data.js";
+import { workerHoldsMapsKey } from "../services/openscout/adapter.js";
 import { listTools } from "../services/ai/tools.js";
 import { contextSections } from "../services/ai/context.js";
 import { WORKER_PROVIDERS } from "../services/api.js";
@@ -35,7 +35,7 @@ const WORKER_SECRETS = Object.freeze({
   },
   anthropic: { label: "Anthropic", secret: "ANTHROPIC_API_KEY", detail: "Assistant replies and model-driven tool calls" },
   openai: { label: "OpenAI", secret: "OPENAI_API_KEY", detail: "Alternate model provider" },
-  whop: { label: "Whop", secret: "WHOP_API_KEY", detail: "Payment events and receipts, read-only" },
+  whop: { label: "Whop", secret: "WHOP_WEBHOOK_SECRET + server-only Supabase secrets", detail: "Signed payment and refund webhooks" },
   google_maps: { label: "Google Maps", secret: "GOOGLE_MAPS_API_KEY", detail: "Lead discovery through the Places API" },
   cloudflare: { label: "Cloudflare", secret: "DEMO_SITES R2 binding", detail: "Public demo publishing and R2 hosting" },
   research: { label: "Browser research", secret: "BROWSER binding", detail: "Public-page research for the assistant" },
@@ -54,8 +54,7 @@ function workerSecretEntry(provider) {
 
 function mapsKeySource() {
   if (workerHoldsMapsKey()) return "Served by the Cloudflare Worker to every browser";
-  if (getStoredApiKey()) return "Saved in this browser only — move it to the Worker to share it";
-  return "Not set — add GOOGLE_MAPS_API_KEY to the Worker, or paste one on Lead Discovery";
+  return "Not set — add GOOGLE_MAPS_API_KEY to the Cloudflare Worker.";
 }
 
 /**
@@ -151,7 +150,7 @@ function integrationAction(item) {
   }
   if (item.provider === "whop") {
     return isConnected("whop")
-      ? btn("Sync payments", { action: "whop-sync", size: "sm" })
+      ? pill("connected", "Webhook live")
       : btn("Set up", { action: "integration-setup", size: "sm", attrs: 'data-provider="whop"' });
   }
   return item.manage
@@ -268,7 +267,6 @@ function modelSection() {
 export function renderSettings() {
   const state = getState();
   const settings = preferences();
-  const cloud = state.storage === "cloud";
 
   return `
     <div class="stack">
@@ -277,43 +275,18 @@ export function renderSettings() {
       ${section("Data", {
         body: rows([
           row({
-            main: cloud ? "Synced to Supabase" : "Stored in this browser",
-            sub: cloud
-              ? `Signed in as ${state.user?.email || "owner"}`
-              : "Records are saved to local storage. Sign in below to sync them to Supabase — the dashboard works either way.",
+            main: "Synced to Supabase",
+            sub: `Signed in as ${state.user?.email || "owner"}`,
             iconName: "layers",
-            side: pill(cloud ? "connected" : "warning", cloud ? "Cloud" : "Local"),
+            side: pill("connected", "Cloud"),
           }),
-          ...(cloud && hasLocalWorkspace() ? [row({
-            main: "This browser still holds a local workspace",
-            sub: "Copy it into Supabase so the leads, demos and drafts saved before signing in are not left behind.",
-            iconName: "upload",
-            side: btn("Upload to Supabase", { action: "cloud-upload", size: "sm", variant: "primary" }),
-          })] : []),
           row({
             main: "Google Maps key",
             sub: mapsKeySource(),
             iconName: "radar",
-            side: pill(workerHoldsMapsKey() || getStoredApiKey() ? "connected" : "not_connected"),
+            side: pill(workerHoldsMapsKey() ? "connected" : "not_connected"),
           }),
         ]),
-      })}
-
-      ${cloud ? "" : section("Supabase account", {
-        subtitle: "Cloud sync, and the mailbox Outlook attaches to",
-        body: `
-          <p class="faint">The dashboard never blocks on this. Signing in syncs this workspace to Supabase and lets Outlook store a mailbox connection against your account.</p>
-          <form class="stack--tight" data-form="sign-in">
-            <div class="field-grid">
-              ${field("Email", input("email", "", { type: "email", required: true }))}
-              ${field("Password", input("password", "", { type: "password", required: true, attrs: 'minlength="8"' }))}
-            </div>
-            <div class="btn-row">
-              ${btn("Sign in", { type: "submit", variant: "primary" })}
-              ${btn("Create account", { action: "sign-up" })}
-            </div>
-          </form>
-        `,
       })}
 
       ${modelSection()}
@@ -352,9 +325,9 @@ export function renderSettings() {
       </form>
 
       ${advanced("Supabase project", `
-        ${cloud ? rows([
+        ${rows([
           row({ main: "Signed in", sub: escapeHtml(state.user?.email || ""), iconName: "user", side: btn("Sign out", { action: "sign-out", size: "sm" }) }),
-        ]) : ""}
+        ])}
         <p class="faint">Project <code>${escapeHtml(CONFIG.supabaseUrl.replace("https://", "").split(".")[0])}</code> · publishable key only, never a service key.</p>
       `)}
     </div>

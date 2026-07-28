@@ -1,22 +1,10 @@
 import { CONFIG } from "../config.js";
 import { DEFAULT_EFFORT, DEFAULT_MODEL_ID } from "../data/models.js";
-import { getState, setData, setState } from "../core/state.js";
-import { debounce, slugify, uid } from "../core/utils.js";
+import { getState, resetData, setData, setState } from "../core/state.js";
+import { slugify } from "../core/utils.js";
 import { duplicateKey, toDiscoveryResult } from "./openscout/adapter.js";
-import { getSession, getSupabase, hasStoredSession, isConfigured } from "./supabase.js";
+import { getSession, getSupabase, isConfigured } from "./supabase.js";
 
-const LOCAL_KEY = "operations.data.v2";
-const LOCAL_CLOUD_SYNC_KEY = "operations.data.v2.cloud-signature";
-
-/* Records written by the old starter workspace all carry this id prefix. The
-   sample workspace no longer exists, so any of them still sitting in a browser
-   are swept out on load — otherwise invented emails, revenue and statistics
-   would keep showing up as if they were real. */
-const SAMPLE_ID_PREFIX = "10000000-0000-4000-8000-";
-
-function isSampleRecord(record) {
-  return typeof record?.id === "string" && record.id.startsWith(SAMPLE_ID_PREFIX);
-}
 
 export const COLLECTIONS = Object.freeze({
   leads: "leads",
@@ -90,12 +78,20 @@ const ORDER_BY = Object.freeze({
 
 const COLLECTION_KEYS = Object.keys(COLLECTIONS);
 
-function isCloud() {
-  return getState().storage === "cloud";
+function userId() {
+  const id = getState().user?.id;
+  if (!id) throw new Error("Sign in to Supabase before changing the workspace.");
+  return id;
 }
 
-function userId() {
-  return getState().user?.id || "local";
+/* Node-only fixtures use transient memory records. This is never enabled by
+   the dashboard and never writes browser storage. */
+function usesTestMemory() {
+  return globalThis.__OPERATIONS_TEST_MEMORY__ === true;
+}
+
+function testId() {
+  return globalThis.crypto?.randomUUID?.() || `test-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function compare(key) {
@@ -113,153 +109,75 @@ function compare(key) {
   };
 }
 
-/* ---------- local persistence ---------- */
-
-const persist = debounce(() => {
-  try {
-    const snapshot = { profile: getState().data.profile };
-    COLLECTION_KEYS.forEach((key) => { snapshot[key] = getState().data[key]; });
-    globalThis.localStorage?.setItem(LOCAL_KEY, JSON.stringify(snapshot));
-  } catch (error) {
-    setState({ connection: { ok: false, message: "Local storage is full — recent changes may not survive a reload." } });
-    console.error(error);
-  }
-}, 350);
-
-function afterLocalWrite() {
-  if (!isCloud()) persist();
-}
-
-function readLocal() {
-  try {
-    const raw = globalThis.localStorage?.getItem(LOCAL_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function hasLocalWorkspace() {
-  return Boolean(readLocal());
-}
-
-function localWorkspaceSignature(local = readLocal()) {
-  if (!local) return "";
-  const input = JSON.stringify(local);
-  let hash = 2166136261;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${input.length}:${(hash >>> 0).toString(16)}`;
-}
-
-function localWorkspaceNeedsCloudMerge() {
-  const signature = localWorkspaceSignature();
-  if (!signature) return false;
-  try {
-    return globalThis.localStorage?.getItem(LOCAL_CLOUD_SYNC_KEY) !== signature;
-  } catch {
-    return true;
-  }
-}
-
-function markLocalWorkspaceMerged() {
-  const signature = localWorkspaceSignature();
-  if (!signature) return;
-  try {
-    globalThis.localStorage?.setItem(LOCAL_CLOUD_SYNC_KEY, signature);
-  } catch {
-    /* The cloud copy succeeded. A full localStorage quota must not turn that
-       success into a failed migration; the next boot may simply retry it. */
-  }
-}
-
+/* Legacy operational records are intentionally discarded, never imported. */
 export function clearLocalWorkspace() {
-  globalThis.localStorage?.removeItem(LOCAL_KEY);
+  try {
+    globalThis.localStorage?.removeItem("operations.data.v2");
+    globalThis.localStorage?.removeItem("operations.data.v2.cloud-signature");
+    globalThis.localStorage?.removeItem("operations.automation");
+    globalThis.localStorage?.removeItem("openscout.googleMapsApiKey");
+    globalThis.localStorage?.removeItem("openscout.lastLocationGuess");
+  } catch {
+    /* Storage can be disabled. There is still no browser data fallback. */
+  }
 }
 
 /* ---------- boot ---------- */
 
 /**
- * Opens the workspace. Supabase is used when a session already exists; there is
- * never a sign-in wall. Any failure falls back to local storage and records a
- * non-blocking warning.
+ * Opens the workspace exclusively from Supabase. Missing credentials or a
+ * database failure is a hard gate; records never fall back to the browser.
  */
 export async function initWorkspace() {
+  clearLocalWorkspace();
+  if (!isConfigured()) {
+    setState({
+      user: null,
+      workspace: { status: "error", message: "Supabase is not configured for this deployment." },
+      connection: { ok: false, message: "Supabase is not configured." },
+    }, { silent: true });
+    return "error";
+  }
+
   let session = null;
-  if (isConfigured() && hasStoredSession()) {
-    try {
-      session = await getSession();
-    } catch (error) {
-      console.warn("Supabase session unavailable", error);
-      setState({ connection: { ok: false, message: "Could not reach Supabase. Working from local data." } }, { silent: true });
-    }
+  try {
+    session = await getSession();
+  } catch (error) {
+    resetData();
+    setState({
+      user: null,
+      workspace: { status: "error", message: "Could not reach Supabase. Check your connection and try again." },
+      connection: { ok: false, message: error?.message || "Could not reach Supabase." },
+    }, { silent: true });
+    return "error";
   }
 
-  if (session?.user) {
-    setState({ storage: "cloud", user: session.user }, { silent: true });
-    try {
-      /* loadCloudWorkspace sets `connection` itself: it can succeed with some
-         tables unreadable, and that partial state must survive to the UI. */
-      await loadCloudWorkspace(session.user);
-      if (localWorkspaceNeedsCloudMerge()) {
-        const cloudHasRecords = COLLECTION_KEYS.some((key) => (
-          !DERIVED_COLLECTIONS.has(key) && (getState().data[key] || []).length > 0
-        ));
-        if (cloudHasRecords) {
-          setState({
-            connection: {
-              ok: false,
-              message: "Supabase is connected. This browser also has an older local workspace; it was not auto-merged because the cloud already contains records.",
-            },
-          }, { silent: true });
-        } else {
-          const result = await pushLocalWorkspaceToCloud();
-          if (result.skipped.length) {
-            setState({
-              connection: {
-                ok: false,
-                message: `Supabase is connected, but some local records could not be merged: ${result.skipped.slice(0, 3).join(", ")}.`,
-              },
-            }, { silent: true });
-          }
-        }
-      }
-      return "cloud";
-    } catch (error) {
-      console.error(error);
-      setState({
-        storage: "local",
-        connection: { ok: false, message: "Signed in, but the database could not be read. Working from local data." },
-      }, { silent: true });
-    }
+  if (!session?.user) {
+    resetData();
+    setState({
+      user: null,
+      storage: "cloud",
+      workspace: { status: "signed_out", message: "Sign in to open your Operations workspace." },
+      connection: { ok: true, message: "" },
+    }, { silent: true });
+    return "signed_out";
   }
 
-  loadLocalWorkspace();
-  return "local";
-}
+  setState({ storage: "cloud", user: session.user }, { silent: true });
+  try {
+    await loadCloudWorkspace(session.user);
+    setState({ workspace: { status: "ready", message: "" } }, { silent: true });
+    return "cloud";
+  } catch (error) {
+    console.error(error);
+    resetData();
+    setState({
+      workspace: { status: "error", message: "Your Supabase workspace could not be loaded. No local copy was used." },
+      connection: { ok: false, message: error?.message || "Could not load Supabase." },
+    }, { silent: true });
+    return "error";
+  }
 
-/**
- * Opens the local workspace. Every number on screen is one you put there: a new
- * workspace is empty, and nothing in the application can seed it.
- */
-export function loadLocalWorkspace() {
-  const data = readLocal() || { profile: null };
-  const next = { profile: data.profile || null };
-  let swept = 0;
-
-  COLLECTION_KEYS.forEach((key) => {
-    const records = Array.isArray(data[key]) ? data[key] : [];
-    const kept = records.filter((record) => !isSampleRecord(record));
-    swept += records.length - kept.length;
-    next[key] = kept.sort(compare(key));
-  });
-
-  setState({ storage: "local" }, { silent: true });
-  setData(next, { silent: true });
-  if (swept) persist();
-  return next;
 }
 
 async function fetchCollection(client, key) {
@@ -288,11 +206,9 @@ async function ensureProfile(client, user) {
 /**
  * Reads the whole workspace from Supabase.
  *
- * Collections are settled independently. One table erroring — a migration that
- * has not been applied, a policy that changed — used to reject the whole load
- * and drop the session back to local storage, so a single broken table looked
- * exactly like "Supabase is down". Now the rest of the workspace still opens
- * and the failures are named.
+ * Every required collection must load. A missing migration or policy failure
+ * keeps the dashboard behind the Supabase error gate rather than rendering a
+ * partial operational workspace.
  */
 export async function loadCloudWorkspace(user = getState().user) {
   const client = await getSupabase();
@@ -316,111 +232,17 @@ export async function loadCloudWorkspace(user = getState().user) {
     console.error(`Could not read ${COLLECTIONS[key]}`, result.reason);
   });
 
+  if (failed.length) {
+    throw new Error(`${failed.length} required table${failed.length === 1 ? "" : "s"} could not be read: ${failed.slice(0, 4).join(", ")}.`);
+  }
+
   setData(next);
-  setState({
-    connection: failed.length
-      ? { ok: false, message: `Signed in, but ${failed.length} table${failed.length === 1 ? "" : "s"} could not be read: ${failed.slice(0, 4).join(", ")}.` }
-      : { ok: true, message: "" },
-  }, { silent: true });
+  setState({ connection: { ok: true, message: "" } }, { silent: true });
   return next;
 }
 
-/* Records that exist only to describe other records, and are rebuilt from them
-   rather than copied. Uploading them would duplicate history, not preserve it. */
-const DERIVED_COLLECTIONS = new Set(["settings", "integrations", "aiUsage"]);
-
-/**
- * Copies this browser's workspace into Supabase.
- *
- * Signing in used to silently swap the local workspace for an empty cloud one,
- * which reads exactly like losing every lead you had. This is the missing
- * bridge: it uploads local records, rewrites the ids the database assigns so
- * relations survive, and leaves local storage untouched so nothing is at risk
- * if the upload fails halfway.
- */
-export async function pushLocalWorkspaceToCloud() {
-  if (!isCloud()) throw new Error("Sign in to Supabase before uploading this workspace.");
-
-  const local = readLocal();
-  if (!local) return { uploaded: 0, collections: [], skipped: [] };
-  if (!localWorkspaceNeedsCloudMerge()) {
-    return { uploaded: 0, collections: [], skipped: [], alreadyMerged: true };
-  }
-
-  const client = await getSupabase();
-  const idMap = new Map();
-  const uploadedPer = [];
-  const skipped = [];
-  let uploaded = 0;
-
-  /* Parents first: a child's foreign key is remapped through ids already
-     assigned to its parent, so order is the whole correctness argument here. */
-  const ORDER = [
-    "leads", "templates", "clients", "projects", "demos", "discoveryRuns", "discoveryResults",
-    "demoVersions", "drafts", "emailThreads", "emails", "followUps", "approvals",
-    "assistantConversations", "agentRuns",
-    "agentEvents", "notifications", "clientSites", "projectTasks", "maintenanceSubscriptions",
-    "maintenanceRequests", "payments", "expenses", "pricingExperiments", "activity", "tasks",
-    "calendarEvents", "notes", "deployments",
-  ];
-
-  const RELATION_KEYS = [
-    "lead_id", "client_id", "project_id", "demo_id", "template_id", "draft_id", "thread_id",
-    "run_id", "site_id", "duplicate_of_lead_id", "maintenance_subscription_id",
-  ];
-
-  const existingKeys = new Set(getState().data.leads.map((lead) => String(lead.source_key || "")).filter(Boolean));
-
-  for (const key of ORDER) {
-    if (DERIVED_COLLECTIONS.has(key)) continue;
-    const records = Array.isArray(local[key]) ? local[key] : [];
-    if (!records.length) continue;
-
-    const payload = records.map((record) => {
-      const { id, user_id: _ignoredUser, created_at: createdAt, updated_at: updatedAt, ...rest } = record;
-      const mapped = { ...rest };
-      RELATION_KEYS.forEach((relation) => {
-        if (mapped[relation]) mapped[relation] = idMap.get(String(mapped[relation])) ?? null;
-      });
-      return {
-        local_id: String(id),
-        row: { ...mapped, user_id: userId(), ...(createdAt ? { created_at: createdAt } : {}), ...(updatedAt ? { updated_at: updatedAt } : {}) },
-      };
-    }).filter((entry) => !(key === "leads" && entry.row.source_key && existingKeys.has(String(entry.row.source_key))));
-
-    if (!payload.length) continue;
-
-    const { data, error } = await client
-      .from(COLLECTIONS[key])
-      .insert(payload.map((entry) => entry.row))
-      .select();
-
-    if (error) {
-      skipped.push(`${COLLECTIONS[key]} (${error.message})`);
-      continue;
-    }
-
-    /* The returned rows line up with the values that were sent, which is what
-       makes the id remapping work. If they ever did not, mapping by position
-       would attach a child to the wrong parent — so a length mismatch stops
-       the mapping for this collection instead of guessing. */
-    const rows = data || [];
-    if (rows.length === payload.length) {
-      rows.forEach((row, index) => idMap.set(payload[index].local_id, row.id));
-    } else {
-      skipped.push(`${COLLECTIONS[key]} relations (inserted ${rows.length} of ${payload.length})`);
-    }
-    uploaded += rows.length;
-    uploadedPer.push(`${rows.length} ${COLLECTIONS[key]}`);
-  }
-
-  await loadCloudWorkspace();
-  if (!skipped.length) markLocalWorkspaceMerged();
-  return { uploaded, collections: uploadedPer, skipped };
-}
-
 export async function reloadWorkspace() {
-  return isCloud() ? loadCloudWorkspace() : loadLocalWorkspace();
+  return loadCloudWorkspace();
 }
 
 /* ---------- CRUD ---------- */
@@ -432,21 +254,18 @@ export async function createRecord(collection, values) {
 
 export async function createRecords(collection, values) {
   if (!values.length) return [];
-  const now = new Date().toISOString();
-
-  if (!isCloud()) {
+  if (usesTestMemory()) {
+    const now = new Date().toISOString();
     const records = values.map((value) => ({
       ...value,
-      id: value.id || uid(),
-      user_id: userId(),
+      id: value.id || testId(),
+      user_id: value.user_id || "test-owner",
       created_at: value.created_at || now,
       updated_at: value.updated_at || now,
     }));
     setData({ [collection]: [...records, ...getState().data[collection]] });
-    afterLocalWrite();
     return records;
   }
-
   const client = await getSupabase();
   const payload = values.map((value) => ({ ...value, user_id: userId() }));
   const { data, error } = await client.from(COLLECTIONS[collection]).insert(payload).select();
@@ -456,7 +275,7 @@ export async function createRecords(collection, values) {
 }
 
 export async function updateRecord(collection, id, patch) {
-  if (!isCloud()) {
+  if (usesTestMemory()) {
     let updated = null;
     const next = getState().data[collection].map((item) => {
       if (String(item.id) !== String(id)) return item;
@@ -464,10 +283,8 @@ export async function updateRecord(collection, id, patch) {
       return updated;
     });
     setData({ [collection]: next });
-    afterLocalWrite();
     return updated;
   }
-
   const client = await getSupabase();
   const { data, error } = await client
     .from(COLLECTIONS[collection])
@@ -481,13 +298,14 @@ export async function updateRecord(collection, id, patch) {
 }
 
 export async function deleteRecord(collection, id) {
-  if (isCloud()) {
-    const client = await getSupabase();
-    const { error } = await client.from(COLLECTIONS[collection]).delete().eq("id", id);
-    if (error) throw error;
+  if (usesTestMemory()) {
+    setData({ [collection]: getState().data[collection].filter((item) => String(item.id) !== String(id)) });
+    return;
   }
+  const client = await getSupabase();
+  const { error } = await client.from(COLLECTIONS[collection]).delete().eq("id", id);
+  if (error) throw error;
   setData({ [collection]: getState().data[collection].filter((item) => String(item.id) !== String(id)) });
-  afterLocalWrite();
 }
 
 export function findRecord(collection, id) {
@@ -514,7 +332,9 @@ export function preferences() {
 export async function savePreferences(patch) {
   const merged = { ...(getState().data.profile?.preferences || {}), ...patch };
 
-  if (isCloud()) {
+  if (usesTestMemory()) {
+    setData({ profile: { ...(getState().data.profile || { id: "test-owner", full_name: CONFIG.owner }), preferences: merged } });
+  } else {
     const client = await getSupabase();
     const { data, error } = await client
       .from("profiles")
@@ -524,9 +344,6 @@ export async function savePreferences(patch) {
       .single();
     if (error) throw error;
     setData({ profile: data });
-  } else {
-    setData({ profile: { ...(getState().data.profile || { id: "local", full_name: CONFIG.owner }), preferences: merged } });
-    afterLocalWrite();
   }
 
   const existing = getState().data.settings.find((item) => item.key === "workspace");
@@ -664,17 +481,6 @@ export async function rejectDiscoveryCandidates(resultIds, reason = "Rejected") 
 
 export async function uploadDemoAsset(demoId, file) {
   const versionNumber = getState().data.demoVersions.filter((item) => item.demo_id === demoId).length + 1;
-
-  if (!isCloud()) {
-    return createRecord("demoVersions", {
-      demo_id: demoId,
-      version_number: versionNumber,
-      storage_path: `local/${file.name}`,
-      change_summary: `Recorded ${file.name} locally (sign in to upload to storage)`,
-      is_current: true,
-    });
-  }
-
   const client = await getSupabase();
   const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
   const path = `${userId()}/demos/${demoId}/v${versionNumber}-${slugify(file.name.replace(/\.[^.]+$/, ""))}.${extension}`;
@@ -697,7 +503,6 @@ export async function uploadDemoAsset(demoId, file) {
 let channel = null;
 
 export function subscribeToWorkspaceChanges(onChange) {
-  if (!isCloud()) return () => {};
   const id = userId();
   let cancelled = false;
   getSupabase().then((client) => {

@@ -28,7 +28,7 @@ import {
   table,
   td,
 } from "../components/ui.js";
-import { canUseDirectWebsiteVerification, getStoredApiKey, workerHoldsMapsKey } from "../services/openscout/adapter.js";
+import { canUseDirectWebsiteVerification, workerHoldsMapsKey } from "../services/openscout/adapter.js";
 import { demoForLead, filterSelect, locationOf, searchInput, viewTabs } from "./shared.js";
 
 /* ---------- discovery ---------- */
@@ -59,7 +59,7 @@ export function renderDiscovery() {
   const state = getState();
   const { data, routeParams, discovery } = state;
   const fromWorker = workerHoldsMapsKey();
-  const hasKey = fromWorker || Boolean(getStoredApiKey());
+  const hasKey = fromWorker;
   const canVerify = canUseDirectWebsiteVerification();
   const lastQuery = data.discoveryRuns[0]?.query || {};
   const allRows = discoveryRows(state);
@@ -72,16 +72,11 @@ export function renderDiscovery() {
     .filter((item) => !query || `${item.business_name} ${item.normalized_data?.category} ${item.normalized_data?.city}`.toLowerCase().includes(query))
     .sort((a, b) => Number(b.lead_score || 0) - Number(a.lead_score || 0));
 
-  const keyField = field("Google Maps browser key", input("api_key", "", {
-    type: "password",
-    placeholder: fromWorker ? "Served by the Worker — enter only to override" : hasKey ? "Saved — enter only to replace" : "AIza…",
-  }), { hint: fromWorker ? "the Cloudflare Worker supplies this key" : "stored in this browser only" });
-
   return `
     <div class="stack">
       ${hasKey ? "" : notice(
-        "A Google Maps browser key is required",
-        "Lead Discovery uses the Google Places API through OpenScout. Set GOOGLE_MAPS_API_KEY on the Cloudflare Worker so every browser gets it, or paste one below to keep it in this browser only. A Maps JavaScript key is public either way — restrict it by HTTP referrer in Google Cloud.",
+        "Google Maps is not configured",
+        "Lead Discovery uses the Google Places API through OpenScout. Add GOOGLE_MAPS_API_KEY to the Cloudflare Worker; keys are never saved in the browser.",
         { tone: "warn", iconName: "info" },
       )}
 
@@ -95,7 +90,6 @@ export function renderDiscovery() {
           </button>
         </div>
 
-        ${hasKey ? "" : `<div class="field-grid">${keyField}</div>`}
 
         ${advanced("Advanced", `
           <div class="field-grid">
@@ -108,7 +102,6 @@ export function renderDiscovery() {
             ${field("Minimum confidence", input("min_confidence", 70, { type: "number", attrs: 'min="0" max="100"' }))}
             ${field("Minimum rating", input("min_rating", 0, { type: "number", attrs: 'min="0" max="5" step="0.1"' }))}
           </div>
-          ${hasKey ? `<div class="field-grid">${keyField}</div>` : ""}
           ${checkbox("no_website", "Only businesses with no real website", true)}
           ${checkbox("must_have_phone", "Require a phone number", true)}
           ${checkbox("skip_known", "Skip businesses already in leads", true)}
