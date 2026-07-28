@@ -176,10 +176,34 @@ test("assistant page exposes conversations, access and tools without faking answ
   const html = renderers.assistant();
   assert.match(html, /Operations AI/);
   assert.match(html, /Model offline|Direct commands available/);
-  assert.match(html, /Work access|Work in workspace/);
+  assert.match(html, /Full access|Full control/);
   assert.match(html, /Context/);
   assert.match(html, /get_next_lead|Direct commands/);
   assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
+});
+
+test("assistant response text supports safe Markdown formatting", () => {
+  const previousAssistant = structuredClone(getState().assistant);
+  try {
+    setState({
+      assistant: {
+        ...previousAssistant,
+        messages: [{
+          id: "markdown-test",
+          role: "assistant",
+          text: "## Ready\n- **Build** the demo\n- Send \`one email\`\n\n<img src=x onerror=alert(1)>",
+        }],
+      },
+    }, { silent: true });
+    const html = renderers.assistant();
+    assert.match(html, /<strong>Build<\/strong>/);
+    assert.match(html, /<ul>/);
+    assert.match(html, /<code>one email<\/code>/);
+    assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+    assert.doesNotMatch(html, /<img src=x onerror=/);
+  } finally {
+    setState({ assistant: previousAssistant }, { silent: true });
+  }
 });
 
 test("settings exposes all three AI permission modes", () => {
