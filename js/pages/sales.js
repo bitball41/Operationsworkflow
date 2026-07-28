@@ -72,7 +72,7 @@ export function renderDiscovery() {
 
   const results = allRows
     .filter((item) => (decision === "all" || item.decision === decision))
-    .filter((item) => !query || `${item.business_name} ${item.normalized_data?.category} ${item.normalized_data?.city}`.toLowerCase().includes(query))
+    .filter((item) => !query || `${item.business_name} ${item.normalized_data?.category} ${item.normalized_data?.city} ${item.normalized_data?.email}`.toLowerCase().includes(query))
     .sort((a, b) => Number(b.lead_score || 0) - Number(a.lead_score || 0));
 
   return `
