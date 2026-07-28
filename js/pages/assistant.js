@@ -25,13 +25,74 @@ const EXAMPLES = [
   { label: "Check replies", text: "Sync the inbox and summarize every reply that needs action" },
 ];
 
+function inlineMarkdown(text) {
+  let value = escapeHtml(String(text || ""));
+  value = value
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
+  return value;
+}
+
+/* Assistant text is model-controlled, so this deliberately supports a small,
+   escaped Markdown subset instead of putting raw model HTML in the page. */
+function formatAssistantText(text) {
+  const blocks = [];
+  let listType = "";
+
+  const closeList = () => {
+    if (listType) blocks.push("</" + listType + ">");
+    listType = "";
+  };
+  const openList = (type) => {
+    if (listType === type) return;
+    closeList();
+    listType = type;
+    blocks.push("<" + type + ">");
+  };
+
+  for (const line of String(text || "").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    const bullet = trimmed.match(/^[-*+]\s+(.+)$/);
+    const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    const quote = trimmed.match(/^>\s?(.+)$/);
+
+    if (heading) {
+      closeList();
+      const level = Math.min(4, heading[1].length + 1);
+      blocks.push("<h" + level + ">" + inlineMarkdown(heading[2]) + "</h" + level + ">");
+    } else if (bullet) {
+      openList("ul");
+      blocks.push("<li>" + inlineMarkdown(bullet[1]) + "</li>");
+    } else if (ordered) {
+      openList("ol");
+      blocks.push("<li>" + inlineMarkdown(ordered[1]) + "</li>");
+    } else if (quote) {
+      closeList();
+      blocks.push("<blockquote>" + inlineMarkdown(quote[1]) + "</blockquote>");
+    } else {
+      closeList();
+      blocks.push("<p>" + inlineMarkdown(trimmed) + "</p>");
+    }
+  }
+
+  closeList();
+  return blocks.join("");
+}
 function messageBlock(message) {
   if (message.role === "user") {
     return `
       <article class="msg msg--user">
         <div class="msg__content">
           <span class="msg__who">You</span>
-          <div class="msg__body">${escapeHtml(message.text)}</div>
+          <div class="msg__body msg__markdown">${formatAssistantText(message.text)}</div>
         </div>
       </article>
     `;
@@ -287,7 +348,7 @@ export function renderAssistant() {
                 <div class="msg__avatar">${icon("sparkle")}</div>
                 <div class="msg__content">
                   <span class="msg__who">Operations AI</span>
-                  <div class="thinking"><i></i><i></i><i></i><span>Working through the workspace</span></div>
+                  <div class="thinking"><span class="thinking__spinner" aria-hidden="true"></span><span>Working through the workspace</span></div>
                 </div>
               </article>
             ` : ""}
