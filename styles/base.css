@@ -7,6 +7,15 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable;
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -158,12 +167,25 @@ pre {
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.14s var(--ease), border-color 0.14s var(--ease), opacity 0.14s;
+  transition:
+    background 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    box-shadow 0.14s var(--ease),
+    transform 0.14s var(--ease),
+    opacity 0.14s;
   white-space: nowrap;
 }
 
 .btn:hover {
   background: var(--surface-3);
+  border-color: var(--text-3);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  box-shadow: none;
+  transform: translateY(0);
 }
 
 .btn svg {
@@ -217,6 +239,8 @@ pre {
 .btn[disabled] {
   opacity: 0.62;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .icon-btn {
@@ -230,12 +254,22 @@ pre {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.14s var(--ease), color 0.14s var(--ease);
+  transition:
+    background 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    color 0.14s var(--ease),
+    transform 0.14s var(--ease);
 }
 
 .icon-btn:hover {
   background: var(--surface-2);
+  border-color: var(--line);
   color: var(--text);
+  transform: translateY(-1px);
+}
+
+.icon-btn:active {
+  transform: translateY(0);
 }
 
 .link {
@@ -362,6 +396,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
 }
 
 input[type="checkbox"] {
@@ -435,6 +470,12 @@ textarea[disabled] {
 
 .search input:focus {
   outline: none;
+  box-shadow: none;
+}
+
+.search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
 }
 
 .select-sm {
@@ -505,6 +546,7 @@ textarea[disabled] {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
 /* ---------- rows ---------- */
@@ -655,6 +697,7 @@ tbody td {
   padding: 12px 14px 12px 0;
   border-top: 1px solid var(--line-soft);
   vertical-align: middle;
+  transition: background 0.14s var(--ease);
 }
 
 tbody tr[data-action] {

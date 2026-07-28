@@ -171,13 +171,25 @@ test("studio exposes the real bundle files in the code view", () => {
   setStudio({ view: "preview" }, { silent: true });
 });
 
-test("assistant page exposes context and tools without faking answers", () => {
+test("assistant page exposes conversations, access and tools without faking answers", () => {
   setState({ route: "assistant", routeParams: {} }, { silent: true });
   const html = renderers.assistant();
-  assert.match(html, /Provider not connected/);
-  assert.match(html, /Context:/);
-  assert.match(html, /get_next_lead|Commands that work now/);
+  assert.match(html, /Operations AI/);
+  assert.match(html, /Model offline|Direct commands available/);
+  assert.match(html, /Work access|Work in workspace/);
+  assert.match(html, /Context/);
+  assert.match(html, /get_next_lead|Direct commands/);
   assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
+});
+
+test("settings exposes all three AI permission modes", () => {
+  setState({ route: "settings", routeParams: {} }, { silent: true });
+  const html = renderers.settings();
+  assert.match(html, /AI access/);
+  assert.match(html, /View only/);
+  assert.match(html, /Work in workspace/);
+  assert.match(html, /Full control/);
+  assert.match(html, /ai_permission_mode/);
 });
 
 test("integrations renders every capability from a reachable Worker", () => {

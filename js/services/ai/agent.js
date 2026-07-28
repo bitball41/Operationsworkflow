@@ -14,7 +14,7 @@
 import { uid } from "../../core/utils.js";
 import { buildContext } from "./context.js";
 import { runAssistantTurn } from "./provider.js";
-import { runTool, toolSchema } from "./tools.js";
+import { aiPermissionMode, runTool, toolSchema } from "./tools.js";
 
 /** Enough for discover -> save -> build -> publish -> draft -> send, plus slack. */
 export const MAX_STEPS = 8;
@@ -31,6 +31,7 @@ export async function runAgentLoop({ transcript, onEntry, signal, maxSteps = MAX
   const history = [...transcript];
   const entries = [];
   let steps = 0;
+  const permissionMode = aiPermissionMode();
 
   const push = (entry) => {
     history.push(entry);
@@ -46,7 +47,7 @@ export async function runAgentLoop({ transcript, onEntry, signal, maxSteps = MAX
       /* Rebuilt every step: a tool that just created a lead or sent an email
          has changed the workspace the next step reasons about. */
       context: buildContext(),
-      tools: toolSchema(),
+      tools: toolSchema(permissionMode),
       signal,
     });
 
@@ -64,7 +65,7 @@ export async function runAgentLoop({ transcript, onEntry, signal, maxSteps = MAX
 
     for (const call of calls) {
       if (signal?.aborted) return { entries, steps, stopped: "aborted" };
-      const result = await runTool(call.name, call.args || {});
+      const result = await runTool(call.name, call.args || {}, { permissionMode });
       push({
         id: uid(),
         role: "tool",

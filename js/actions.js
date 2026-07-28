@@ -262,6 +262,9 @@ export async function onClick(event) {
       }
       break;
     }
+    case "assistant-open-conversation":
+      openAssistantConversation(id);
+      break;
     case "assistant-toggle-context":
       setAssistant({ contextOpen: !getState().assistant.contextOpen });
       break;
@@ -718,6 +721,13 @@ export async function onChange(event) {
   }
   /* Model and effort switch in place, from the assistant bar or Settings, so
      you can drop to a cheaper model mid-conversation without leaving the page. */
+  if (action === "ai-permission-select") {
+    await run(async () => {
+      await savePreferences({ ai_permission_mode: target.value });
+      toast("AI access updated", "The new permission mode applies on the next message.");
+    });
+    return;
+  }
   if (action === "model-select" || action === "effort-select") {
     const key = action === "model-select" ? "model" : "effort";
     await run(async () => {

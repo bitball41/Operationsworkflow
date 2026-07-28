@@ -25,7 +25,7 @@ The realistic workspace used to exercise the pages lives in
 `tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
 ```bash
-npm test   # 49 OpenScout engine tests + 116 application tests
+npm test   # 49 OpenScout engine tests + 124 application tests
 ```
 
 ## How it is put together
@@ -119,6 +119,17 @@ A full-page workspace at `#/assistant`. Three parts already work:
 
   `toolSchema()` emits them in the shape a model API expects, so the same
   registry can back an MCP server later.
+- **Permission modes** — access is selected from the assistant toolbar or
+  Settings and saved with the user's workspace preferences:
+  - *View only* exposes read tools.
+  - *Work in workspace* (the default) also allows record changes, while blocking
+    anything that leaves the app.
+  - *Full control* enables connected external tools such as research, email,
+    publishing and automation.
+
+  The model only receives the schema for its current mode, and `runTool()`
+  enforces the same boundary again before execution. Changing the selector
+  applies to the next message. Direct commands remain explicit user actions.
 - **Commands** (`services/ai/commands.js`) — `go`, `go 12`, `stop`, `status`,
   `next`, `revenue`, `inbox` run real operations with no model involved.
 

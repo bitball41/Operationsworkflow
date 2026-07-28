@@ -60,8 +60,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: var(--bg);
+  background: var(--bg-raised);
   border-right: 1px solid var(--line);
+  box-shadow: 10px 0 28px rgba(0, 0, 0, 0.08);
   padding: calc(12px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
   z-index: 40;
 }
@@ -101,7 +102,7 @@
 .nav__group {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .nav__label {
@@ -117,8 +118,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 8px;
-  border-radius: 7px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--text-2);
   font-size: 0.9rem;
   position: relative;
@@ -141,13 +143,24 @@
 
 .nav__item:hover {
   background: var(--surface);
+  border-color: var(--line-soft);
   color: var(--text);
 }
 
 .nav__item.is-active {
   background: var(--surface-2);
+  border-color: var(--line);
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.nav__item.is-active::before {
+  content: "";
+  position: absolute;
+  inset: 7px auto 7px -1px;
+  width: 2px;
+  border-radius: 99px;
+  background: var(--accent);
 }
 
 .nav__item.is-active svg {
@@ -231,9 +244,10 @@
   gap: 10px;
   height: calc(var(--topbar-h) + var(--safe-top));
   padding: var(--safe-top) var(--gutter) 0;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .topbar h1 {
@@ -262,9 +276,14 @@
   color: var(--text-2);
   font-size: 0.875rem;
   cursor: pointer;
+  transition:
+    background 0.14s var(--ease),
+    border-color 0.14s var(--ease),
+    color 0.14s var(--ease);
 }
 
 .search-btn:hover {
+  background: var(--surface-2);
   color: var(--text);
   border-color: var(--text-3);
 }
@@ -283,6 +302,7 @@
   max-width: 1320px;
   width: 100%;
   min-width: 0;
+  margin: 0 auto;
   outline: none;
 }
 
@@ -311,7 +331,8 @@
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgba(6, 6, 8, 0.62);
+  background: rgba(6, 6, 8, 0.68);
+  backdrop-filter: blur(4px);
   display: flex;
   justify-content: center;
   padding: 12vh 16px 16px;
