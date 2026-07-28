@@ -25,8 +25,13 @@ globalThis.__OPERATIONS_TEST_MEMORY__ = true;
 
 const { getState, setData, setState } = await import("../js/core/state.js");
 const { runAgentLoop } = await import("../js/services/ai/agent.js");
+const { permissionAllows, runTool, toolSchema } = await import("../js/services/ai/tools.js");
 
 setData({
+  profile: {
+    id: "owner-1",
+    preferences: { ai_permission_mode: "work" },
+  },
   leads: [{
     id: "lead-1",
     business_name: "Ironwood Electric",
@@ -70,6 +75,37 @@ function scriptedProvider(replies) {
   return { sent, restore: () => { globalThis.fetch = original; } };
 }
 
+test("permission modes expose only the tools the AI is allowed to use", () => {
+  const viewNames = toolSchema("view").map((tool) => tool.name);
+  const workNames = toolSchema("work").map((tool) => tool.name);
+  const fullNames = toolSchema("full").map((tool) => tool.name);
+
+  assert.ok(viewNames.includes("get_next_lead"));
+  assert.ok(!viewNames.includes("create_task"));
+  assert.ok(!viewNames.includes("send_email"));
+
+  assert.ok(workNames.includes("get_next_lead"));
+  assert.ok(workNames.includes("create_task"));
+  assert.ok(!workNames.includes("send_email"));
+  assert.ok(!workNames.includes("publish_demo"));
+  assert.ok(!workNames.includes("start_automation"));
+
+  assert.ok(fullNames.includes("send_email"));
+  assert.ok(fullNames.includes("publish_demo"));
+  assert.ok(fullNames.includes("start_automation"));
+  assert.equal(permissionAllows("send_email", "full"), true);
+  assert.equal(permissionAllows("send_email", "work"), false);
+});
+
+test("permission enforcement blocks a tool even if a provider asks for it", async () => {
+  const result = await runTool("create_task", { title: "Should not exist" }, { permissionMode: "view" });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.permission, true);
+  assert.equal(result.permission_mode, "view");
+  assert.match(result.error, /blocked by View only/i);
+});
+
 test("a tool call is executed and its result is sent back to the model", async () => {
   const provider = scriptedProvider([
     [{ type: "tool_use", id: "call_1", name: "get_next_lead", input: {} }],
@@ -88,6 +124,11 @@ test("a tool call is executed and its result is sent back to the model", async (
     assert.equal(tool.tool, "get_next_lead");
     assert.equal(tool.result.ok, true);
     assert.match(tool.result.summary, /Ironwood Electric/);
+
+    const exposedTools = provider.sent[0].tools.map((tool) => tool.name);
+    assert.ok(exposedTools.includes("get_next_lead"));
+    assert.ok(exposedTools.includes("create_task"));
+    assert.ok(!exposedTools.includes("send_email"), "Work access must not advertise external tools");
 
     /* The whole point: the second request carries the result of the first. */
     const secondRequest = provider.sent[1];
@@ -136,7 +177,14 @@ test("every tool_use is answered before the next request is built", async () => 
   }
 });
 
-test("a blocked tool is reported to the model rather than swallowed", async () => {
+test("a blocked integration is reported to the model rather than swallowed", async () => {
+  setData({
+    profile: {
+      ...getState().data.profile,
+      preferences: { ...getState().data.profile?.preferences, ai_permission_mode: "full" },
+    },
+  }, { silent: true });
+
   const provider = scriptedProvider([
     [{ type: "tool_use", id: "call_1", name: "send_email", input: { to: "someone@example.com", subject: "Hi", body: "Hello" } }],
     [{ type: "text", text: "Outlook is not connected, so nothing was sent." }],
@@ -158,6 +206,12 @@ test("a blocked tool is reported to the model rather than swallowed", async () =
     assert.match(block.content, /not connected/i);
   } finally {
     provider.restore();
+    setData({
+      profile: {
+        ...getState().data.profile,
+        preferences: { ...getState().data.profile?.preferences, ai_permission_mode: "work" },
+      },
+    }, { silent: true });
   }
 });
 
