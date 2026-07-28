@@ -5,6 +5,7 @@ import { buildBundleForTemplateRecord, composeDocument } from "../js/services/si
 import { normalizeTemplateAssetPaths } from "../js/services/sites/templates.js";
 import { safeResearchUrl } from "../worker/browser.js";
 import { handleDemoPublish, servePublicDemo } from "../worker/demos.js";
+import worker from "../worker/index.js";
 import { handleMcp } from "../worker/mcp.js";
 
 test("an uploaded template keeps portable files and fills lead placeholders", () => {
@@ -59,6 +60,19 @@ test("browser research refuses local and private network targets", () => {
   assert.equal(safeResearchUrl("http://[fc00::1]"), null);
   assert.equal(safeResearchUrl("file:///etc/passwd"), null);
   assert.equal(safeResearchUrl("https://example.com/path#fragment").toString(), "https://example.com/path");
+});
+
+test("the public demo hostname cannot reach the dashboard or Worker APIs", async () => {
+  const env = {
+    DEMO_DOMAIN: "demos.conno.fun",
+    DEMO_SITES: { get: async () => null },
+    ASSETS: { fetch: async () => new Response("dashboard", { status: 200 }) },
+  };
+
+  for (const path of ["/", "/api/status", "/mcp", "/anything-else"]) {
+    const response = await worker.fetch(new Request(`https://demos.conno.fun${path}`), env);
+    assert.equal(response.status, 404, `${path} must not fall through to the dashboard or an API`);
+  }
 });
 
 class FakeR2 {
