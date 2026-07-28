@@ -91,7 +91,7 @@ export async function runDiscoverySearch(input = {}, { onProgress, onRunCreated 
       verify: query.filters.verify,
       mustHavePhone: query.filters.mustHavePhone,
       mustHaveEmail: query.filters.mustHaveEmail,
-      strictlyBlankWebsite: query.filters.noWebsite, query.filters.noWebsite,
+      strictlyBlankWebsite: query.filters.noWebsite,
     }, onProgress);
 
     /* Post-filters the engine does not own. */
