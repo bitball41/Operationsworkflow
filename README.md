@@ -25,7 +25,7 @@ The realistic workspace used to exercise the pages lives in
 `tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
 ```bash
-npm test   # 49 OpenScout engine tests + 118 application tests
+npm test   # 49 OpenScout engine tests + 124 application tests
 ```
 
 ## How it is put together
@@ -126,7 +126,7 @@ A full-page workspace at `#/assistant`. Three parts already work:
     anything that leaves the app.
   - *Full control* enables connected external tools such as research, email,
     publishing and automation.
-  
+
   The model only receives the schema for its current mode, and `runTool()`
   enforces the same boundary again before execution. Changing the selector
   applies to the next message. Direct commands remain explicit user actions.
