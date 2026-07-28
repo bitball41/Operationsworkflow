@@ -8,8 +8,11 @@
     "binding": "ASSETS",
     // The Worker owns routing for anything that is not a file on disk, so it
     // can serve /api/* itself instead of the asset layer swallowing it as an
-    // SPA fallback. worker/index.js falls back to index.html for page GETs.
-    "not_found_handling": "none"
+    // SPA fallback. It must run first on every request because the public demo
+    // hostname shares this Worker but must never fall through to dashboard
+    // assets. worker/index.js fetches ASSETS for the private dashboard.
+    "not_found_handling": "none",
+    "run_worker_first": true
   },
   "observability": {
     "enabled": true

@@ -180,6 +180,35 @@ test("assistant page exposes context and tools without faking answers", () => {
   assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
 });
 
+test("integrations renders every capability from a reachable Worker", () => {
+  const previousServices = structuredClone(getState().services);
+  try {
+    setState({
+      services: {
+        ...previousServices,
+        reachable: true,
+        providers: {
+          outlook: true,
+          anthropic: true,
+          openai: true,
+          whop: true,
+          google_maps: true,
+          cloudflare: true,
+          research: true,
+          mcp: false,
+        },
+        outlook: { configured: true, signed_in: true, connected: true, can_read_mail: true, account: "owner@example.com" },
+      },
+    }, { silent: true });
+    const html = renderers.integrations();
+    for (const label of ["Cloudflare", "Browser research", "MCP tool server"]) {
+      assert.match(html, new RegExp(label), `${label} needs an integration card`);
+    }
+  } finally {
+    setState({ services: previousServices }, { silent: true });
+  }
+});
+
 test("automation page stays operational, not a settings dashboard", () => {
   setState({ route: "automation", routeParams: {} }, { silent: true });
   const html = renderers.automation();

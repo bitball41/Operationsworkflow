@@ -37,7 +37,20 @@ const WORKER_SECRETS = Object.freeze({
   openai: { label: "OpenAI", secret: "OPENAI_API_KEY", detail: "Alternate model provider" },
   whop: { label: "Whop", secret: "WHOP_API_KEY", detail: "Payment events and receipts, read-only" },
   google_maps: { label: "Google Maps", secret: "GOOGLE_MAPS_API_KEY", detail: "Lead discovery through the Places API" },
+  cloudflare: { label: "Cloudflare", secret: "DEMO_SITES R2 binding", detail: "Public demo publishing and R2 hosting" },
+  research: { label: "Browser research", secret: "BROWSER binding", detail: "Public-page research for the assistant" },
+  mcp: { label: "MCP tool server", secret: "MCP_API_TOKEN", detail: "External agent access to the selected operations tools" },
 });
+
+/* Keep a newly reported Worker capability from taking the entire page down
+   before its presentation metadata is added above. */
+function workerSecretEntry(provider) {
+  return WORKER_SECRETS[provider] || {
+    label: String(provider || "Worker capability").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase()),
+    secret: "Worker configuration",
+    detail: "Capability reported by the Cloudflare Worker",
+  };
+}
 
 function mapsKeySource() {
   if (workerHoldsMapsKey()) return "Served by the Cloudflare Worker to every browser";
@@ -56,7 +69,7 @@ function mapsKeySource() {
 function outlookRow() {
   const { services } = getState();
   const outlook = services.outlook || {};
-  const entry = WORKER_SECRETS.outlook;
+  const entry = workerSecretEntry("outlook");
 
   if (!outlook.configured) {
     return row({
@@ -111,7 +124,7 @@ function workerSection() {
     subtitle: "Held by the Cloudflare Worker, never by this browser",
     body: rows(WORKER_PROVIDERS.map((provider) => {
       if (provider === "outlook") return outlookRow();
-      const entry = WORKER_SECRETS[provider];
+      const entry = workerSecretEntry(provider);
       const present = services.providers[provider] === true;
       return row({
         main: entry.label,
