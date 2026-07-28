@@ -45,10 +45,13 @@ function progressLine(discovery) {
   const completed = Number(progress.completed || 0);
   const total = Math.max(Number(progress.total || 1), completed, 1);
   const percent = Math.min(98, Math.round((completed / total) * 100));
+  const phaseLabel = progress.phase === "verify" ? "Checking websites"
+    : progress.phase === "email" ? "Finding public emails"
+      : "Searching";
   return `
     <div class="progress-line">
       <span class="spin"></span>
-      <span>${escapeHtml(progress.phase === "verify" ? "Checking websites" : "Searching")} · ${formatNumber(progress.scanned || 0)} scanned · ${formatNumber(progress.leads || 0)} found</span>
+      <span>${escapeHtml(phaseLabel)} · ${formatNumber(progress.scanned || 0)} scanned · ${formatNumber(progress.leads || 0)} found</span>
       ${bar(percent, "accent")}
       <b class="num">${percent}%</b>
     </div>
@@ -102,11 +105,12 @@ export function renderDiscovery() {
             ${field("Minimum confidence", input("min_confidence", 70, { type: "number", attrs: 'min="0" max="100"' }))}
             ${field("Minimum rating", input("min_rating", 0, { type: "number", attrs: 'min="0" max="5" step="0.1"' }))}
           </div>
-          ${checkbox("no_website", "Only businesses with no real website", true)}
+          ${checkbox("no_website", "Only businesses with no website", true, "disabled")}
+          ${checkbox("must_have_email", "Require a public email address", true, "disabled")}
           ${checkbox("must_have_phone", "Require a phone number", true)}
           ${checkbox("skip_known", "Skip businesses already in leads", true)}
           ${checkbox("verify", canVerify ? "Verify ambiguous links live" : "Verify ambiguous links live (local preview only)", canVerify, canVerify ? "" : "disabled")}
-          <p class="faint">OpenScout's search, scoring, chain exclusion and duplicate merging are used as-is.</p>
+          <p class="faint">OpenScout searches siteless businesses first, then keeps only candidates with a publicly linked email address.</p>
         `)}
 
         ${discovery.error ? notice("Search could not finish", discovery.error, { tone: "error", iconName: "alert" }) : ""}
@@ -122,7 +126,7 @@ export function renderDiscovery() {
           ${selected.size ? btn("Reject", { action: "discovery-reject-selected", size: "sm" }) : ""}
         `,
         body: table({
-          columns: ["Business", "Category", "Location", "Rating", "Phone", "Website", ""],
+          columns: ["Business", "Category", "Location", "Rating", "Email", "Phone", "Website", ""],
           rows: results.map((item) => {
             const lead = item.normalized_data || {};
             const source = item.raw_source_metadata?.openscout || {};
@@ -132,6 +136,7 @@ export function renderDiscovery() {
               ${td("Category", escapeHtml(lead.category || "—"))}
               ${td("Location", escapeHtml(locationOf(lead) || "—"))}
               ${td("Rating", source.rating ? `${source.rating} <span class="faint">(${formatNumber(source.ratingCount || 0)})</span>` : `<span class="faint">—</span>`)}
+              ${td("Email", `<a href="mailto:${escapeHtml(lead.email || "")}">${escapeHtml(lead.email || "—")}</a>`)}
               ${td("Phone", escapeHtml(lead.phone || "—"))}
               ${td("Website", pill(lead.has_website ? "warning" : "connected", lead.has_website ? "Has site" : "No site"))}
               ${td("", `<span class="cell-actions">
@@ -143,7 +148,7 @@ export function renderDiscovery() {
           }),
           emptyState: empty({
             title: discovery.status === "running" ? "Searching…" : allRows.length ? "No results match this filter" : "No searches yet",
-            message: allRows.length ? "Change the decision filter or search text." : "Enter a niche and location above to find businesses without websites.",
+            message: allRows.length ? "Change the decision filter or search text." : "Enter a niche and location above to find businesses with a public email and no website.",
           }),
         }),
       })}
