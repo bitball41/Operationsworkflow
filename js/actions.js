@@ -723,7 +723,7 @@ export async function onChange(event) {
      you can drop to a cheaper model mid-conversation without leaving the page. */
   if (action === "ai-permission-select") {
     await run(async () => {
-      await savePreferences({ ai_permission_mode: target.value });
+      await savePreferences({ ai_permission_mode: target.value, ai_permission_mode_version: 2 });
       toast("AI access updated", "The new permission mode applies on the next message.");
     });
     return;

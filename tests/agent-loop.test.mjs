@@ -25,12 +25,12 @@ globalThis.__OPERATIONS_TEST_MEMORY__ = true;
 
 const { getState, setData, setState } = await import("../js/core/state.js");
 const { runAgentLoop } = await import("../js/services/ai/agent.js");
-const { permissionAllows, runTool, toolSchema } = await import("../js/services/ai/tools.js");
+const { aiPermissionMode, permissionAllows, runTool, toolSchema } = await import("../js/services/ai/tools.js");
 
 setData({
   profile: {
     id: "owner-1",
-    preferences: { ai_permission_mode: "work" },
+    preferences: { ai_permission_mode: "work", ai_permission_mode_version: 2 },
   },
   leads: [{
     id: "lead-1",
@@ -74,6 +74,28 @@ function scriptedProvider(replies) {
 
   return { sent, restore: () => { globalThis.fetch = original; } };
 }
+
+test("legacy Work access is upgraded to full workspace control", () => {
+  setData({
+    profile: {
+      ...getState().data.profile,
+      preferences: { ai_permission_mode: "work" },
+    },
+  }, { silent: true });
+
+  assert.equal(aiPermissionMode(), "full");
+  const names = toolSchema(aiPermissionMode()).map((tool) => tool.name);
+  for (const name of ["discover_leads", "create_task", "record_payment", "send_email", "publish_demo", "start_automation"]) {
+    assert.ok(names.includes(name), `Full access is missing ${name}`);
+  }
+
+  setData({
+    profile: {
+      ...getState().data.profile,
+      preferences: { ai_permission_mode: "work", ai_permission_mode_version: 2 },
+    },
+  }, { silent: true });
+});
 
 test("permission modes expose only the tools the AI is allowed to use", () => {
   const viewNames = toolSchema("view").map((tool) => tool.name);
@@ -181,7 +203,7 @@ test("a blocked integration is reported to the model rather than swallowed", asy
   setData({
     profile: {
       ...getState().data.profile,
-      preferences: { ...getState().data.profile?.preferences, ai_permission_mode: "full" },
+      preferences: { ...getState().data.profile?.preferences, ai_permission_mode: "full", ai_permission_mode_version: 2 },
     },
   }, { silent: true });
 
@@ -209,7 +231,7 @@ test("a blocked integration is reported to the model rather than swallowed", asy
     setData({
       profile: {
         ...getState().data.profile,
-        preferences: { ...getState().data.profile?.preferences, ai_permission_mode: "work" },
+        preferences: { ...getState().data.profile?.preferences, ai_permission_mode: "work", ai_permission_mode_version: 2 },
       },
     }, { silent: true });
   }

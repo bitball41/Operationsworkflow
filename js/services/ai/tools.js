@@ -73,12 +73,17 @@ export const AI_PERMISSION_MODES = Object.freeze([
 ]);
 
 export function aiPermissionMode() {
-  const configured = String(preferences().ai_permission_mode || "work");
-  return AI_PERMISSION_MODES.some((mode) => mode.id === configured) ? configured : "work";
+  const settings = preferences();
+  const configured = String(settings.ai_permission_mode || "");
+  /* Work was the old implicit default. Upgrade that legacy value to Full, while
+     preserving any explicit preference saved by the current selector. */
+  if (configured === "view") return "view";
+  if (configured === "work" && Number(settings.ai_permission_mode_version) >= 2) return "work";
+  return "full";
 }
 
 export function permissionDefinition(mode = aiPermissionMode()) {
-  return AI_PERMISSION_MODES.find((entry) => entry.id === mode) || AI_PERMISSION_MODES[1];
+  return AI_PERMISSION_MODES.find((entry) => entry.id === mode) || AI_PERMISSION_MODES[2];
 }
 
 export function permissionAllows(toolOrName, mode = aiPermissionMode()) {
@@ -178,9 +183,13 @@ define({
     { name: "business_type", required: true, description: "Niche to search, e.g. plumber, roofer, dentist" },
     { name: "limit", type: "number", description: "How many businesses to keep (default 50, max 250)" },
     { name: "radius_km", type: "number", description: "Search radius in kilometres (default 15)" },
+    { name: "depth", description: "quick, standard (default) or deep" },
     { name: "min_confidence", type: "number", description: "0-100 confidence that the business has no real website (default 70)" },
     { name: "min_rating", type: "number", description: "Minimum Google rating (default 0, no filter)" },
-    { name: "save", type: "boolean", description: "Save the results straight to leads (default true). False leaves them for review on Lead Discovery." },
+    { name: "must_have_phone", type: "boolean", description: "Only keep businesses with a public phone number" },
+    { name: "skip_known", type: "boolean", description: "Skip businesses already saved as leads (default true)" },
+    { name: "verify", type: "boolean", description: "Run local direct website verification when available" },
+    { name: "save", type: "boolean", description: "Save the results straight to leads (default true). False leaves them for review on Lead Discovery. No-website and public-email requirements are always enforced." },
   ],
   run: async (input) => {
     const query = {
@@ -188,8 +197,12 @@ define({
       businessType: input.business_type,
       limit: input.limit,
       radiusKm: input.radius_km,
+      depth: input.depth,
       minConfidence: input.min_confidence,
       minRating: input.min_rating,
+      mustHavePhone: input.must_have_phone,
+      skipKnown: input.skip_known,
+      verify: input.verify,
     };
 
     if (input.save === false) {
