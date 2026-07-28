@@ -92,7 +92,7 @@ function messageBlock(message) {
       <article class="msg msg--user">
         <div class="msg__content">
           <span class="msg__who">You</span>
-          <div class="msg__body msg__markdown">${formatAssistantText(message.text)}</div>
+          <div class="msg__body">${escapeHtml(message.text)}</div>
         </div>
       </article>
     `;
@@ -127,7 +127,7 @@ function messageBlock(message) {
         <div class="msg__avatar">${icon("sparkle")}</div>
         <div class="msg__content">
           <span class="msg__who">Operations AI</span>
-          <div class="msg__body">${escapeHtml(message.text)}</div>
+          <div class="msg__body msg__markdown">${formatAssistantText(message.text)}</div>
         </div>
       </article>
     `;
