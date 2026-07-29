@@ -32,8 +32,11 @@
     { "pattern": "hooks.conno.fun", "custom_domain": true }
   ],
   // Cloudflare Browser Run powers the assistant's public-page research tool.
+  // Quick Actions require a remote Browser binding during local development;
+  // Worker code and every other binding still run locally under `wrangler dev`.
   "browser": {
-    "binding": "BROWSER"
+    "binding": "BROWSER",
+    "remote": true
   },
   // Create once before the first production deploy:
   //   npx wrangler r2 bucket create operationsworkflow-demos

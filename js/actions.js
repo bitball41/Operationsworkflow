@@ -1254,7 +1254,11 @@ async function runDiscovery(values) {
       summary: search.summary,
       error: "",
     });
-    toast("Search finished", `${search.results.length} businesses found.`);
+    const excluded = Number(search.summary?.excludedExistingWebsite || 0);
+    toast(
+      "Search finished",
+      `${search.results.length} businesses found${excluded ? ` · ${excluded} official site${excluded === 1 ? "" : "s"} filtered` : ""}.`,
+    );
   } catch (error) {
     console.error(error);
     setDiscovery({ status: "failed", progress: null, error: error.message || "The search could not finish." });

@@ -443,6 +443,7 @@ export function openCalendarForm(date = "", event = null) {
 export function openDiscoveryDetails(result) {
   const lead = result.normalized_data || {};
   const source = result.raw_source_metadata?.openscout || {};
+  const presence = result.raw_source_metadata?.web_presence || lead.source_metadata?.web_presence || {};
   openModal({
     title: result.business_name,
     subtitle: "From the OpenScout search",
@@ -454,10 +455,18 @@ export function openDiscoveryDetails(result) {
         <div><dt>Phone</dt><dd>${escapeHtml(lead.phone || "—")}</dd></div>
         <div><dt>Rating</dt><dd>${source.rating ? `${source.rating} (${source.ratingCount || 0})` : "—"}</dd></div>
         <div><dt>Website</dt><dd>${escapeHtml(result.website_status || "—")}</dd></div>
+        <div><dt>Web check</dt><dd>${escapeHtml(statusLabel(presence.status || "not checked"))}</dd></div>
+        <div><dt>Web evidence</dt><dd>${escapeHtml(presence.evidence || presence.reason || "—")}</dd></div>
+        <div><dt>Web search</dt><dd>${externalLink(presence.searched_url, "Open search evidence")}</dd></div>
         <div><dt>Score</dt><dd>${score(result.lead_score)}</dd></div>
         <div><dt>Listing</dt><dd>${externalLink(lead.listing_url, "Google listing")}</dd></div>
         <div><dt>Decision</dt><dd>${pill(result.decision)}</dd></div>
       </dl>
+      ${presence.status === "unknown" ? notice(
+        "Website check uncertain",
+        presence.reason || "A plausible website could not be confirmed. Review this business before outreach.",
+        { tone: "warn", iconName: "alert" },
+      ) : ""}
       ${(source.reasons || []).length ? `<div class="tag-list">${source.reasons.map((reason) => `<span class="tag">${escapeHtml(reason)}</span>`).join("")}</div>` : ""}
       <details class="advanced"><summary>Raw source data</summary><div class="advanced__body"><pre class="code-block">${escapeHtml(JSON.stringify(result.raw_source_metadata || {}, null, 2))}</pre></div></details>
     `,

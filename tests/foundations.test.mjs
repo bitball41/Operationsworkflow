@@ -3,7 +3,14 @@ import test from "node:test";
 
 import { buildBundleForTemplateRecord, composeDocument } from "../js/services/sites/bundle.js";
 import { normalizeTemplateAssetPaths } from "../js/services/sites/templates.js";
-import { findPublicBusinessEmail, safeResearchUrl } from "../worker/browser.js";
+import {
+  extractWebsiteCandidates,
+  findPublicBusinessEmail,
+  inspectBusinessWebsiteResults,
+  isThirdPartyWebsiteHost,
+  lookupBusinessPresence,
+  safeResearchUrl,
+} from "../worker/browser.js";
 import { handleDemoPublish, servePublicDemo } from "../worker/demos.js";
 import worker from "../worker/index.js";
 import { handleMcp } from "../worker/mcp.js";
@@ -83,6 +90,168 @@ test("public email extraction requires matching business evidence", () => {
     city: "Austin",
   });
   assert.equal(unrelated, null);
+});
+
+test("website candidates ignore third-party profiles but keep hosted business sites", () => {
+  for (const host of [
+    "facebook.com",
+    "www.yelp.com",
+    "linktr.ee",
+    "booksy.com",
+    "doordash.com",
+    "etsy.com",
+    "sedoparking.com",
+  ]) {
+    assert.equal(isThirdPartyWebsiteHost(host), true, `${host} must stay a third-party presence`);
+  }
+  for (const host of ["northstarplumbing.com", "northstar.wixsite.com", "northstar.squarespace.com"]) {
+    assert.equal(isThirdPartyWebsiteHost(host), false, `${host} can be an official hosted website`);
+  }
+
+  const markdown = [
+    "[Northstar Plumbing on Facebook](https://facebook.com/northstarplumbing) Austin, TX",
+    "[Northstar Plumbing reviews](https://yelp.com/biz/northstar-plumbing) Austin, TX",
+    `[Northstar Plumbing](${
+      `https://www.bing.com/ck/a?u=a1${btoa("https://northstar.wixsite.com/home")}`
+    }) Austin, TX`,
+  ].join("\n");
+  const candidates = extractWebsiteCandidates(markdown, {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    region: "TX",
+  });
+  assert.deepEqual(candidates.map((candidate) => candidate.host), ["northstar.wixsite.com"]);
+});
+
+test("official website inspection requires phone or business plus locality evidence", async () => {
+  const identity = {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    region: "TX",
+    phone: "(512) 555-0138",
+  };
+  const phoneMatch = await inspectBusinessWebsiteResults(
+    "[Northstar Plumbing](https://northstarplumbing.com)",
+    identity,
+    async () => ({
+      title: "Northstar Plumbing",
+      markdown: "Call our team at (512) 555-0138.",
+    }),
+    "https://www.bing.com/search?q=northstar",
+  );
+  assert.equal(phoneMatch.status, "found");
+  assert.equal(phoneMatch.url, "https://northstarplumbing.com/");
+
+  const hostedMatch = await inspectBusinessWebsiteResults(
+    "[Northstar Plumbing](https://northstar.wixsite.com/home)",
+    { ...identity, phone: "" },
+    async () => ({
+      title: "Northstar Plumbing",
+      markdown: "Northstar Plumbing serves Austin and the surrounding area.",
+    }),
+  );
+  assert.equal(hostedMatch.status, "found", "an identity-matched hosted site is still a website");
+
+  const wrongCity = await inspectBusinessWebsiteResults(
+    "[Northstar Plumbing](https://northstarplumbing.example)",
+    { ...identity, phone: "" },
+    async () => ({
+      title: "Northstar Plumbing",
+      markdown: "Serving Dallas, Texas.",
+    }),
+  );
+  assert.equal(wrongCity.status, "not_found", "same-name businesses in another city must not be excluded");
+});
+
+test("conflicting or unavailable official website candidates stay uncertain", async () => {
+  const identity = {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    phone: "(512) 555-0138",
+  };
+  const conflicting = await inspectBusinessWebsiteResults([
+    "[Northstar Plumbing](https://northstarplumbing.com) Austin",
+    "[Northstar Plumbing](https://northstarplumbing.net) Austin",
+  ].join("\n"), identity, async () => ({
+    title: "Northstar Plumbing",
+    markdown: "Austin plumbers · (512) 555-0138",
+  }));
+  assert.equal(conflicting.status, "unknown");
+  assert.match(conflicting.reason, /multiple/i);
+
+  const unavailable = await inspectBusinessWebsiteResults(
+    "[Northstar Plumbing](https://northstarplumbing.com) Austin",
+    identity,
+    async () => {
+      throw new Error("Browser Run timed out");
+    },
+  );
+  assert.equal(unavailable.status, "unknown");
+  assert.match(unavailable.evidence, /timed out/i);
+});
+
+test("business presence catches an official site exposed by the email search", async () => {
+  const identity = {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    region: "TX",
+    phone: "(512) 555-0138",
+  };
+  const browse = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.hostname === "www.bing.com") {
+      const query = parsed.searchParams.get("q") || "";
+      if (/\bemail\b/i.test(query)) {
+        return {
+          title: "Search",
+          markdown: [
+            "[Northstar Plumbing](https://northstarplumbing.com)",
+            "Northstar Plumbing serves Austin. Email hello@northstarplumbing.com or call (512) 555-0138.",
+          ].join("\n"),
+        };
+      }
+      return {
+        title: "Search",
+        markdown: "[Northstar Plumbing on Facebook](https://facebook.com/northstarplumbing) Austin",
+      };
+    }
+    if (parsed.hostname === "northstarplumbing.com") {
+      return {
+        title: "Northstar Plumbing",
+        markdown: "Austin plumbing service · (512) 555-0138",
+      };
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await lookupBusinessPresence(identity, { BROWSER: {} }, { browse });
+  assert.equal(result.website.status, "found");
+  assert.equal(result.website.url, "https://northstarplumbing.com/");
+  assert.equal(result.email.address, "hello@northstarplumbing.com");
+});
+
+test("business presence preserves an email when the website search is inconclusive", async () => {
+  let searchCount = 0;
+  const browse = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.hostname !== "www.bing.com") throw new Error(`Unexpected URL: ${url}`);
+    searchCount += 1;
+    if (searchCount === 1) throw new Error("Website search timed out");
+    return {
+      title: "Search",
+      markdown: [
+        "[Uncertain Electric on Yelp](https://yelp.com/biz/uncertain-electric)",
+        "Uncertain Electric serves Austin. Email hello@uncertainelectric.example.",
+      ].join("\n"),
+    };
+  };
+
+  const result = await lookupBusinessPresence({
+    business_name: "Uncertain Electric",
+    city: "Austin",
+  }, { BROWSER: {} }, { browse });
+  assert.equal(result.website.status, "unknown");
+  assert.equal(result.email.address, "hello@uncertainelectric.example");
 });
 
 test("the public demo hostname cannot reach the dashboard or Worker APIs", async () => {
