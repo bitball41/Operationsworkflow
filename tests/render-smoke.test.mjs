@@ -147,6 +147,10 @@ test("lead discovery leads with three inputs and hides the rest", () => {
   for (const advancedField of ["radius_km", "min_confidence", "depth", "min_rating"]) {
     assert.ok(html.indexOf(`name="${advancedField}"`) > advancedIndex, `${advancedField} must live under Advanced`);
   }
+  const emailFilter = html.match(/<input type="checkbox" name="must_have_email"[^>]*>/)?.[0] || "";
+  assert.ok(emailFilter, "the public-email filter must be visible");
+  assert.doesNotMatch(emailFilter, /\bdisabled\b/);
+  assert.doesNotMatch(emailFilter, /\bchecked\b/);
 });
 
 test("lead discovery reports filtered websites and marks uncertain checks", () => {

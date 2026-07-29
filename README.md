@@ -236,14 +236,17 @@ normalised lead schema and keeps the source evidence.
 
 The page asks for three things: niche, location, how many. Radius, depth,
 minimum confidence, minimum rating, verification, phone requirement and
-deduplication live under **Advanced**. The current business rule is mandatory:
-every surfaced candidate has no Google-listed website, no identity-matched
-official website found by the independent web check, and a publicly linked email
-address. Businesses without a verified public email never enter the review queue.
+deduplication live under **Advanced**. Every surfaced candidate passes
+OpenScout's no-real-website classification and has no identity-matched official
+website found by the independent web check. Public email lookup enriches every
+candidate when possible; requiring a verified public email is an optional
+Advanced filter rather than a hidden reason for an otherwise valid lead to
+disappear.
 
 Google Places does not expose business email addresses and can omit a website
-that exists. After OpenScout finds candidates with a blank website field, the
-Browser Run binding searches public results and opens likely first-party pages.
+that exists. After OpenScout qualifies candidates without a real web presence,
+the Worker fetches a public result page and reserves the rate-limited Browser
+Run binding for opening identity-related first-party, directory or profile pages.
 A page only disqualifies the candidate when its phone matches, or its business
 name and locality/address both match. Social profiles, directories, booking and
 ordering pages, marketplaces, link-in-bio pages and parked domains do not count;
@@ -427,6 +430,8 @@ required by Operations, but the migration deliberately does not delete them.
   reconciliation path.
 - Outlook connections made before `Mail.Read` was requested can send but not
   read. Disconnect and reconnect from Integrations to re-consent.
-- Live discovery needs a Google Maps key, Places quota, and the Browser Run binding; independently screened discovery may return fewer leads than requested when official sites are found or public addresses are unavailable.
+- Live discovery needs a Google Maps key, Places quota, and the Browser Run binding. Independently screened discovery may return fewer leads than requested when official sites are found; public-address availability only affects searches that explicitly require email.
+- Saved leads with a verified public email are selected ahead of phone-only
+  leads for automated outreach; phone-only leads remain available as fallback.
 - Website verification only runs direct probes on local previews; hosted builds
   keep a narrow CSP.

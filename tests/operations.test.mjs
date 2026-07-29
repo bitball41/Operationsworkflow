@@ -36,6 +36,7 @@ const { isConnected, integrationList } = await import("../js/services/integratio
 const { providerReady } = await import("../js/services/ai/provider.js");
 const { canSend } = await import("../js/services/email/outreach.js");
 const {
+  discoverWithOpenScout,
   normalizeLead,
   duplicateKey,
   screenLeadsForBusinessPresence,
@@ -102,13 +103,19 @@ test("templates are chosen by niche with a neutral fallback", () => {
 test("get_next_lead picks the best uncontacted lead and skips the rest", () => {
   const next = operations.getNextLead();
   assert.ok(next, "expected a lead");
+  assert.ok(next.email, "email-ready leads should be worked before phone-only leads");
   assert.ok(["new", "qualified", "demo_ready"].includes(next.status));
   assert.equal(next.last_contacted_at, null);
   assert.equal(next.has_website, false);
 
-  const others = getState().data.leads.filter((lead) => lead.id !== next.id && !operations.hasBeenContacted(lead) && !lead.has_website);
+  const others = getState().data.leads.filter((lead) => (
+    lead.id !== next.id
+    && lead.email
+    && !operations.hasBeenContacted(lead)
+    && !lead.has_website
+  ));
   for (const lead of others) {
-    assert.ok(Number(next.lead_score) >= Number(lead.lead_score), "expected the highest scoring lead first");
+    assert.ok(Number(next.lead_score) >= Number(lead.lead_score), "expected the highest scoring email-ready lead first");
   }
 
   const skipped = operations.getNextLead({ skipIds: [next.id] });
@@ -399,6 +406,41 @@ test("the OpenScout adapter still normalizes leads the same way", () => {
   });
 });
 
+test("the adapter preserves OpenScout lead categories instead of silently narrowing them", async () => {
+  const originalSearch = window.OpenScout.googlePlaces.searchLeads;
+  window.OpenScout.googlePlaces.searchLeads = async () => ({
+    scanned: 1,
+    leads: [{
+      id: "social-place",
+      name: "Social Only Plumbing",
+      address: "1 Main St, Austin, TX 78701, USA",
+      phone: "(512) 555-0100",
+      website: "https://facebook.com/socialonlyplumbing",
+      isLead: true,
+      leadCategory: "social",
+      leadType: "Social profile only",
+      confidence: 91,
+    }],
+  });
+  try {
+    const result = await discoverWithOpenScout({
+      apiKey: "test-key",
+      businessType: "plumber",
+      location: "Austin, TX",
+      limit: 10,
+      requireNoOfficialWebsite: true,
+      presenceLookup: async () => ({
+        website: { status: "not_found", reason: "No official site found" },
+        email: { address: "" },
+      }),
+    });
+    assert.equal(result.leads.length, 1);
+    assert.equal(result.leads[0].source_metadata.openscout.leadCategory, "social");
+  } finally {
+    window.OpenScout.googlePlaces.searchLeads = originalSearch;
+  }
+});
+
 test("business presence screening excludes official sites without consuming the result limit", async () => {
   const candidates = ["site", "clear", "uncertain"].map((id) => ({
     business_name: `${id} business`,
@@ -448,7 +490,7 @@ test("business presence screening excludes official sites without consuming the 
   assert.equal(screened.leads[1].source_metadata.web_presence.status, "unknown");
 });
 
-test("an uncertain website check without a public email remains excluded", async () => {
+test("a no-site OpenScout result remains eligible when no public email is found", async () => {
   const screened = await screenLeadsForBusinessPresence([{
     business_name: "Uncertain Electric",
     source_key: "uncertain-no-email",
@@ -465,8 +507,61 @@ test("an uncertain website check without a public email remains excluded", async
       email: { address: "" },
     }),
   });
-  assert.equal(screened.leads.length, 0);
+  assert.equal(screened.leads.length, 1);
+  assert.equal(screened.leads[0].email || "", "");
+  assert.equal(screened.leads[0].website_status, "Website check uncertain");
   assert.equal(screened.stats.inconclusiveWebsiteChecks, 1);
+});
+
+test("requiring a public email remains an explicit strict filter", async () => {
+  const screened = await screenLeadsForBusinessPresence([{
+    business_name: "Uncertain Electric",
+    source_key: "uncertain-no-email",
+    source_payload: {},
+    source_metadata: {},
+  }], {
+    limit: 5,
+    requireEmail: true,
+    lookup: async () => ({
+      website: { status: "not_found", reason: "No official site found" },
+      email: { address: "" },
+    }),
+  });
+  assert.equal(screened.leads.length, 0);
+});
+
+test("OpenScout candidates are not collapsed from forty to zero by missing emails", async () => {
+  const candidates = Array.from({ length: 40 }, (_, index) => ({
+    business_name: `Local Service ${index + 1}`,
+    source_key: `place-${index + 1}`,
+    source_payload: {},
+    source_metadata: {},
+  }));
+  const screened = await screenLeadsForBusinessPresence(candidates, {
+    limit: 40,
+    lookup: async () => ({
+      website: { status: "not_found", reason: "No official site found" },
+      email: { address: "" },
+    }),
+  });
+  assert.equal(screened.leads.length, 40);
+  assert.equal(screened.stats.emailsMatched, 0);
+});
+
+test("a research outage preserves OpenScout leads as uncertain unless email is required", async () => {
+  const screened = await screenLeadsForBusinessPresence([{
+    business_name: "Resilient Roofing",
+    source_key: "research-outage",
+    source_payload: {},
+    source_metadata: {},
+  }], {
+    lookup: async () => {
+      throw new Error("Browser Run timed out");
+    },
+  });
+  assert.equal(screened.leads.length, 1);
+  assert.equal(screened.leads[0].source_metadata.web_presence.status, "unknown");
+  assert.match(screened.leads[0].source_metadata.web_presence.evidence, /timed out/i);
 });
 
 test("statewide discovery uses the full region instead of a tiny center radius", () => {
@@ -589,6 +684,29 @@ test("discovery cleans model phrasing before it reaches Google Places", () => {
   assert.equal(query.businessType, "tree trimming");
   assert.equal(query.location, "Idaho");
   assert.equal(query.limit, 5);
+  assert.equal(query.filters.mustHaveEmail, false, "email must not be a hidden default filter");
+  assert.equal(normalizeDiscoveryQuery({ must_have_email: true }).filters.mustHaveEmail, true);
+
+  const productionWording = normalizeDiscoveryQuery({
+    location: "Arlington, TX, and save them",
+    business_type: "me 150 leads on tree trimming buisnesses",
+  });
+  assert.equal(productionWording.businessType, "tree trimming");
+  assert.equal(productionWording.location, "Arlington, TX");
+
+  const longInstruction = normalizeDiscoveryQuery({
+    location: "Ohio",
+    business_type: "me 600 leads on roofing services without a website and save them. of course they wont all be",
+  });
+  assert.equal(longInstruction.businessType, "roofing services");
+
+  assert.throws(
+    () => normalizeDiscoveryQuery({
+      location: "the same city so move around different parts of the USA",
+      business_type: "roofing",
+    }),
+    /concrete place/i,
+  );
 });
 
 /* ---------- the assistant loop ---------- */
@@ -604,6 +722,10 @@ test("the tool registry covers the work the business actually does", () => {
   ]) {
     assert.ok(names.has(name), `${name} is missing from the tool registry`);
   }
+  assert.ok(
+    getTool("discover_leads").params.some((param) => param.name === "must_have_email"),
+    "the model needs an explicit public-email filter instead of a hidden one",
+  );
 });
 
 test("array and object tool parameters produce a valid JSON schema", () => {

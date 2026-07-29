@@ -48,7 +48,12 @@ export function hasBeenContacted(lead) {
   return draftsForLead(lead.id).some((draft) => draft.status === "sent");
 }
 
-/** The next best lead to work: highest score, oldest first, never contacted. */
+/**
+ * The next best lead to work: email-ready first, then highest score and oldest
+ * first. Phone-only leads remain eligible as a fallback instead of disappearing
+ * from the workspace, but the email outreach loop does not waste its first
+ * builds on leads it cannot yet contact.
+ */
 export function getNextLead({ niche = "", location = "", skipIds = [] } = {}) {
   const skip = new Set(skipIds.map(String));
   const nicheValue = niche.trim().toLowerCase();
@@ -65,7 +70,8 @@ export function getNextLead({ niche = "", location = "", skipIds = [] } = {}) {
   });
 
   return candidates.sort((a, b) => (
-    Number(b.lead_score || 0) - Number(a.lead_score || 0)
+    Number(Boolean(b.email)) - Number(Boolean(a.email))
+    || Number(b.lead_score || 0) - Number(a.lead_score || 0)
     || new Date(a.discovered_at || a.created_at || 0) - new Date(b.discovered_at || b.created_at || 0)
   ))[0] || null;
 }

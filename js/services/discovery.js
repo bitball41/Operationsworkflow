@@ -23,7 +23,7 @@ export const DISCOVERY_DEFAULTS = Object.freeze({
   minConfidence: 70,
   minRating: 0,
   noWebsite: true,
-  mustHaveEmail: true,
+  mustHaveEmail: false,
   mustHavePhone: false,
   skipKnown: true,
   verify: false,
@@ -37,15 +37,67 @@ export class DiscoveryError extends Error {
   }
 }
 
+function cleanBusinessType(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^find\s+/i, "")
+    .replace(/^(?:me\s+)?\d{1,5}\s+(?:new\s+)?leads?\s*(?:(?:on|for|of)\s+)?/i, "")
+    .replace(/^me\s+(?:some\s+)?leads?\s*(?:(?:on|for|of)\s+)?/i, "")
+    .replace(/^leads?\s+(?:on|for|of)\s+/i, "")
+    .replace(/\s+(?:without|with\s+no)\s+(?:(?:a|any)\s+)?(?:real\s+)?websites?\b.*$/i, "")
+    .replace(/\s+(?:and|then)\s+save\b.*$/i, "")
+    .replace(/\s+(?:business|buisness)(?:es)?$/i, "")
+    .replace(/[.,;:!?]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanLocation(value) {
+  return String(value || "")
+    .trim()
+    .replace(/,?\s+(?:and|then)\s+save\b.*$/i, "")
+    .replace(/[.;:!?]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function assertUsableDiscoveryText({ rawBusinessType, businessType, rawLocation, location }) {
+  if (
+    rawBusinessType
+    && (
+      !businessType
+      || /\b(?:leads?\s+(?:on|for)|save\s+them|without\s+(?:a\s+)?website)\b/i.test(businessType)
+      || businessType.split(/\s+/).length > 10
+    )
+  ) {
+    throw new DiscoveryError(
+      `The business type was not a usable niche: "${rawBusinessType}". Use only a niche such as "roofing" or "tree trimming".`,
+    );
+  }
+
+  if (
+    rawLocation
+    && (
+      !location
+      || /\b(?:the\s+same\s+city|same\s+city|move\s+around|different\s+parts|save\s+them|leads?\s+(?:on|for))\b/i.test(location)
+      || location.split(/\s+/).length > 10
+    )
+  ) {
+    throw new DiscoveryError(
+      `The location was not a concrete place: "${rawLocation}". Use one city, state, or region such as "Arlington, TX" or "Idaho".`,
+    );
+  }
+}
+
 export function normalizeDiscoveryQuery(input = {}) {
   const number = (value, fallback) => (Number.isFinite(Number(value)) && value !== "" && value !== null ? Number(value) : fallback);
-  const businessType = String(input.businessType || input.business_type || "")
-    .trim()
-    .replace(/^leads?\s+(?:on|for)\s+/i, "")
-    .replace(/\s+business(?:es)?$/i, "")
-    .trim();
+  const rawBusinessType = String(input.businessType || input.business_type || "").trim();
+  const rawLocation = String(input.location || "").trim();
+  const businessType = cleanBusinessType(rawBusinessType);
+  const location = cleanLocation(rawLocation);
+  assertUsableDiscoveryText({ rawBusinessType, businessType, rawLocation, location });
   return {
-    location: String(input.location || "").trim(),
+    location,
     businessType,
     radiusKm: number(input.radiusKm ?? input.radius_km, DISCOVERY_DEFAULTS.radiusKm),
     limit: Math.max(1, Math.min(250, number(input.limit, DISCOVERY_DEFAULTS.limit))),
@@ -54,7 +106,7 @@ export function normalizeDiscoveryQuery(input = {}) {
     minRating: number(input.minRating ?? input.min_rating, DISCOVERY_DEFAULTS.minRating),
     filters: {
       noWebsite: true,
-      mustHaveEmail: true,
+      mustHaveEmail: Boolean(input.mustHaveEmail ?? input.must_have_email ?? DISCOVERY_DEFAULTS.mustHaveEmail),
       mustHavePhone: Boolean(input.mustHavePhone ?? input.must_have_phone),
       skipKnown: (input.skipKnown ?? input.skip_known ?? DISCOVERY_DEFAULTS.skipKnown) !== false,
       verify: Boolean(input.verify),
@@ -96,7 +148,7 @@ export async function runDiscoverySearch(input = {}, { onProgress, onRunCreated 
       verify: query.filters.verify,
       mustHavePhone: query.filters.mustHavePhone,
       mustHaveEmail: query.filters.mustHaveEmail,
-      strictlyBlankWebsite: query.filters.noWebsite,
+      requireNoOfficialWebsite: query.filters.noWebsite,
     }, onProgress);
 
     /* Post-filters the engine does not own. */
