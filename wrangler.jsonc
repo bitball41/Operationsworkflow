@@ -3,6 +3,8 @@
   "name": "operationsworkflow",
   "main": "worker/index.js",
   "compatibility_date": "2026-07-26",
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
@@ -19,7 +21,10 @@
   },
   "vars": {
     "DEMO_DOMAIN": "demos.conno.fun",
-    "WHOP_WEBHOOK_DOMAIN": "hooks.conno.fun"
+    "WHOP_WEBHOOK_DOMAIN": "hooks.conno.fun",
+    "OPERATIONS_WORKSPACE_ID": "2847b8e2-8a34-4a72-8e44-2cfc1be4255b",
+    "CF_ACCESS_TEAM_DOMAIN": "https://openscout-pages.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "8cb2b052dc81e5cf1b6e74eefa600e1d610f7346712d0582f3447475140c867e"
   },
   "routes": [
     { "pattern": "operations.conno.fun", "custom_domain": true },
@@ -38,7 +43,7 @@
       "bucket_name": "operationsworkflow-demos"
     }
   ],
-  // OAuth state and encrypted per-user Outlook tokens.
+  // OAuth state and encrypted Outlook tokens for the one Operations workspace.
   //
   // This is the existing operationsworkflow-outlook-tokens namespace. Keeping
   // its id in configuration lets unattended Git builds bind it without an

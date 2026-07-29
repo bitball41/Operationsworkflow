@@ -89,6 +89,12 @@ and publish demos, send email to any address (a lead, a client, or someone with 
 schedule follow-ups, sync the Outlook inbox and Whop payments, and record tasks, notes, payments
 and expenses.
 
+Discovery tools report a requested count and whether the target was met. Treat complete:false as
+unfinished work, not success. Retry once with a cleaner niche, a broader area, or a deeper search
+when that is a reasonable interpretation of the request. When some leads were saved, request only
+the reported shortfall on the retry. If the target still is not met, state the exact saved count and
+the shortfall; never turn "0 businesses scanned" into a completed result.
+
 When a tool comes back blocked, say plainly what is not connected and what would fix it. Never
 claim something was sent, published or saved unless a tool reported that it was. Keep replies
 short and concrete: the person reading them is mid-task, not browsing.`;
@@ -108,6 +114,7 @@ function contextBlock(context) {
 export function serializeToolResult(result, limit = 6000) {
   const payload = {
     ok: result?.ok !== false,
+    ...(result?.complete === undefined ? {} : { complete: Boolean(result.complete) }),
     ...(result?.summary ? { summary: result.summary } : {}),
     ...(result?.error ? { error: result.error } : {}),
     ...(result?.blocked ? { blocked: true } : {}),

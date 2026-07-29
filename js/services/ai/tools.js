@@ -179,9 +179,9 @@ define({
   kind: "external",
   summary: "Search Google Places for local businesses with no real website and add them as leads. This is how new leads enter the system.",
   params: [
-    { name: "location", required: true, description: "City, region or address, e.g. \"Austin, TX\"" },
-    { name: "business_type", required: true, description: "Niche to search, e.g. plumber, roofer, dentist" },
-    { name: "limit", type: "number", description: "How many businesses to keep (default 50, max 250)" },
+    { name: "location", required: true, description: "City, state, region or address, e.g. \"Austin, TX\" or \"Idaho\". States and regions are searched across their full area." },
+    { name: "business_type", required: true, description: "The niche only, e.g. tree trimming, plumber, roofer or dentist. Do not include words such as leads or businesses." },
+    { name: "limit", type: "number", description: "The target number of qualified leads to save (default 50, max 250)" },
     { name: "radius_km", type: "number", description: "Search radius in kilometres (default 15)" },
     { name: "depth", description: "quick, standard (default) or deep" },
     { name: "min_confidence", type: "number", description: "0-100 confidence that the business has no real website (default 70)" },
@@ -207,22 +207,43 @@ define({
 
     if (input.save === false) {
       const search = await runDiscoverySearch(query);
+      const requested = search.summary?.requested || query.limit || 50;
+      const found = search.results.length;
+      const scanned = search.summary?.scanned || 0;
+      const complete = found >= requested;
       return {
-        data: { run_id: search.runId, found: search.results.length, scanned: search.summary?.scanned || 0 },
-        summary: `${search.results.length} candidate(s) found and left for review on Lead Discovery.`,
+        ...(scanned ? {} : {
+          ok: false,
+          error: `Lead discovery scanned no businesses for ${query.businessType} in ${query.location}. The operation did not complete.`,
+        }),
+        complete,
+        data: { run_id: search.runId, requested, found, scanned, shortfall: Math.max(0, requested - found) },
+        summary: `Found ${found} of ${requested} requested candidate(s) from ${scanned} businesses scanned and left them for review.`,
       };
     }
 
     const result = await discoverAndSaveLeads(query);
+    const requested = result.summary?.requested || query.limit || 50;
+    const scanned = result.summary?.scanned || 0;
+    const saved = result.saved.length;
+    const complete = saved >= requested;
     return {
+      ...(scanned ? {} : {
+        ok: false,
+        error: `Lead discovery scanned no businesses for ${query.businessType} in ${query.location}. The operation did not complete.`,
+      }),
+      complete,
       data: {
         run_id: result.runId,
-        scanned: result.summary?.scanned || 0,
+        requested,
+        scanned,
         found: result.results.length,
         saved: result.saved.map((lead) => ({ id: lead.id, business: lead.business_name, city: lead.city, phone: lead.phone, score: lead.lead_score })),
         duplicates: result.duplicates.length,
+        shortfall: Math.max(0, requested - saved),
+        search_scope: result.summary?.searchScope || "local",
       },
-      summary: `${result.saved.length} new lead(s) saved from ${result.summary?.scanned || 0} businesses scanned${result.duplicates.length ? `, ${result.duplicates.length} already known` : ""}.`,
+      summary: `Saved ${saved} of ${requested} requested lead(s) from ${scanned} businesses scanned${result.duplicates.length ? `; ${result.duplicates.length} already known` : ""}.`,
     };
   },
 });

@@ -4,8 +4,7 @@
 #   wrangler secret put ANTHROPIC_API_KEY
 #   wrangler secret put OPENAI_API_KEY
 #   wrangler secret put WHOP_WEBHOOK_SECRET
-#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-#   wrangler secret put WHOP_OWNER_USER_ID
+#   wrangler secret put SUPABASE_SECRET_KEY
 #   wrangler secret put GOOGLE_MAPS_API_KEY
 #   wrangler secret put MICROSOFT_CLIENT_ID
 #   wrangler secret put MICROSOFT_CLIENT_SECRET
@@ -23,10 +22,20 @@ OPENAI_API_KEY=
 # Whop — signed webhook delivery only. Set this to the signing secret Whop
 # shows after creating https://hooks.conno.fun/whop with API version v1.
 WHOP_WEBHOOK_SECRET=
-# Server-only Supabase key for the webhook RPC. Never put this in browser code.
-SUPABASE_SERVICE_ROLE_KEY=
-# The single Operations workspace owner id; created from existing Whop data.
-WHOP_OWNER_USER_ID=
+# Server-only Supabase secret key for all workspace data and the webhook RPC.
+# A legacy service-role JWT also works during migration. Neither belongs in
+# browser code, a public Worker variable, or git.
+SUPABASE_SECRET_KEY=
+
+# These non-secret values are already set in wrangler.jsonc for production.
+# Keep the same neutral workspace UUID locally; it is not an application user.
+OPERATIONS_WORKSPACE_ID=2847b8e2-8a34-4a72-8e44-2cfc1be4255b
+CF_ACCESS_TEAM_DOMAIN=https://openscout-pages.cloudflareaccess.com
+CF_ACCESS_AUD=8cb2b052dc81e5cf1b6e74eefa600e1d610f7346712d0582f3447475140c867e
+
+# Localhost only. Production hosts still require a verified Cloudflare Access
+# assertion even if this value is accidentally left enabled.
+ALLOW_LOCAL_DEVELOPMENT=true
 
 # Google Maps — lead discovery. This one reaches the browser, because the Maps
 # JavaScript SDK runs in the page. Restrict it by HTTP referrer in Google Cloud
@@ -42,7 +51,7 @@ GOOGLE_MAPS_API_KEY=
 # the Inbox stays permanently empty.
 #
 # Sending also needs the OUTLOOK_TOKENS KV namespace to exist — see
-# wrangler.jsonc. It stores each user's encrypted tokens; with no namespace
+# wrangler.jsonc. It stores the workspace's encrypted tokens; with no namespace
 # bound there is nowhere to keep a connection and every route answers 503.
 MICROSOFT_CLIENT_ID=
 MICROSOFT_CLIENT_SECRET=

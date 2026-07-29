@@ -2,10 +2,10 @@
  * Narrow browser capability for business research.
  *
  * Cloudflare Browser Run executes the page; this endpoint returns readable
- * markdown, not a general-purpose remote-control session. The caller must be a
- * verified Supabase user and private/local network targets are rejected.
+ * markdown, not a general-purpose remote-control session. Cloudflare Access is
+ * verified by worker/index.js before this handler runs, and private/local
+ * network targets are rejected here.
  */
-import { authenticatedSupabaseUser } from "./outlook.js";
 
 const MAX_MARKDOWN = 60_000;
 
@@ -194,9 +194,6 @@ export async function handleBusinessEmailLookup(request, env, payload) {
       message: "BROWSER is not bound. Add the Cloudflare Browser Run binding and deploy again.",
     }, 503);
   }
-  if (!(await authenticatedSupabaseUser(request))) {
-    return json({ error: "unauthorized", message: "Sign in to Supabase before looking up business emails." }, 401);
-  }
   try {
     return json(await lookupBusinessEmail(payload || {}, env));
   } catch (error) {
@@ -211,9 +208,6 @@ export async function handleBrowserResearch(request, env, payload) {
       provider: "research",
       message: "BROWSER is not bound. Add the Cloudflare Browser Run binding and deploy again.",
     }, 503);
-  }
-  if (!(await authenticatedSupabaseUser(request))) {
-    return json({ error: "unauthorized", message: "Sign in to Supabase before using browser research." }, 401);
   }
   try {
     return json(await browseToMarkdown(payload?.url, env));

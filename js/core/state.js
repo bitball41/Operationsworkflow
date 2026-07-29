@@ -73,7 +73,7 @@ export const INITIAL_AUTOMATION = {
 };
 
 const state = {
-  /* Operational records are always stored in Supabase. */
+  /* Operational records are always stored server-side. */
   storage: "cloud",
   workspace: { status: "loading", message: "" },
   connection: { ok: true, message: "" },
@@ -91,7 +91,7 @@ const state = {
       research: false,
       mcp: false,
     },
-    outlook: { configured: false, connected: false, signed_in: false, missing: [], account: "", can_read_mail: false },
+    outlook: { configured: false, connected: false, missing: [], account: "", can_read_mail: false },
     hosting: { configured: false, domain: "demos.conno.fun", missing: ["DEMO_SITES"] },
   },
   user: null,

@@ -1,13 +1,12 @@
 /**
  * R2-backed public demo hosting.
  *
- * Publishing is authenticated with the user's Supabase access token. Files are
- * written under an immutable version prefix, then one small `current.json`
+ * Publishing is authenticated once by Cloudflare Access. Files are written
+ * under an immutable version prefix, then one small `current.json`
  * pointer is swapped last. Public reads therefore see either the old complete
  * version or the new complete version, never a half-uploaded bundle.
  */
-import { authenticatedSupabaseUser } from "./outlook.js";
-import { SUPABASE } from "./upstreams.js";
+import { workspaceAdmin } from "./workspace.js";
 
 const MAX_BUNDLE_BYTES = 45 * 1024 * 1024;
 const SECURITY_HEADERS = Object.freeze({
@@ -22,10 +21,6 @@ function json(body, status = 200) {
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
-}
-
-function bearerToken(request) {
-  return (request.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
 }
 
 function safePath(value) {
@@ -50,26 +45,15 @@ function contentType(path, fallback = "") {
   return "application/octet-stream";
 }
 
-async function userOwnsDemo(request, demoId, publicNumber) {
-  const user = await authenticatedSupabaseUser(request);
-  const token = bearerToken(request);
-  if (!user || !token) return false;
-
-  const url = new URL(`${SUPABASE.rest}/demos`);
-  url.searchParams.set("id", `eq.${demoId}`);
-  url.searchParams.set("public_number", `eq.${publicNumber}`);
-  url.searchParams.set("select", "id");
-  url.searchParams.set("limit", "1");
-  const response = await fetch(url, {
-    headers: {
-      apikey: SUPABASE.publishableKey,
-      authorization: `Bearer ${token}`,
-      accept: "application/json",
-    },
-  });
-  if (!response.ok) return false;
-  const rows = await response.json().catch(() => []);
-  return Array.isArray(rows) && rows.length === 1;
+async function workspaceOwnsDemo(workspace, demoId, publicNumber) {
+  const { data, error } = await workspace.client
+    .from("demos")
+    .select("id")
+    .eq("id", demoId)
+    .eq("public_number", publicNumber)
+    .eq("user_id", workspace.id)
+    .maybeSingle();
+  return !error && Boolean(data?.id);
 }
 
 export function demoHostingStatus(env) {
@@ -88,6 +72,8 @@ export async function handleDemoPublish(request, env) {
       message: "DEMO_SITES is not bound. Create the R2 bucket and deploy the Worker again.",
     }, 503);
   }
+  const workspace = workspaceAdmin(env);
+  if (workspace.error) return workspace.error;
 
   const type = request.headers.get("content-type") || "";
   if (!type.startsWith("multipart/form-data")) {
@@ -100,8 +86,8 @@ export async function handleDemoPublish(request, env) {
   if (!/^[0-9a-f-]{36}$/i.test(demoId) || !/^[1-9]\d*$/.test(publicNumber)) {
     return json({ error: "invalid_request", message: "A valid demo id and public number are required." }, 400);
   }
-  if (!(await userOwnsDemo(request, demoId, publicNumber))) {
-    return json({ error: "forbidden", message: "That demo does not belong to the signed-in workspace." }, 403);
+  if (!(await workspaceOwnsDemo(workspace, demoId, publicNumber))) {
+    return json({ error: "forbidden", message: "That demo does not belong to the Operations workspace." }, 403);
   }
 
   const files = [];

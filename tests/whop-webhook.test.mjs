@@ -7,8 +7,8 @@ import { handleWhopWebhook } from "../worker/whop.js";
 const SECRET = "whsec_dGVzdC1zZWNyZXQ=";
 const ENV = {
   WHOP_WEBHOOK_SECRET: SECRET,
-  SUPABASE_SERVICE_ROLE_KEY: "service-role-test",
-  WHOP_OWNER_USER_ID: "11111111-1111-4111-8111-111111111111",
+  SUPABASE_SECRET_KEY: "secret-key-test",
+  OPERATIONS_WORKSPACE_ID: "11111111-1111-4111-8111-111111111111",
 };
 
 function toBase64(bytes) {
@@ -60,9 +60,9 @@ test("a valid signed Whop event is normalized and sent only to the server-side R
   assert.equal(response.status, 200);
   assert.equal((await response.json()).payment_id, "pay-row");
   assert.match(request.url, /\/rpc\/ingest_whop_webhook$/);
-  assert.equal(request.init.headers.apikey, ENV.SUPABASE_SERVICE_ROLE_KEY);
+  assert.equal(request.init.headers.apikey, ENV.SUPABASE_SECRET_KEY);
   const payload = JSON.parse(request.init.body);
-  assert.equal(payload.p_user_id, ENV.WHOP_OWNER_USER_ID);
+  assert.equal(payload.p_user_id, ENV.OPERATIONS_WORKSPACE_ID);
   assert.equal(payload.p_payment.external_transaction_id, "whop-payment-1");
   assert.equal(payload.p_payment.status, "paid");
 });

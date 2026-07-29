@@ -25,9 +25,9 @@ function workerHasKey(provider) {
   return getState().services?.providers?.[provider] === true;
 }
 
-/** The Outlook detail block from /api/status: configured, signed_in, connected. */
+/** The Outlook detail block from /api/status: configured and connected. */
 export function outlookState() {
-  return getState().services?.outlook || { configured: false, connected: false, signed_in: false, missing: [] };
+  return getState().services?.outlook || { configured: false, connected: false, missing: [] };
 }
 
 /**
@@ -41,7 +41,6 @@ export function outlookBlocker() {
     const missing = outlook.missing?.length ? ` Missing: ${outlook.missing.join(", ")}.` : "";
     return `Outlook is not configured on the Cloudflare Worker.${missing}`;
   }
-  if (!outlook.signed_in) return "Sign in to Supabase first — an Outlook mailbox is stored per signed-in user.";
   if (!outlook.connected) return "No Outlook mailbox is connected yet. Connect one from Integrations.";
   return "";
 }

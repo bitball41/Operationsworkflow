@@ -1,7 +1,7 @@
 /**
- * Entry point. The dashboard opens straight into the workspace — there is no
- * sign-in wall. Supabase is used when a session exists; otherwise everything
- * persists locally and a small warning appears in the sidebar.
+ * Entry point. Cloudflare Access is the only human authentication boundary.
+ * Once the page loads, the dashboard opens the server-side Operations workspace
+ * directly; there are no application accounts or browser database sessions.
  */
 import { bindBoardDrag, onChange, onClick, onSubmit } from "./actions.js";
 import { closePalette, isPaletteOpen, openPalette } from "./components/command-palette.js";
@@ -69,21 +69,9 @@ function renderWorkspaceGate() {
   document.getElementById("app").classList.add("app--auth");
 
   const waiting = workspace.status === "loading";
-  const signedOut = workspace.status === "signed_out";
-  const title = waiting ? "Opening workspace" : signedOut ? "Sign in to Operations" : "Supabase is unavailable";
+  const title = waiting ? "Opening workspace" : "Workspace is unavailable";
   const message = workspace.message || (waiting ? "Connecting to your workspace…" : "Try again.");
-  const body = signedOut ? `
-    <form class="stack--tight" data-form="sign-in">
-      <div class="field-grid">
-        <label class="field"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
-        <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" minlength="8" required></label>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn--primary" type="submit">Sign in</button>
-        <button class="btn" type="button" data-action="sign-up">Create account</button>
-      </div>
-    </form>
-  ` : waiting
+  const body = waiting
     ? '<div class="faint">Connecting securely…</div>'
     : '<div class="btn-row"><button class="btn btn--primary" type="button" data-action="workspace-retry">Try again</button></div>';
 
@@ -199,8 +187,8 @@ async function init() {
   } catch (error) {
     console.error(error);
     setState({
-      workspace: { status: "error", message: error.message || "Could not load Supabase." },
-      connection: { ok: false, message: error.message || "Could not load Supabase." },
+      workspace: { status: "error", message: error.message || "Could not load the Operations workspace." },
+      connection: { ok: false, message: error.message || "Could not load the Operations workspace." },
     });
     render();
   }

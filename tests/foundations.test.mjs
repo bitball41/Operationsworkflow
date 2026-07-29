@@ -141,7 +141,12 @@ async function withFetch(handler, callback) {
 
 test("demo publishing swaps a complete R2 version onto its numbered public URL", async () => {
   const bucket = new FakeR2();
-  const env = { DEMO_SITES: bucket, DEMO_DOMAIN: "demos.conno.fun" };
+  const env = {
+    DEMO_SITES: bucket,
+    DEMO_DOMAIN: "demos.conno.fun",
+    OPERATIONS_WORKSPACE_ID: "2847b8e2-8a34-4a72-8e44-2cfc1be4255b",
+    SUPABASE_SECRET_KEY: "sb_secret_test",
+  };
   const form = new FormData();
   form.set("demo_id", "11111111-1111-4111-8111-111111111111");
   form.set("public_number", "41");
@@ -152,14 +157,12 @@ test("demo publishing swaps a complete R2 version onto its numbered public URL",
 
   const response = await withFetch(async (input) => {
     const url = String(input);
-    if (url.includes("/auth/v1/user")) {
-      return Response.json({ id: "22222222-2222-4222-8222-222222222222" });
+    if (url.includes("/rest/v1/demos")) {
+      return Response.json({ id: "11111111-1111-4111-8111-111111111111" });
     }
-    if (url.includes("/rest/v1/demos")) return Response.json([{ id: "11111111-1111-4111-8111-111111111111" }]);
     throw new Error(`Unexpected fetch: ${url}`);
   }, () => handleDemoPublish(new Request("https://operations.conno.fun/api/demos/publish", {
     method: "POST",
-    headers: { authorization: "Bearer supabase-token" },
     body: form,
   }), env));
 

@@ -1,11 +1,12 @@
 /**
  * Outlook OAuth and Microsoft Graph mail transport.
  *
- * Every mailbox connection belongs to a verified Supabase user. OAuth state
- * and encrypted refresh tokens live in the OUTLOOK_TOKENS KV binding; Microsoft
- * credentials and the encryption key remain Worker secrets.
+ * The installation has one mailbox connection for its one Operations
+ * workspace. Cloudflare Access authenticates the operator before these handlers
+ * run; OAuth state and encrypted refresh tokens live in OUTLOOK_TOKENS KV.
  */
-import { OUTLOOK, SUPABASE } from "./upstreams.js";
+import { OUTLOOK } from "./upstreams.js";
+import { operationsWorkspace } from "./workspace-identity.js";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -36,29 +37,6 @@ function missingConfiguration(env) {
 
 function tenant(env) {
   return String(env?.MICROSOFT_TENANT || "common").trim() || "common";
-}
-
-function bearerToken(request) {
-  const authorization = request.headers.get("authorization") || "";
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || "";
-}
-
-export async function authenticatedSupabaseUser(request) {
-  const token = bearerToken(request);
-  if (!token) return null;
-
-  const response = await fetch(SUPABASE.user, {
-    headers: {
-      apikey: SUPABASE.publishableKey,
-      authorization: `Bearer ${token}`,
-      accept: "application/json",
-    },
-  });
-  if (!response.ok) return null;
-
-  const user = await response.json().catch(() => null);
-  return user?.id ? user : null;
 }
 
 function base64(bytes) {
@@ -224,24 +202,22 @@ function hasScope(token, permission) {
 
 /**
  * Everything the dashboard needs to tell the three Outlook states apart:
- * the Worker is missing secrets, the Worker is ready but this user has not
+ * the Worker is missing secrets, the Worker is ready but this workspace has not
  * connected a mailbox, or the mailbox is connected. Previously all three
  * collapsed into a single `false`, so a working Worker still read as
  * "requires Microsoft OAuth secrets".
  */
 export async function outlookConnectionStatus(request, env) {
   const missing = missingConfiguration(env);
-  if (missing.length) return { configured: false, connected: false, missing, signed_in: false };
+  const workspace = operationsWorkspace(env);
+  if (!workspace) missing.push("OPERATIONS_WORKSPACE_ID");
+  if (missing.length) return { configured: false, connected: false, missing };
 
-  const user = await authenticatedSupabaseUser(request).catch(() => null);
-  if (!user) return { configured: true, connected: false, missing: [], signed_in: false };
-
-  const token = await loadToken(env, user.id).catch(() => null);
+  const token = await loadToken(env, workspace.id).catch(() => null);
   return {
     configured: true,
     connected: Boolean(token?.refresh_token),
     missing: [],
-    signed_in: true,
     account: token?.account || "",
     can_read_mail: Boolean(token?.refresh_token) && hasScope(token, "Mail.Read"),
   };
@@ -249,6 +225,8 @@ export async function outlookConnectionStatus(request, env) {
 
 export async function handleOutlookConnect(request, env) {
   const missing = missingConfiguration(env);
+  const workspace = operationsWorkspace(env);
+  if (!workspace) missing.push("OPERATIONS_WORKSPACE_ID");
   if (missing.length) {
     return json({
       error: "not_connected",
@@ -257,19 +235,11 @@ export async function handleOutlookConnect(request, env) {
     }, 503);
   }
 
-  const user = await authenticatedSupabaseUser(request);
-  if (!user) {
-    return json({
-      error: "unauthorized",
-      message: "Sign in to Supabase before connecting Outlook.",
-    }, 401);
-  }
-
   const state = randomValue(32);
   const codeVerifier = randomValue(64);
   const redirectUri = callbackUri(request);
   await env.OUTLOOK_TOKENS.put(`${STATE_PREFIX}${state}`, JSON.stringify({
-    user_id: user.id,
+    workspace_id: workspace.id,
     code_verifier: codeVerifier,
     redirect_uri: redirectUri,
     created_at: new Date().toISOString(),
@@ -307,12 +277,12 @@ export async function handleOutlookCallback(request, env) {
 
   try {
     const state = JSON.parse(rawState);
-    if (!state.user_id || state.redirect_uri !== callbackUri(request)) {
+    if (!state.workspace_id || state.redirect_uri !== callbackUri(request)) {
       return appRedirect(request, "failed", "The Outlook connection request was invalid.");
     }
 
     const payload = await exchangeCode(env, state, code);
-    await saveToken(env, state.user_id, {
+    await saveToken(env, state.workspace_id, {
       access_token: payload.access_token,
       refresh_token: payload.refresh_token,
       expires_at: Date.now() + (Number(payload.expires_in) || 3600) * 1000,
@@ -332,9 +302,11 @@ export async function handleOutlookDisconnect(request, env) {
   if (missingConfiguration(env).length) {
     return json({ error: "not_connected", provider: "outlook", message: "Outlook is not configured." }, 503);
   }
-  const user = await authenticatedSupabaseUser(request);
-  if (!user) return json({ error: "unauthorized", message: "Sign in before disconnecting Outlook." }, 401);
-  await env.OUTLOOK_TOKENS.delete(`${TOKEN_PREFIX}${user.id}`);
+  const workspace = operationsWorkspace(env);
+  if (!workspace) {
+    return json({ error: "not_connected", provider: "outlook", message: "The Operations workspace id is not configured." }, 503);
+  }
+  await env.OUTLOOK_TOKENS.delete(`${TOKEN_PREFIX}${workspace.id}`);
   return json({ disconnected: true });
 }
 
@@ -348,12 +320,14 @@ function recipientList(value) {
 }
 
 /**
- * Resolves the caller to a mailbox, or to the response that explains why there
+ * Resolves the workspace to a mailbox, or to the response that explains why there
  * isn't one. Every Graph-backed route starts here so "not configured", "not
  * signed in" and "not connected" always come back with the same shape.
  */
 async function mailboxContext(request, env) {
   const missing = missingConfiguration(env);
+  const workspace = operationsWorkspace(env);
+  if (!workspace) missing.push("OPERATIONS_WORKSPACE_ID");
   if (missing.length) {
     return {
       error: json({
@@ -364,14 +338,9 @@ async function mailboxContext(request, env) {
     };
   }
 
-  const user = await authenticatedSupabaseUser(request);
-  if (!user) {
-    return { error: json({ error: "unauthorized", message: "Sign in to Supabase before using Outlook." }, 401) };
-  }
-
   let token;
   try {
-    token = await usableToken(env, user.id);
+    token = await usableToken(env, workspace.id);
   } catch (error) {
     return { error: json({ error: "not_connected", provider: "outlook", message: error.message }, 503) };
   }
@@ -384,7 +353,7 @@ async function mailboxContext(request, env) {
       }, 503),
     };
   }
-  return { user, token };
+  return { workspace, token };
 }
 
 /**
@@ -408,7 +377,7 @@ async function graph(env, context, url, init = {}) {
   if (response.status === 401) {
     /* A refresh that fails means the grant is gone, not that Graph is broken;
        the caller turns that into "reconnect Outlook" rather than a 502. */
-    const refreshed = await usableToken(env, context.user.id, { forceRefresh: true }).catch(() => null);
+    const refreshed = await usableToken(env, context.workspace.id, { forceRefresh: true }).catch(() => null);
     if (!refreshed) return response;
     context.token = refreshed;
     response = await call(refreshed.access_token);

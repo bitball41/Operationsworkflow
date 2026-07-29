@@ -11,9 +11,11 @@ These classic browser modules were copied from `bitball41/openscout` at commit
 | `storage.js` | `js/storage.js` |
 | `google-places.js` | `js/googlePlaces.js` |
 
-The copied engine retains OpenScout's global `window.OpenScout` API. The only
-engine patch is the `radiusKm` search option in `google-places.js`, bounded to
-1–80 km before OpenScout calculates the tile bounds.
+The copied engine retains OpenScout's global `window.OpenScout` API. Local
+searches use the `radiusKm` option in `google-places.js`, bounded to 1–80 km
+before OpenScout calculates the tile bounds. A geocoded state or region uses
+Google's full viewport instead; clamping a whole state to the local radius would
+search only its geographic center and can scan zero businesses.
 
 `adapter.js` is Operations Workflow code. It calls the engine and converts its
 results into normalized dashboard leads while retaining source metadata. It

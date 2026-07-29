@@ -1,8 +1,4 @@
 export const CONFIG = Object.freeze({
-  supabaseUrl: "https://yswxdsagoywzevwgarbf.supabase.co",
-  supabasePublishableKey: "sb_publishable_Ah6QGx7Tpr-rBvaa4cQcPw_7djryJ9K",
-  supabaseJsVersion: "2.110.8",
-  storageBucket: "demo-assets",
   defaultRoute: "home",
   owner: "Connor",
   defaultPrice: 500,
@@ -120,7 +116,7 @@ export const REPLY_CLASSIFICATIONS = Object.freeze([
 ]);
 
 export const INTEGRATIONS = Object.freeze([
-  { provider: "supabase", name: "Supabase", detail: "Database, storage and realtime sync", status: "connected", manage: "settings" },
+  { provider: "supabase", name: "Workspace database", detail: "Server-side records and private assets behind Cloudflare Access", status: "connected", manage: "settings" },
   { provider: "openscout", name: "OpenScout", detail: "Google Places lead discovery engine", status: "connected", manage: "discovery" },
   { provider: "outlook", name: "Outlook", detail: "Sends outreach through Microsoft Graph", status: "not_connected" },
   { provider: "cloudflare", name: "Cloudflare", detail: "Publishes demos and client sites", status: "not_connected" },

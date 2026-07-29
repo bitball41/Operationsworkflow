@@ -1,9 +1,15 @@
 import { CONFIG } from "../config.js";
 import { DEFAULT_EFFORT, DEFAULT_MODEL_ID } from "../data/models.js";
 import { getState, resetData, setData, setState } from "../core/state.js";
-import { slugify } from "../core/utils.js";
 import { duplicateKey, toDiscoveryResult } from "./openscout/adapter.js";
-import { getSession, getSupabase, isConfigured } from "./supabase.js";
+import {
+  createWorkspaceRecords,
+  deleteWorkspaceRecord,
+  fetchWorkspace,
+  updateWorkspaceProfile,
+  updateWorkspaceRecord,
+  uploadWorkspaceAsset,
+} from "./api.js";
 
 
 export const COLLECTIONS = Object.freeze({
@@ -78,12 +84,6 @@ const ORDER_BY = Object.freeze({
 
 const COLLECTION_KEYS = Object.keys(COLLECTIONS);
 
-function userId() {
-  const id = getState().user?.id;
-  if (!id) throw new Error("Sign in to Supabase before changing the workspace.");
-  return id;
-}
-
 /* Node-only fixtures use transient memory records. This is never enabled by
    the dashboard and never writes browser storage. */
 function usesTestMemory() {
@@ -117,6 +117,10 @@ export function clearLocalWorkspace() {
     globalThis.localStorage?.removeItem("operations.automation");
     globalThis.localStorage?.removeItem("openscout.googleMapsApiKey");
     globalThis.localStorage?.removeItem("openscout.lastLocationGuess");
+    for (let index = globalThis.localStorage?.length - 1; index >= 0; index -= 1) {
+      const key = globalThis.localStorage?.key(index);
+      if (/^sb-.*-auth-token$/i.test(String(key || ""))) globalThis.localStorage?.removeItem(key);
+    }
   } catch {
     /* Storage can be disabled. There is still no browser data fallback. */
   }
@@ -125,111 +129,44 @@ export function clearLocalWorkspace() {
 /* ---------- boot ---------- */
 
 /**
- * Opens the workspace exclusively from Supabase. Missing credentials or a
- * database failure is a hard gate; records never fall back to the browser.
+ * Opens the one Operations workspace through the same-origin Worker. Cloudflare
+ * Access has already authenticated the request before this code can load.
  */
 export async function initWorkspace() {
   clearLocalWorkspace();
-  if (!isConfigured()) {
-    setState({
-      user: null,
-      workspace: { status: "error", message: "Supabase is not configured for this deployment." },
-      connection: { ok: false, message: "Supabase is not configured." },
-    }, { silent: true });
-    return "error";
-  }
-
-  let session = null;
   try {
-    session = await getSession();
-  } catch (error) {
-    resetData();
+    const snapshot = await fetchWorkspace();
+    await loadCloudWorkspace(snapshot);
     setState({
-      user: null,
-      workspace: { status: "error", message: "Could not reach Supabase. Check your connection and try again." },
-      connection: { ok: false, message: error?.message || "Could not reach Supabase." },
-    }, { silent: true });
-    return "error";
-  }
-
-  if (!session?.user) {
-    resetData();
-    setState({
-      user: null,
       storage: "cloud",
-      workspace: { status: "signed_out", message: "Sign in to open your Operations workspace." },
+      user: snapshot.workspace || { name: "Operations" },
+      workspace: { status: "ready", message: "" },
       connection: { ok: true, message: "" },
     }, { silent: true });
-    return "signed_out";
-  }
-
-  setState({ storage: "cloud", user: session.user }, { silent: true });
-  try {
-    await loadCloudWorkspace(session.user);
-    setState({ workspace: { status: "ready", message: "" } }, { silent: true });
     return "cloud";
   } catch (error) {
     console.error(error);
     resetData();
     setState({
-      workspace: { status: "error", message: "Your Supabase workspace could not be loaded. No local copy was used." },
-      connection: { ok: false, message: error?.message || "Could not load Supabase." },
+      user: null,
+      workspace: { status: "error", message: "The Operations workspace could not be loaded. No browser copy was used." },
+      connection: { ok: false, message: error?.message || "Could not reach the workspace service." },
     }, { silent: true });
     return "error";
   }
-
-}
-
-async function fetchCollection(client, key) {
-  const [column, ascending] = ORDER_BY[key];
-  const limit = ["agentEvents", "activity", "emails", "discoveryResults"].includes(key) ? 500 : 750;
-  const { data, error } = await client
-    .from(COLLECTIONS[key])
-    .select("*")
-    .order(column, { ascending, nullsFirst: false })
-    .limit(limit);
-  if (error) throw error;
-  return data || [];
-}
-
-async function ensureProfile(client, user) {
-  const fullName = user.user_metadata?.full_name || user.email?.split("@")[0] || CONFIG.owner;
-  const { data, error } = await client
-    .from("profiles")
-    .upsert({ id: user.id, full_name: fullName }, { onConflict: "id" })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
 }
 
 /**
- * Reads the whole workspace from Supabase.
- *
- * Every required collection must load. A missing migration or policy failure
- * keeps the dashboard behind the Supabase error gate rather than rendering a
- * partial operational workspace.
+ * Applies an atomic server snapshot. The Worker owns the database credential;
+ * this browser only receives rows belonging to the configured workspace.
  */
-export async function loadCloudWorkspace(user = getState().user) {
-  const client = await getSupabase();
-  const [profile, ...collections] = await Promise.allSettled([
-    ensureProfile(client, user),
-    ...COLLECTION_KEYS.map((key) => fetchCollection(client, key)),
-  ]);
-
-  if (profile.status === "rejected") throw profile.reason;
-
-  const next = { profile: profile.value };
+export async function loadCloudWorkspace(snapshot = null) {
+  const source = snapshot || await fetchWorkspace();
+  const next = { profile: source.profile || null };
   const failed = [];
-  COLLECTION_KEYS.forEach((key, index) => {
-    const result = collections[index];
-    if (result.status === "fulfilled") {
-      next[key] = result.value;
-      return;
-    }
-    failed.push(COLLECTIONS[key]);
-    next[key] = [];
-    console.error(`Could not read ${COLLECTIONS[key]}`, result.reason);
+  COLLECTION_KEYS.forEach((key) => {
+    if (!Array.isArray(source[key])) failed.push(COLLECTIONS[key]);
+    next[key] = Array.isArray(source[key]) ? [...source[key]].sort(compare(key)) : [];
   });
 
   if (failed.length) {
@@ -237,6 +174,7 @@ export async function loadCloudWorkspace(user = getState().user) {
   }
 
   setData(next);
+  if (source.workspace) setState({ user: source.workspace }, { silent: true });
   setState({ connection: { ok: true, message: "" } }, { silent: true });
   return next;
 }
@@ -266,12 +204,9 @@ export async function createRecords(collection, values) {
     setData({ [collection]: [...records, ...getState().data[collection]] });
     return records;
   }
-  const client = await getSupabase();
-  const payload = values.map((value) => ({ ...value, user_id: userId() }));
-  const { data, error } = await client.from(COLLECTIONS[collection]).insert(payload).select();
-  if (error) throw error;
-  setData({ [collection]: [...(data || []), ...getState().data[collection]] });
-  return data || [];
+  const data = await createWorkspaceRecords(collection, values);
+  setData({ [collection]: [...data, ...getState().data[collection]].sort(compare(collection)) });
+  return data;
 }
 
 export async function updateRecord(collection, id, patch) {
@@ -285,14 +220,7 @@ export async function updateRecord(collection, id, patch) {
     setData({ [collection]: next });
     return updated;
   }
-  const client = await getSupabase();
-  const { data, error } = await client
-    .from(COLLECTIONS[collection])
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw error;
+  const data = await updateWorkspaceRecord(collection, id, patch);
   setData({ [collection]: getState().data[collection].map((item) => (String(item.id) === String(id) ? data : item)) });
   return data;
 }
@@ -302,9 +230,7 @@ export async function deleteRecord(collection, id) {
     setData({ [collection]: getState().data[collection].filter((item) => String(item.id) !== String(id)) });
     return;
   }
-  const client = await getSupabase();
-  const { error } = await client.from(COLLECTIONS[collection]).delete().eq("id", id);
-  if (error) throw error;
+  await deleteWorkspaceRecord(collection, id);
   setData({ [collection]: getState().data[collection].filter((item) => String(item.id) !== String(id)) });
 }
 
@@ -336,14 +262,7 @@ export async function savePreferences(patch) {
   if (usesTestMemory()) {
     setData({ profile: { ...(getState().data.profile || { id: "test-owner", full_name: CONFIG.owner }), preferences: merged } });
   } else {
-    const client = await getSupabase();
-    const { data, error } = await client
-      .from("profiles")
-      .update({ preferences: merged })
-      .eq("id", userId())
-      .select()
-      .single();
-    if (error) throw error;
+    const data = await updateWorkspaceProfile({ preferences: merged });
     setData({ profile: data });
   }
 
@@ -397,6 +316,7 @@ export async function completeDiscoveryRun(runId, result) {
       estimatedAccuracy: result.estimatedAccuracy,
       verified: result.verified,
       radiusKm: result.radiusKm,
+      searchScope: result.searchScope || "local",
     },
     completed_at: new Date().toISOString(),
   });
@@ -482,52 +402,36 @@ export async function rejectDiscoveryCandidates(resultIds, reason = "Rejected") 
 
 export async function uploadDemoAsset(demoId, file) {
   const versionNumber = getState().data.demoVersions.filter((item) => item.demo_id === demoId).length + 1;
-  const client = await getSupabase();
-  const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
-  const path = `${userId()}/demos/${demoId}/v${versionNumber}-${slugify(file.name.replace(/\.[^.]+$/, ""))}.${extension}`;
-  const { error } = await client.storage.from(CONFIG.storageBucket).upload(path, file, { upsert: false, cacheControl: "3600" });
-  if (error) throw error;
+  const asset = await uploadWorkspaceAsset({
+    scope: "demo",
+    entityId: demoId,
+    version: versionNumber,
+    file,
+  });
 
   const current = getState().data.demoVersions.filter((item) => item.demo_id === demoId && item.is_current);
   await Promise.all(current.map((item) => updateRecord("demoVersions", item.id, { is_current: false })));
   return createRecord("demoVersions", {
     demo_id: demoId,
     version_number: versionNumber,
-    storage_path: path,
+    storage_path: asset.storage_path,
     change_summary: `Uploaded ${file.name}`,
     is_current: true,
   });
 }
 
-/* ---------- realtime ---------- */
-
-let channel = null;
+/* ---------- refresh ---------- */
 
 export function subscribeToWorkspaceChanges(onChange) {
-  const id = userId();
-  let cancelled = false;
-  getSupabase().then((client) => {
-    if (cancelled) return;
-    let next = client.channel(`operations-${id}`);
-    COLLECTION_KEYS.forEach((key) => {
-      next = next.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: COLLECTIONS[key],
-          filter: `user_id=eq.${id}`,
-        },
-        onChange,
-      );
-    });
-    channel = next.subscribe();
-  }).catch((error) => console.warn("Realtime unavailable", error));
-
+  const refresh = () => {
+    if (!globalThis.document || globalThis.document.visibilityState === "visible") onChange();
+  };
+  const timer = globalThis.setInterval?.(refresh, 30_000);
+  globalThis.addEventListener?.("focus", refresh);
+  globalThis.document?.addEventListener?.("visibilitychange", refresh);
   return () => {
-    cancelled = true;
-    if (!channel) return;
-    getSupabase().then((client) => client.removeChannel(channel)).catch(() => {});
-    channel = null;
+    if (timer) globalThis.clearInterval?.(timer);
+    globalThis.removeEventListener?.("focus", refresh);
+    globalThis.document?.removeEventListener?.("visibilitychange", refresh);
   };
 }
