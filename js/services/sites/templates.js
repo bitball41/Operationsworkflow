@@ -2,14 +2,18 @@
  * User-owned site templates.
  *
  * Source files stay as text on the template record. Binary assets are uploaded
- * unchanged to Supabase Storage and referenced through a small manifest; they
+ * unchanged through the workspace Worker and referenced through a small manifest; they
  * are never converted to base64 or compressed by this application.
  */
-import { CONFIG } from "../../config.js";
 import { getState } from "../../core/state.js";
 import { slugify } from "../../core/utils.js";
+import {
+  deleteWorkspaceAssets,
+  downloadWorkspaceAsset,
+  signWorkspaceAssetUrls,
+  uploadWorkspaceAsset,
+} from "../api.js";
 import { createRecord, deleteRecord, updateRecord } from "../data.js";
-import { getSupabase } from "../supabase.js";
 
 const SOURCE_LIMIT = 1_000_000;
 const ASSET_LIMIT = 15 * 1024 * 1024;
@@ -74,35 +78,29 @@ function validateAssets(assets) {
 async function uploadAssets(templateId, assets) {
   if (!assets.length) return [];
   if (getState().storage !== "cloud") {
-    throw new Error("Sign in to Supabase before uploading template images.");
+    throw new Error("The workspace asset service is unavailable.");
   }
 
-  const client = await getSupabase();
-  const prefix = `${getState().user.id}/templates/${templateId}/assets`;
   const uploaded = [];
 
   try {
     for (const file of assets) {
       const name = safeAssetName(file.name);
-      const storagePath = `${prefix}/${name}`;
-      const { error } = await client.storage.from(CONFIG.storageBucket).upload(storagePath, file, {
-        upsert: false,
-        cacheControl: "31536000",
-        contentType: file.type,
+      const asset = await uploadWorkspaceAsset({
+        scope: "template",
+        entityId: templateId,
+        file: new File([file], name, { type: file.type }),
       });
-      if (error) throw error;
       uploaded.push({
+        ...asset,
         name,
         path: `assets/${name}`,
-        storage_path: storagePath,
-        content_type: file.type,
-        size: file.size,
       });
     }
     return uploaded;
   } catch (error) {
     if (uploaded.length) {
-      await client.storage.from(CONFIG.storageBucket).remove(uploaded.map((asset) => asset.storage_path)).catch(() => {});
+      await deleteWorkspaceAssets(uploaded.map((asset) => asset.storage_path)).catch(() => {});
     }
     throw error;
   }
@@ -149,9 +147,7 @@ export async function deleteCustomTemplate(template) {
   }
   const paths = (template.asset_manifest || []).map((asset) => asset.storage_path).filter(Boolean);
   if (paths.length && getState().storage === "cloud") {
-    const client = await getSupabase();
-    const { error } = await client.storage.from(CONFIG.storageBucket).remove(paths);
-    if (error) throw error;
+    await deleteWorkspaceAssets(paths);
   }
   await deleteRecord("templates", template.id);
 }
@@ -164,12 +160,9 @@ export async function filesForTemplatePreview(template, files) {
   const manifest = template?.asset_manifest || [];
   if (!manifest.length || getState().storage !== "cloud") return { ...files };
 
-  const client = await getSupabase();
   const paths = manifest.map((asset) => asset.storage_path);
-  const { data, error } = await client.storage.from(CONFIG.storageBucket).createSignedUrls(paths, 60 * 60);
-  if (error) throw error;
-
-  const signedByPath = new Map((data || []).map((entry) => [entry.path, entry.signedUrl]));
+  const urls = await signWorkspaceAssetUrls(paths);
+  const signedByPath = new Map(urls.map((entry) => [entry.path, entry.signedUrl]));
   const resolved = { ...files };
   for (const asset of manifest) {
     const signed = signedByPath.get(asset.storage_path);
@@ -186,13 +179,11 @@ export async function filesForTemplatePreview(template, files) {
 /** Downloads original bytes for R2 deployment. */
 export async function downloadTemplateAssets(manifest = []) {
   if (!manifest.length) return [];
-  if (getState().storage !== "cloud") throw new Error("Template assets are not available outside the Supabase workspace.");
-  const client = await getSupabase();
+  if (getState().storage !== "cloud") throw new Error("Template assets are not available outside the workspace.");
   const assets = [];
   for (const item of manifest) {
-    const { data, error } = await client.storage.from(CONFIG.storageBucket).download(item.storage_path);
-    if (error) throw error;
-    assets.push({ path: item.path, blob: data, contentType: item.content_type || data.type || "application/octet-stream" });
+    const blob = await downloadWorkspaceAsset(item.storage_path);
+    assets.push({ path: item.path, blob, contentType: item.content_type || blob.type || "application/octet-stream" });
   }
   return assets;
 }

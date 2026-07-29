@@ -1,5 +1,6 @@
 import { toPaymentRecord } from "../js/services/payments/normalize.js";
 import { SUPABASE } from "./upstreams.js";
+import { operationsWorkspaceId } from "./workspace-identity.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 const PAYMENT_EVENTS = new Set([
@@ -96,11 +97,12 @@ async function payloadHash(rawBody) {
 }
 
 async function ingest(env, payload) {
+  const key = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
   const response = await fetch(`${SUPABASE.rest}/rpc/ingest_whop_webhook`, {
     method: "POST",
     headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: key,
+      authorization: `Bearer ${key}`,
       "content-type": "application/json",
       prefer: "return=representation",
     },
@@ -114,7 +116,11 @@ async function ingest(env, payload) {
 }
 
 function configured(env) {
-  return Boolean(env?.WHOP_WEBHOOK_SECRET && env?.SUPABASE_SERVICE_ROLE_KEY && env?.WHOP_OWNER_USER_ID);
+  return Boolean(
+    env?.WHOP_WEBHOOK_SECRET
+    && (env?.SUPABASE_SECRET_KEY || env?.SUPABASE_SERVICE_ROLE_KEY)
+    && operationsWorkspaceId(env),
+  );
 }
 
 export async function handleWhopWebhook(request, env) {
@@ -152,7 +158,7 @@ export async function handleWhopWebhook(request, env) {
     const result = await ingest(env, {
       p_event_id: id,
       p_event_type: type,
-      p_user_id: env.WHOP_OWNER_USER_ID,
+      p_user_id: operationsWorkspaceId(env),
       p_payload_hash: await payloadHash(rawBody),
       p_payment: payment,
     });

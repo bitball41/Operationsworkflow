@@ -7,7 +7,6 @@
  * http.server`, a file:// preview — `/api/status` simply 404s and every
  * provider stays "not connected", which the rest of the app already handles.
  */
-import { getSession, hasStoredSession } from "./supabase.js";
 
 export const API_BASE = "/api";
 
@@ -36,7 +35,7 @@ const EMPTY_STATUS = Object.freeze({
     mcp: false,
   }),
   /* Why Outlook is unusable, when it is. See handleStatus in worker/index.js. */
-  outlook: Object.freeze({ configured: false, connected: false, signed_in: false, missing: [], account: "", can_read_mail: false }),
+  outlook: Object.freeze({ configured: false, connected: false, missing: [], account: "", can_read_mail: false }),
   hosting: Object.freeze({ configured: false, domain: "demos.conno.fun", missing: ["DEMO_SITES"] }),
 });
 
@@ -50,30 +49,16 @@ export class ApiError extends Error {
   }
 }
 
-async function sessionAuthorization(required) {
-  if (!hasStoredSession()) {
-    if (required) throw new ApiError("Sign in to Supabase before using this feature.", { status: 401 });
-    return "";
-  }
-  const session = await getSession().catch(() => null);
-  if (!session?.access_token && required) {
-    throw new ApiError("Your Supabase session expired. Sign in again before continuing.", { status: 401 });
-  }
-  return session?.access_token ? `Bearer ${session.access_token}` : "";
-}
-
-async function request(path, { method = "GET", body, signal, auth = false, optionalAuth = false } = {}) {
+async function request(path, { method = "GET", body, form, signal } = {}) {
   let response;
   try {
-    const authorization = auth || optionalAuth ? await sessionAuthorization(auth) : "";
     const headers = {};
     if (body) headers["content-type"] = "application/json";
-    if (authorization) headers.authorization = authorization;
     response = await fetch(`${API_BASE}${path}`, {
       method,
       signal,
       headers: Object.keys(headers).length ? headers : undefined,
-      body: body ? JSON.stringify(body) : undefined,
+      body: form || (body ? JSON.stringify(body) : undefined),
     });
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -105,7 +90,7 @@ async function request(path, { method = "GET", body, signal, auth = false, optio
  */
 export async function fetchServiceStatus() {
   try {
-    const data = await request("/status", { optionalAuth: true });
+    const data = await request("/status");
     const providers = {};
     for (const name of WORKER_PROVIDERS) providers[name] = data?.providers?.[name] === true;
     return {
@@ -129,6 +114,70 @@ export function emptyServiceStatus() {
   };
 }
 
+/* ---------- Cloudflare Access workspace ---------- */
+
+export async function fetchWorkspace() {
+  return request("/workspace");
+}
+
+export async function createWorkspaceRecords(collection, records) {
+  const data = await request(`/workspace/records/${encodeURIComponent(collection)}`, {
+    method: "POST",
+    body: { records },
+  });
+  return Array.isArray(data?.records) ? data.records : [];
+}
+
+export async function updateWorkspaceRecord(collection, id, patch) {
+  const data = await request(`/workspace/records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: patch,
+  });
+  return data?.record || null;
+}
+
+export async function deleteWorkspaceRecord(collection, id) {
+  return request(`/workspace/records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateWorkspaceProfile(patch) {
+  const data = await request("/workspace/profile", { method: "PATCH", body: patch });
+  return data?.profile || null;
+}
+
+export async function uploadWorkspaceAsset({ scope, entityId, version = 1, file }) {
+  const form = new FormData();
+  form.set("scope", scope);
+  form.set("entity_id", entityId);
+  form.set("version", String(version));
+  form.set("file", file, file.name);
+  const data = await request("/workspace/assets", { method: "POST", form });
+  return data?.asset || null;
+}
+
+export async function deleteWorkspaceAssets(paths) {
+  return request("/workspace/assets", { method: "DELETE", body: { paths } });
+}
+
+export async function signWorkspaceAssetUrls(paths) {
+  const data = await request("/workspace/assets/signed-urls", { method: "POST", body: { paths } });
+  return Array.isArray(data?.urls) ? data.urls : [];
+}
+
+export async function downloadWorkspaceAsset(path) {
+  const response = await fetch(`${API_BASE}/workspace/assets/download?${new URLSearchParams({ path })}`)
+    .catch((error) => {
+      throw new ApiError(`Could not reach the workspace asset service: ${error.message}`, { status: 0 });
+    });
+  if (response.ok) return response.blob();
+  const payload = await response.json().catch(() => ({}));
+  throw new ApiError(payload?.message || `The workspace asset service returned ${response.status}.`, {
+    status: response.status,
+  });
+}
+
 /**
  * The Google Maps browser key. It is public by nature — the Maps JavaScript SDK
  * runs in the page — so serving it from the Worker buys central management and
@@ -144,11 +193,11 @@ export async function searchPlaces(payload, { signal } = {}) {
 }
 
 export async function browserResearch(url, { signal } = {}) {
-  return request("/browser/research", { method: "POST", body: { url }, signal, auth: true });
+  return request("/browser/research", { method: "POST", body: { url }, signal });
 }
 
 export async function lookupBusinessEmail(payload, { signal } = {}) {
-  return request("/browser/contact-email", { method: "POST", body: payload, signal, auth: true });
+  return request("/browser/contact-email", { method: "POST", body: payload, signal });
 }
 
 export async function callAnthropic(payload, { signal } = {}) {
@@ -165,31 +214,30 @@ export async function whopGet(path, params = {}) {
 }
 
 export async function connectOutlook() {
-  const data = await request("/outlook/connect", { method: "POST", auth: true });
+  const data = await request("/outlook/connect", { method: "POST" });
   if (!data?.authorization_url) throw new ApiError("The Worker did not return an Outlook sign-in URL.");
   location.assign(data.authorization_url);
 }
 
 export async function disconnectOutlook() {
-  return request("/outlook/disconnect", { method: "POST", auth: true });
+  return request("/outlook/disconnect", { method: "POST" });
 }
 
 export async function sendOutlookEmail(payload) {
-  return request("/outlook/send", { method: "POST", body: payload, auth: true });
+  return request("/outlook/send", { method: "POST", body: payload });
 }
 
 export async function replyToOutlookMessage(payload) {
-  return request("/outlook/reply", { method: "POST", body: payload, auth: true });
+  return request("/outlook/reply", { method: "POST", body: payload });
 }
 
 export async function fetchOutlookMessages({ since = "", limit = 25 } = {}) {
   const query = new URLSearchParams({ limit: String(limit), ...(since ? { since } : {}) });
-  const data = await request(`/outlook/messages?${query}`, { auth: true });
+  const data = await request(`/outlook/messages?${query}`);
   return Array.isArray(data?.messages) ? data.messages : [];
 }
 
 export async function publishDemoBundle({ demoId, publicNumber, files, assets = [] }) {
-  const authorization = await sessionAuthorization(true);
   const form = new FormData();
   form.set("demo_id", String(demoId));
   form.set("public_number", String(publicNumber));
@@ -205,7 +253,6 @@ export async function publishDemoBundle({ demoId, publicNumber, files, assets = 
 
   const response = await fetch(`${API_BASE}/demos/publish`, {
     method: "POST",
-    headers: { authorization },
     body: form,
   }).catch((error) => {
     throw new ApiError(`Could not reach the demo publisher: ${error.message}`, { status: 0, provider: "cloudflare" });

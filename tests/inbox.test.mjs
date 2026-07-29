@@ -34,7 +34,7 @@ function workspace() {
 function connected({ providers = { outlook: true }, outlook = { can_read_mail: true } } = {}) {
   setState({
     storage: "local",
-    services: { reachable: true, providers: { ...providers }, outlook: { configured: true, connected: true, signed_in: true, missing: [], ...outlook } },
+    services: { reachable: true, providers: { ...providers }, outlook: { configured: true, connected: true, missing: [], ...outlook } },
   }, { silent: true });
 }
 
@@ -122,7 +122,7 @@ test("a send-only mailbox says so instead of failing silently", async () => {
 test("no Outlook connection means no inbox and no pretending", async () => {
   setData(workspace(), { silent: true });
   setState({
-    services: { reachable: true, providers: { outlook: false }, outlook: { configured: true, connected: false, signed_in: true, missing: [] } },
+    services: { reachable: true, providers: { outlook: false }, outlook: { configured: true, connected: false, missing: [] } },
   }, { silent: true });
 
   await assert.rejects(() => syncInbox(), /no outlook mailbox is connected/i);

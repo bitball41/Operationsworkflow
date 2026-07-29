@@ -55,8 +55,8 @@ export function recipientList(value) {
 }
 
 /**
- * The single place a real email leaves the system. The Worker verifies the
- * current Supabase session and owns the encrypted Microsoft OAuth tokens.
+ * The single place a real email leaves the system. Cloudflare Access protects
+ * the Worker, which owns the encrypted Microsoft OAuth tokens.
  *
  * Recipients are validated here rather than only in the Worker so a lead with
  * no email address is reported as a blocked step — the automation loop treats

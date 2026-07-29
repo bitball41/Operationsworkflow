@@ -6,7 +6,7 @@ follow the work through to a paid client — with automation doing the repetitiv
 part.
 
 It is one person's control centre, not a SaaS product. Plain HTML, CSS and
-JavaScript, no framework, no build step, no dependencies at runtime.
+JavaScript, with no browser framework or frontend build step.
 
 ## Running it
 
@@ -18,14 +18,16 @@ npx wrangler dev     # dashboard + the /api worker that holds the keys
 `python3 -m http.server 4173` still serves the dashboard, but without the worker
 there is no `/api`, so every key-backed feature reports itself as not connected.
 
-The dashboard requires a Supabase session before it opens. There is no sample
-data anywhere in the application, so every lead, email, number and statistic on
-screen comes from the database.
+Cloudflare Access is the only sign-in boundary. The application has no accounts,
+password form, sign-up flow, or browser-side Supabase session. After Access
+admits the request, the Worker opens the one configured Operations workspace.
+There is no sample data anywhere in the application, so every lead, email,
+number and statistic on screen comes from the database.
 The realistic workspace used to exercise the pages lives in
 `tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
 ```bash
-npm test   # 49 OpenScout engine tests + 124 application tests
+npm test   # OpenScout engine + application, Worker and security tests
 ```
 
 ## How it is put together
@@ -43,7 +45,7 @@ js/
   pages/         one module per area, each returning an HTML string
   services/
     api.js           client for the worker's /api routes
-    data.js          Supabase-only workspace storage
+    data.js          account-free workspace client
     operations.js    every business action, exactly once
     integrations.js  "is this service actually connected?"
     automation/      the batch engine
@@ -58,15 +60,22 @@ js/
 Pages render strings, `actions.js` mutates through `services/operations.js`, and
 state changes trigger a coalesced re-render. That is the whole architecture.
 
-## Data: Supabase only
+## Security and data
 
-`services/data.js` uses Supabase as the only source of operational records. A
-missing session, missing configuration, or failed database connection shows a
-sign-in/error gate instead of a workspace. Leads, payments, templates, demos,
-statistics, and assistant history are never cached, queued, or recovered from
-browser storage. On release, the legacy workspace keys are erased without being
-imported; only the Supabase auth session and UI preferences remain in the
-browser.
+`operations.conno.fun` is private behind Cloudflare Access. The Worker verifies
+the Access JWT signature, issuer, audience and expiry before it serves either
+the dashboard or a credential-backed API route. Merely sending an Access header
+is not enough.
+
+The browser talks only to same-origin `/api/workspace` routes. Supabase remains
+the database and private-asset store, but its secret key is held by the Worker
+and never reaches browser code. The deployment is configured with one neutral
+`OPERATIONS_WORKSPACE_ID`; it is not a user account.
+
+A failed Worker or database connection shows a retry gate, never an email and
+password form. Operational records are not cached, queued, or recovered from
+browser storage. Legacy workspace keys and obsolete Supabase auth tokens are
+erased without being imported.
 
 ## Automation
 
@@ -88,7 +97,7 @@ filters, follow-up cadence, pacing) live behind one disclosure with working
 defaults.
 
 **Outlook sends through Microsoft Graph.** The send step remains blocked until
-the signed-in Supabase user connects a Microsoft mailbox from Integrations.
+the Operations workspace connects a Microsoft mailbox from Integrations.
 Nothing is marked as sent unless Graph accepts the request.
 
 ## AI Assistant
@@ -148,7 +157,7 @@ With no key on the worker, anything that is not a known command is not answered
 — the assistant says so instead of inventing a reply.
 
 Conversation history is provider-neutral and persistent. Each conversation is
-saved in the owner-scoped `assistant_conversations` Supabase table,
+saved in the workspace-scoped `assistant_conversations` table,
 can be selected after a reload, and can be deleted from the assistant toolbar.
 Large tool payloads are trimmed before they enter the transcript.
 
@@ -184,8 +193,9 @@ wrong.
 
 The repo catalogue remains the fallback, but Templates now accepts a portable
 `index.html`, optional `style.css` and `script.js`, plus original PNG, JPEG,
-WebP, GIF, AVIF or SVG assets. Images are uploaded as their original bytes to a
-private Supabase Storage bucket — no base64 conversion and no recompression.
+WebP, GIF, AVIF or SVG assets. Images are uploaded through the Worker as their
+original bytes to a private Supabase Storage bucket — no base64 conversion and
+no recompression.
 Reference them as `assets/filename.png`; previewing resolves short-lived signed
 URLs and publishing copies the originals into the hosted bundle. Custom
 templates can be deleted when no demo still depends on them. Unsafe filename
@@ -201,8 +211,8 @@ for a provider.
 Publishing is backed by the Worker's `DEMO_SITES` R2 binding. Each publish
 uploads a versioned bundle and then atomically swaps `current.json`, so visitors
 never receive half of a deployment. The public URL is
-`https://demos.conno.fun/<client-number>/`; the Worker verifies the signed-in
-Supabase user owns the demo before accepting an upload.
+`https://demos.conno.fun/<client-number>/`; the Worker verifies that the demo
+belongs to the configured Operations workspace before accepting an upload.
 
 One-time Cloudflare setup:
 
@@ -296,14 +306,20 @@ adds the credential on the way out.
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put WHOP_WEBHOOK_SECRET
-npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-npx wrangler secret put WHOP_OWNER_USER_ID
+npx wrangler secret put SUPABASE_SECRET_KEY
 npx wrangler secret put GOOGLE_MAPS_API_KEY
 npx wrangler secret put MICROSOFT_CLIENT_ID
 npx wrangler secret put MICROSOFT_CLIENT_SECRET
 npx wrangler secret put OUTLOOK_TOKEN_ENCRYPTION_KEY
 npx wrangler secret put MCP_API_TOKEN
 ```
+
+`wrangler.jsonc` pins the non-secret workspace UUID, Cloudflare Access team
+domain, and application audience. It also disables `workers.dev` and preview
+URLs so the dashboard is not accidentally published on an unprotected hostname.
+Production requests fail closed if Access verification is missing or invalid.
+`ALLOW_LOCAL_DEVELOPMENT=true` bypasses Access only on `localhost`,
+`127.0.0.1`, or `::1`.
 
 Set `MICROSOFT_TENANT=common` in `.dev.vars` locally or as a non-secret Worker
 variable. The Entra app must register the exact production callback
@@ -312,8 +328,8 @@ variable. The Entra app must register the exact production callback
 write-only and the Inbox stays empty forever.
 
 `OUTLOOK_TOKENS` is a Workers KV binding declared in `wrangler.jsonc`; it holds
-one-time OAuth state and AES-GCM-encrypted tokens keyed by the verified Supabase
-user id. This repository is already bound to the existing
+one-time OAuth state and AES-GCM-encrypted tokens for the Operations workspace.
+This repository is already bound to the existing
 `operationsworkflow-outlook-tokens` namespace so unattended Git builds do not
 need a provisioning prompt. A deployment to another Cloudflare account must
 create its own namespace and replace the configured id:
@@ -332,13 +348,16 @@ actually reach it.
 
 | Route | Upstream |
 | --- | --- |
+| `GET /api/workspace` | atomic Operations workspace snapshot |
+| `POST/PATCH/DELETE /api/workspace/records/...` | workspace-scoped database changes |
+| `/api/workspace/assets...` | private storage upload, signing, download and delete |
 | `GET /api/status` | which providers have a key |
-| `POST /api/outlook/connect` | begin Microsoft OAuth for the signed-in user |
+| `POST /api/outlook/connect` | begin Microsoft OAuth for the workspace |
 | `GET /api/outlook/callback` | validate OAuth state and store encrypted tokens |
 | `POST /api/outlook/send` | send one message through Microsoft Graph |
 | `POST /api/outlook/reply` | reply inside an existing Outlook conversation |
 | `GET /api/outlook/messages` | recent inbox messages, newest first |
-| `POST /api/outlook/disconnect` | remove the signed-in user's Outlook tokens |
+| `POST /api/outlook/disconnect` | remove the workspace's Outlook tokens |
 | `GET /api/maps/key` | the Google Maps browser key |
 | `POST /api/maps/places/search-text` | Places API (New) |
 | `POST /api/browser/research` | authenticated public-page research through Browser Run |
@@ -357,25 +376,35 @@ migrations, tests and `.dev.vars` are excluded from the static assets in
 ## Supabase
 
 Migrations are in `supabase/migrations/` and are applied to the connected
-project. Browser-facing tables are owner-scoped with row-level security, and the
-browser only ever uses the publishable key.
+project. Apply `20260728221132_cloudflare_access_only_workspace.sql` before
+deploying this code. It creates `operations_workspaces`, preserves the existing
+workspace UUID and records, moves public foreign keys away from `auth.users`,
+removes browser grants and authenticated policies, and adds the atomic snapshot
+RPC used by the Worker.
 
-Signing in is mandatory. Outlook mailbox connections are stored against the
-verified Supabase user id, and all operational records stay owner-scoped in the
-database. A missing session or unreadable/missing table holds the dashboard at
-the sign-in/error gate. The app intentionally does not import legacy browser
-records or expose an upload/merge escape hatch.
+Supabase Auth is not used by the application. There is no publishable key in
+the browser and no direct Data API or Storage call from browser code. RLS stays
+enabled as defense in depth, while direct `anon` and `authenticated` grants are
+revoked. The Worker uses `SUPABASE_SECRET_KEY`; the legacy
+`SUPABASE_SERVICE_ROLE_KEY` name is accepted only as a deployment transition.
+
+Safe activation order:
+
+1. Keep the existing `SUPABASE_SERVICE_ROLE_KEY` in place for the transition,
+   or set the newer `SUPABASE_SECRET_KEY`.
+2. Deploy this Worker. Its temporary snapshot fallback supports the current
+   pre-migration schema.
+3. Apply `20260728221132_cloudflare_access_only_workspace.sql`.
+4. Verify workspace reads, one write, one private asset, and Outlook status.
+5. Remove dormant Supabase Auth users after that verification.
 
 The Whop receipt table is RLS-protected, has no browser grants, and can only be
 written through the service-role webhook RPC. The payments unique index keeps a
-Whop transaction id idempotent per workspace owner.
+Whop transaction id idempotent per workspace.
 
-Apply `20260727174211_complete_operations_foundations.sql` before deploying this
-code. It adds custom template files, stable numeric demo URLs, assistant
-conversations, explicit Data API grants, storage media types, owner policies
-and Realtime publication membership. Cloudflare Access protects the edge, but
-RLS remains enabled because the publishable Supabase key can also reach the Data
-API directly.
+After the migration and Worker deployment have been verified, old Supabase Auth
+users can be removed as separate cleanup. They are no longer referenced or
+required by Operations, but the migration deliberately does not delete them.
 
 ## Known limits
 

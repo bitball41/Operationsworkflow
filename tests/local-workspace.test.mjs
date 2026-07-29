@@ -6,11 +6,13 @@ globalThis.localStorage = {
   getItem(key) { return this.values.get(key) ?? null; },
   setItem(key, value) { this.values.set(key, String(value)); },
   removeItem(key) { this.values.delete(key); },
+  key(index) { return [...this.values.keys()][index] ?? null; },
+  get length() { return this.values.size; },
 };
 
 const { clearLocalWorkspace } = await import("../js/services/data.js");
 
-test("release clears legacy business records but retains Supabase auth and UI preferences", () => {
+test("release clears legacy business records and obsolete account sessions", () => {
   localStorage.setItem("operations.data.v2", JSON.stringify({ leads: [{ id: "old-lead" }] }));
   localStorage.setItem("operations.data.v2.cloud-signature", "old-signature");
   localStorage.setItem("operations.automation", JSON.stringify({ running: true }));
@@ -29,7 +31,7 @@ test("release clears legacy business records but retains Supabase auth and UI pr
     "openscout.lastLocationGuess",
   ]) assert.equal(localStorage.getItem(key), null, `${key} must be removed`);
 
-  assert.equal(localStorage.getItem("sb-yswxdsagoywzevwgarbf-auth-token"), "supabase-session");
+  assert.equal(localStorage.getItem("sb-yswxdsagoywzevwgarbf-auth-token"), null);
   assert.equal(localStorage.getItem("operations.navCollapsed"), "true");
 });
 

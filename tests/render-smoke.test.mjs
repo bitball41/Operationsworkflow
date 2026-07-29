@@ -217,6 +217,36 @@ test("assistant response text supports safe Markdown formatting", () => {
   }
 });
 
+test("an underfilled discovery stays visibly unfinished and returns to the agent", () => {
+  const previousAssistant = structuredClone(getState().assistant);
+  try {
+    setState({
+      assistant: {
+        ...previousAssistant,
+        messages: [{
+          id: "partial-discovery",
+          role: "tool",
+          tool: "discover_leads",
+          result: {
+            ok: true,
+            complete: false,
+            summary: "Saved 2 of 5 requested leads from 48 businesses scanned.",
+          },
+        }],
+      },
+    }, { silent: true });
+    const html = renderers.assistant();
+    assert.match(html, /Short of target/);
+    assert.doesNotMatch(html, />Completed</);
+
+    const actions = readFileSync(new URL("../js/actions.js", import.meta.url), "utf8");
+    assert.match(actions, /result\.complete === false && providerReady\(\)/);
+    assert.match(actions, /transcript: commandMessages/);
+  } finally {
+    setState({ assistant: previousAssistant }, { silent: true });
+  }
+});
+
 test("settings exposes all three AI permission modes", () => {
   setState({ route: "settings", routeParams: {} }, { silent: true });
   const html = renderers.settings();
@@ -244,7 +274,7 @@ test("integrations renders every capability from a reachable Worker", () => {
           research: true,
           mcp: false,
         },
-        outlook: { configured: true, signed_in: true, connected: true, can_read_mail: true, account: "owner@example.com" },
+        outlook: { configured: true, connected: true, can_read_mail: true, account: "owner@example.com" },
       },
     }, { silent: true });
     const html = renderers.integrations();

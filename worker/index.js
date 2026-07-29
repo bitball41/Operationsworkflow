@@ -11,8 +11,8 @@
  *   ANTHROPIC_API_KEY     - Anthropic Messages API
  *   OPENAI_API_KEY        - OpenAI Responses API
  *   WHOP_WEBHOOK_SECRET   - verifies signed Whop webhook deliveries
- *   SUPABASE_SERVICE_ROLE_KEY - server-only webhook database access
- *   WHOP_OWNER_USER_ID    - the single Operations workspace owner
+ *   SUPABASE_SECRET_KEY   - server-only workspace and webhook database access
+ *   OPERATIONS_WORKSPACE_ID - the single Operations workspace
  *   GOOGLE_MAPS_API_KEY   - Google Maps / Places (browser key, referrer-locked)
  *   MICROSOFT_CLIENT_ID   - Microsoft Entra application id
  *   MICROSOFT_CLIENT_SECRET - Microsoft Entra confidential-client secret
@@ -20,18 +20,28 @@
  *   OUTLOOK_TOKEN_ENCRYPTION_KEY - encrypts OAuth tokens before KV storage
  *
  * Bindings:
- *   OUTLOOK_TOKENS        - per-Supabase-user OAuth state and encrypted tokens
+ *   OUTLOOK_TOKENS        - workspace OAuth state and encrypted tokens
  *
  * Nothing here fakes a result. A missing secret returns 503 with the exact name
  * to set, which is what the rest of the application already knows how to show.
  */
 
 import { ANTHROPIC, OPENAI, PLACES } from "./upstreams.js";
+import { verifyCloudflareAccess } from "./access.js";
 import { getModel, resolveModel } from "../js/data/models.js";
 import { handleBrowserResearch, handleBusinessEmailLookup } from "./browser.js";
 import { demoHostingStatus, handleDemoPublish, servePublicDemo } from "./demos.js";
 import { handleMcp } from "./mcp.js";
 import { handleWhopWebhook, whopWebhookConfigured } from "./whop.js";
+import {
+  handleWorkspaceAssetDelete,
+  handleWorkspaceAssetDownload,
+  handleWorkspaceAssetUpload,
+  handleWorkspaceProfile,
+  handleWorkspaceRecords,
+  handleWorkspaceSignedUrls,
+  handleWorkspaceSnapshot,
+} from "./workspace.js";
 import {
   handleOutlookCallback,
   handleOutlookConnect,
@@ -137,11 +147,10 @@ async function relay(response) {
  * What the browser is allowed to know: which providers are usable, never the
  * keys.
  *
- * Outlook reports twice on purpose. `providers.outlook` answers "can this user
+ * Outlook reports twice on purpose. `providers.outlook` answers "can Operations
  * send mail right now", which is what every send path checks. The `outlook`
- * object answers "why not" — missing Worker secrets, no Supabase session, or
- * simply no mailbox connected yet — three states that used to be one `false`
- * and left Integrations blaming missing secrets that were actually present.
+ * object answers "why not" — missing Worker configuration or simply no mailbox
+ * connected yet.
  */
 async function handleStatus(request, env) {
   const providers = {};
@@ -287,6 +296,28 @@ async function handleApi(request, env, url) {
   const isPost = request.method === "POST";
 
   try {
+    if (path === "/api/workspace" && request.method === "GET") {
+      return await handleWorkspaceSnapshot(env);
+    }
+    if (path === "/api/workspace/profile" && request.method === "PATCH") {
+      return await handleWorkspaceProfile(request, env);
+    }
+    if (path === "/api/workspace/assets" && isPost) {
+      return await handleWorkspaceAssetUpload(request, env);
+    }
+    if (path === "/api/workspace/assets" && request.method === "DELETE") {
+      return await handleWorkspaceAssetDelete(request, env);
+    }
+    if (path === "/api/workspace/assets/signed-urls" && isPost) {
+      return await handleWorkspaceSignedUrls(request, env);
+    }
+    if (path === "/api/workspace/assets/download" && request.method === "GET") {
+      return await handleWorkspaceAssetDownload(url, env);
+    }
+    const recordRoute = path.match(/^\/api\/workspace\/records\/([A-Za-z]+)(?:\/([0-9a-f-]{36}))?$/i);
+    if (recordRoute) {
+      return await handleWorkspaceRecords(request, env, recordRoute[1], recordRoute[2] || "");
+    }
     if (path === "/api/status" && request.method === "GET") return await handleStatus(request, env);
     if (path === "/api/outlook/connect" && isPost) return await handleOutlookConnect(request, env);
     if (path === "/api/outlook/callback" && request.method === "GET") return await handleOutlookCallback(request, env);
@@ -340,6 +371,9 @@ export default {
         headers: { "content-type": "text/plain; charset=utf-8" },
       });
     }
+
+    const access = await verifyCloudflareAccess(request, env);
+    if (!access.ok) return access.response;
 
     if (url.pathname === "/mcp") return handleMcp(request, env);
 

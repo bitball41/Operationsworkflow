@@ -36,6 +36,7 @@ const { isConnected, integrationList } = await import("../js/services/integratio
 const { providerReady } = await import("../js/services/ai/provider.js");
 const { canSend } = await import("../js/services/email/outreach.js");
 const { normalizeLead, duplicateKey, splitAddress } = await import("../js/services/openscout/adapter.js");
+const { normalizeDiscoveryQuery } = await import("../js/services/discovery.js");
 const { updateRecord } = await import("../js/services/data.js");
 const { recentTranscript, serializeToolResult } = await import("../js/services/ai/provider.js");
 
@@ -393,6 +394,128 @@ test("the OpenScout adapter still normalizes leads the same way", () => {
   });
 });
 
+test("statewide discovery uses the full region instead of a tiny center radius", () => {
+  const googlePlaces = window.OpenScout.googlePlaces;
+  const idaho = {
+    types: ["administrative_area_level_1", "political"],
+  };
+  const boise = {
+    types: ["locality", "political"],
+  };
+  assert.equal(googlePlaces.isBroadGeocodeResult(idaho), true);
+  assert.equal(googlePlaces.isBroadGeocodeResult(boise), false);
+
+  const viewport = { north: 49.001, south: 41.988, east: -111.043, west: -117.244 };
+  const regional = googlePlaces.searchBoundsForArea({
+    center: { lat: 44.24, lng: -114.48 },
+    viewport,
+    searchScope: "region",
+  }, 15);
+  assert.deepEqual(regional, viewport, "Idaho must retain its statewide viewport");
+
+  const local = googlePlaces.searchBoundsForArea({
+    center: { lat: 43.615, lng: -116.202 },
+    viewport,
+    searchScope: "local",
+  }, 15);
+  assert.ok(local.north - local.south < 1, "Boise must retain the local-radius behavior");
+});
+
+test("an Idaho search scans tiles across the state viewport", async () => {
+  const calls = [];
+  const viewport = { north: 49.001, south: 41.988, east: -111.043, west: -117.244 };
+  let placeNumber = 0;
+  const Place = {
+    async searchByText(request) {
+      calls.push(request.locationRestriction);
+      placeNumber += 1;
+      return {
+        places: [{
+          id: `idaho-tree-${placeNumber}`,
+          displayName: `Idaho Tree Care ${placeNumber}`,
+          formattedAddress: `${placeNumber} Main St, Boise, ID 83702, USA`,
+          websiteURI: "",
+          location: { lat: 43 + placeNumber / 100, lng: -116 },
+          businessStatus: "OPERATIONAL",
+          primaryType: "tree_service",
+          types: ["tree_service"],
+        }],
+      };
+    },
+  };
+  const maps = {
+    async importLibrary(name) {
+      if (name === "places") return { Place };
+      if (name === "geocoding") {
+        return {
+          Geocoder: class {
+            async geocode() {
+              return {
+                results: [{
+                  types: ["administrative_area_level_1", "political"],
+                  geometry: {
+                    location: { lat: () => 44.24, lng: () => -114.48 },
+                    viewport: {
+                      getNorthEast: () => ({ lat: () => viewport.north, lng: () => viewport.east }),
+                      getSouthWest: () => ({ lat: () => viewport.south, lng: () => viewport.west }),
+                    },
+                  },
+                }],
+              };
+            }
+          },
+        };
+      }
+      throw new Error(`Unexpected Maps library: ${name}`);
+    },
+  };
+  const previousDocument = globalThis.document;
+  const previousGoogle = window.google;
+  window.google = { maps };
+  globalThis.document = {
+    createElement: () => ({}),
+    head: {
+      appendChild(script) {
+        const callback = new URL(script.src).searchParams.get("callback");
+        queueMicrotask(() => window[callback]());
+      },
+    },
+  };
+
+  try {
+    const result = await window.OpenScout.googlePlaces.searchLeads({
+      apiKey: "test-key",
+      location: "Idaho",
+      businessType: "tree trimming",
+      depth: "standard",
+      radiusKm: 15,
+      minConfidence: 0,
+      verify: false,
+    });
+    assert.equal(result.searchScope, "region");
+    assert.equal(result.scanned, 9);
+    assert.equal(calls.length, 9, "standard discovery must cover the full 3x3 state grid");
+    assert.equal(Math.min(...calls.map((bounds) => bounds.south)), viewport.south);
+    assert.equal(Math.max(...calls.map((bounds) => bounds.north)), viewport.north);
+    assert.equal(Math.min(...calls.map((bounds) => bounds.west)), viewport.west);
+    assert.equal(Math.max(...calls.map((bounds) => bounds.east)), viewport.east);
+  } finally {
+    globalThis.document = previousDocument;
+    window.google = previousGoogle;
+  }
+});
+
+test("discovery cleans model phrasing before it reaches Google Places", () => {
+  const query = normalizeDiscoveryQuery({
+    location: "Idaho",
+    business_type: "leads on tree trimming businesses",
+    limit: 5,
+  });
+  assert.equal(query.businessType, "tree trimming");
+  assert.equal(query.location, "Idaho");
+  assert.equal(query.limit, 5);
+});
+
 /* ---------- the assistant loop ---------- */
 
 test("the tool registry covers the work the business actually does", () => {
@@ -420,10 +543,16 @@ test("array and object tool parameters produce a valid JSON schema", () => {
 });
 
 test("a tool result is serialised for the model, and trimmed when it is huge", () => {
-  const small = JSON.parse(serializeToolResult({ ok: true, summary: "2 leads", data: [{ id: 1 }] }));
+  const small = JSON.parse(serializeToolResult({
+    ok: true,
+    complete: false,
+    summary: "2 of 5 leads",
+    data: { shortfall: 3 },
+  }));
   assert.equal(small.ok, true);
-  assert.equal(small.summary, "2 leads");
-  assert.deepEqual(small.data, [{ id: 1 }]);
+  assert.equal(small.complete, false, "the model must know the operation is unfinished");
+  assert.equal(small.summary, "2 of 5 leads");
+  assert.deepEqual(small.data, { shortfall: 3 });
 
   const serialized = serializeToolResult({ ok: true, summary: "lots", data: "x".repeat(50_000) });
   const huge = JSON.parse(serialized);

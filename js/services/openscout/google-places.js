@@ -94,6 +94,18 @@
     "administrative_area_level_2",
     "administrative_area_level_3",
   ]);
+  const BROAD_GEOCODE_TYPES = new Set([
+    "administrative_area_level_1",
+    "administrative_area_level_2",
+    "country",
+  ]);
+  const LOCAL_GEOCODE_TYPES = new Set([
+    "locality",
+    "postal_town",
+    "postal_code",
+    "neighborhood",
+    "sublocality",
+  ]);
 
   function classifier() {
     return (window.OpenScout && window.OpenScout.classify) || null;
@@ -121,7 +133,7 @@
     const effectiveRadius = Number.isFinite(requestedRadius)
       ? Math.max(1, Math.min(80, requestedRadius))
       : settings.radiusKm;
-    const bounds = clampBounds(area.center, area.viewport, effectiveRadius);
+    const bounds = searchBoundsForArea(area, effectiveRadius);
 
     const collected = new Map();
     const queue = buildGrid(bounds, settings.grid).map((tile) => ({ ...tile, depth: 0 }));
@@ -246,6 +258,7 @@
     return {
       query,
       radiusKm: effectiveRadius,
+      searchScope: area.searchScope,
       tiles: queue.length,
       failedTiles: errorCount,
       scanned: scored.length,
@@ -353,7 +366,11 @@
       viewport = { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() };
     }
 
-    return { center, viewport };
+    return {
+      center,
+      viewport,
+      searchScope: isBroadGeocodeResult(best) ? "region" : "local",
+    };
   }
 
   // Geocoder returns candidates best-first, but for ambiguous place names a
@@ -366,6 +383,12 @@
         (result.types || []).some((type) => PREFERRED_GEOCODE_TYPES.has(type))
     );
     return typed || results.find((result) => result.geometry?.viewport) || results[0];
+  }
+
+  function isBroadGeocodeResult(result) {
+    const types = Array.isArray(result?.types) ? result.types : [];
+    return types.some((type) => BROAD_GEOCODE_TYPES.has(type))
+      && !types.some((type) => LOCAL_GEOCODE_TYPES.has(type));
   }
 
   // A square box of half-size radiusKm around a center point.
@@ -396,6 +419,20 @@
       east: Math.min(viewport.east, box.east),
       west: Math.max(viewport.west, box.west),
     };
+  }
+
+  /*
+   * A typed state or region is not a city. The old implementation always
+   * clamped Google's geocoded viewport to the local radius, so "Idaho" became a
+   * 15 km search around the rural center of the state and often scanned zero
+   * businesses. Regional searches use the full geocoded viewport; city and
+   * address searches keep the predictable radius cap.
+   */
+  function searchBoundsForArea(area, radiusKm) {
+    if (area?.searchScope === "region" && area.viewport) {
+      return { ...area.viewport };
+    }
+    return clampBounds(area.center, area.viewport, radiusKm);
   }
 
   function buildGrid(bounds, n) {
@@ -596,7 +633,9 @@
   window.OpenScout = window.OpenScout || {};
   window.OpenScout.googlePlaces = {
     getLocationSuggestions,
+    isBroadGeocodeResult,
     reverseGeocodeLocation,
+    searchBoundsForArea,
     searchLeads,
   };
 })();

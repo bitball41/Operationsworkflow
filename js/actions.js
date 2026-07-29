@@ -92,7 +92,6 @@ import {
   deleteCustomTemplate,
   filesForTemplatePreview,
 } from "./services/sites/templates.js";
-import { signIn, signOut, signUp } from "./services/supabase.js";
 import { currentFiles, selectedDemo, siteDetailsForm } from "./pages/studio.js";
 
 async function run(action, successTitle = "", successMessage = "") {
@@ -170,24 +169,9 @@ export async function onClick(event) {
     case "close-palette":
       closePalette();
       break;
-    case "sign-out":
-      await run(async () => {
-        await signOut();
-        location.reload();
-      });
-      break;
     case "workspace-retry":
       location.reload();
       break;
-    case "sign-up": {
-      const form = target.closest("form");
-      const values = form ? formValues(form) : {};
-      await run(async () => {
-        await signUp(values.email, values.password);
-        toast("Account created", "Sign in to open your workspace.");
-      });
-      break;
-    }
     case "integration-setup": {
       const provider = target.dataset.provider;
       const secret = WORKER_SECRET_NAMES[provider];
@@ -1114,12 +1098,6 @@ export async function onSubmit(event) {
         break;
       }
 
-      case "sign-in":
-        await signIn(values.email, values.password);
-        toast("Signed in", "Loading your workspace…");
-        location.reload();
-        break;
-
       default:
         break;
     }
@@ -1147,17 +1125,48 @@ async function handleAssistant(rawMessage, form) {
   const command = matchCommand(message);
   if (command) {
     const { result } = await runCommand(command);
+    const commandResult = {
+      id: uid(),
+      role: "tool",
+      tool: command.tool,
+      args: command.input,
+      result,
+      at: new Date().toISOString(),
+    };
+    const commandMessages = [...messages, commandResult];
+    const needsModelFollowThrough = result.complete === false && providerReady();
     setAssistant({
-      pending: false,
-      messages: [...messages, {
-        id: uid(),
-        role: "tool",
-        tool: command.tool,
-        result,
-        at: new Date().toISOString(),
-      }],
+      pending: needsModelFollowThrough,
+      messages: commandMessages,
     });
     await persistAssistantHistory();
+    if (!needsModelFollowThrough) return;
+
+    try {
+      /* A deterministic shortcut can start the operation, but it cannot call a
+         shortfall "done." Hand the real result to the agent so it can retry
+         with broader/deeper discovery and then explain the outcome. */
+      await runAgentLoop({
+        transcript: commandMessages,
+        onEntry: (entry) => setAssistant({ messages: [...getState().assistant.messages, entry] }),
+      });
+      setAssistant({ pending: false });
+      await persistAssistantHistory();
+    } catch (error) {
+      console.error(error);
+      setAssistant({
+        pending: false,
+        messages: [...getState().assistant.messages, {
+          id: uid(),
+          role: "system",
+          blocked: true,
+          who: error.blocked ? "Not connected" : "Request failed",
+          text: error.message || "The assistant request did not complete.",
+          at: new Date().toISOString(),
+        }],
+      });
+      await persistAssistantHistory().catch((historyError) => console.error("Could not save assistant history", historyError));
+    }
     return;
   }
 

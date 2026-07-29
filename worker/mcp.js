@@ -3,8 +3,7 @@
  *
  * This first slice deliberately exposes only two bounded, server-native tools:
  * integration status and Browser Run research. The in-app CRUD registry still
- * depends on browser state and will move behind authenticated Supabase server
- * operations in a later slice.
+ * depends on browser state and is intentionally outside this bounded endpoint.
  */
 import { browseToMarkdown } from "./browser.js";
 import { demoHostingStatus } from "./demos.js";
@@ -66,7 +65,11 @@ function safeStatus(env) {
     providers: {
       anthropic: Boolean(env?.ANTHROPIC_API_KEY),
       openai: Boolean(env?.OPENAI_API_KEY),
-      whop: Boolean(env?.WHOP_WEBHOOK_SECRET && env?.SUPABASE_SERVICE_ROLE_KEY && env?.WHOP_OWNER_USER_ID),
+      whop: Boolean(
+        env?.WHOP_WEBHOOK_SECRET
+        && (env?.SUPABASE_SECRET_KEY || env?.SUPABASE_SERVICE_ROLE_KEY)
+        && (env?.OPERATIONS_WORKSPACE_ID || env?.WHOP_OWNER_USER_ID),
+      ),
       google_maps: Boolean(env?.GOOGLE_MAPS_API_KEY),
       outlook: Boolean(
         env?.MICROSOFT_CLIENT_ID

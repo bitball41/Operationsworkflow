@@ -50,7 +50,7 @@ setState({
   services: {
     reachable: true,
     providers: { anthropic: true, outlook: false, openai: false, whop: false, google_maps: false },
-    outlook: { configured: false, connected: false, signed_in: false, missing: [] },
+    outlook: { configured: false, connected: false, missing: [] },
   },
 }, { silent: true });
 

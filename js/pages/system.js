@@ -31,7 +31,7 @@ const WORKER_SECRETS = Object.freeze({
   outlook: {
     label: "Outlook",
     secret: "Microsoft OAuth secrets + OUTLOOK_TOKENS KV",
-    detail: "Outreach through Microsoft Graph, isolated per signed-in user",
+    detail: "Outreach through Microsoft Graph for this Operations workspace",
   },
   anthropic: { label: "Anthropic", secret: "ANTHROPIC_API_KEY", detail: "Assistant replies and model-driven tool calls" },
   openai: { label: "OpenAI", secret: "OPENAI_API_KEY", detail: "Alternate model provider" },
@@ -60,10 +60,8 @@ function mapsKeySource() {
 /**
  * Outlook's row, which has three states rather than two.
  *
- * The Worker reports them separately now: whether the Microsoft secrets and KV
- * binding are present, whether there is a Supabase session to attach a mailbox
- * to, and whether a mailbox is actually connected. Collapsing them into one
- * boolean meant a fully configured Worker still said its secrets were missing.
+ * The Worker reports whether its Microsoft configuration is present and whether
+ * the one Operations workspace has connected a mailbox.
  */
 function outlookRow() {
   const { services } = getState();
@@ -78,14 +76,6 @@ function outlookRow() {
         : `Not configured — requires ${entry.secret}`,
       iconName: "plug",
       side: pill("not_connected"),
-    });
-  }
-  if (!outlook.signed_in) {
-    return row({
-      main: entry.label,
-      sub: "Configured on the Worker. Sign in to Supabase to attach a mailbox — connections are stored per user.",
-      iconName: "plug",
-      side: pill("warning", "Sign in"),
     });
   }
   if (!outlook.connected) {
@@ -141,9 +131,6 @@ function integrationAction(item) {
     if (!outlook.configured) {
       return btn("Set up", { action: "integration-setup", size: "sm", attrs: 'data-provider="outlook"' });
     }
-    if (getState().storage !== "cloud") {
-      return btn("Sign in first", { action: "navigate", size: "sm", variant: "primary", attrs: 'data-route-target="settings"' });
-    }
     return item.status === "connected"
       ? btn("Disconnect", { action: "outlook-disconnect", size: "sm" })
       : btn("Connect", { action: "outlook-connect", size: "sm", variant: "primary" });
@@ -179,9 +166,7 @@ export function renderIntegrations() {
       ${blocker ? notice("Email is not sending", blocker, {
         tone: "warn",
         iconName: "mail",
-        actions: state.storage === "cloud"
-          ? ""
-          : btn("Sign in", { action: "navigate", size: "sm", attrs: 'data-route-target="settings"' }),
+        actions: "",
       }) : ""}
       ${notice(
         `${connected} of ${integrations.length} services connected`,
@@ -306,10 +291,10 @@ export function renderSettings() {
       ${section("Data", {
         body: rows([
           row({
-            main: "Synced to Supabase",
-            sub: `Signed in as ${state.user?.email || "owner"}`,
+            main: "Protected by Cloudflare Access",
+            sub: "Workspace records and private assets stay behind the Worker",
             iconName: "layers",
-            side: pill("connected", "Cloud"),
+            side: pill("connected", "Secure"),
           }),
           row({
             main: "Google Maps key",
@@ -356,11 +341,22 @@ export function renderSettings() {
         </div>
       </form>
 
-      ${advanced("Supabase project", `
+      ${advanced("Workspace security", `
         ${rows([
-          row({ main: "Signed in", sub: escapeHtml(state.user?.email || ""), iconName: "user", side: btn("Sign out", { action: "sign-out", size: "sm" }) }),
+          row({
+            main: "Cloudflare Access",
+            sub: "The sole sign-in boundary for Operations",
+            iconName: "check-circle",
+            side: pill("connected", "Active"),
+          }),
+          row({
+            main: "Database access",
+            sub: "Server-side only; no account or database key is stored in this browser",
+            iconName: "layers",
+            side: pill("connected", "Worker"),
+          }),
         ])}
-        <p class="faint">Project <code>${escapeHtml(CONFIG.supabaseUrl.replace("https://", "").split(".")[0])}</code> · publishable key only, never a service key.</p>
+        <p class="faint">To leave Operations, use the Cloudflare Access logout for this domain. The app itself has no user accounts.</p>
       `)}
     </div>
   `;

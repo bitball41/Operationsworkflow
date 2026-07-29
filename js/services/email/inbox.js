@@ -55,8 +55,8 @@ function emailExists(externalMessageId) {
  * Pulls recent inbox messages and stores the ones that are new.
  *
  * `fetchMessages` is injectable so the record-building rules — lead matching,
- * de-duplication, the pipeline move on a reply — can be tested without a
- * Supabase session and a live mailbox behind them.
+ * de-duplication, the pipeline move on a reply — can be tested without a live
+ * mailbox behind them.
  *
  * @returns {Promise<{threads: number, messages: number, skipped: number}>}
  */

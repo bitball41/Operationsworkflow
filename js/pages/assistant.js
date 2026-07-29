@@ -101,14 +101,15 @@ function messageBlock(message) {
   if (message.role === "tool") {
     const result = message.result || {};
     const blocked = result.ok === false || result.blocked;
+    const partial = !blocked && result.complete === false;
     const args = Object.keys(message.args || {}).length ? JSON.stringify(message.args, null, 2) : "";
     return `
-      <article class="msg msg--tool${blocked ? " msg--blocked" : ""}">
+      <article class="msg msg--tool${blocked ? " msg--blocked" : partial ? " msg--partial" : ""}">
         <details class="tool-trace"${blocked ? " open" : ""}>
           <summary>
             <span class="tool-trace__icon">${icon(blocked ? "alert" : "tool")}</span>
             <span class="tool-trace__name">${escapeHtml(message.tool)}</span>
-            <span class="tool-trace__status">${blocked ? "Blocked" : "Completed"}</span>
+            <span class="tool-trace__status">${blocked ? "Failed" : partial ? "Short of target" : "Completed"}</span>
             ${icon("chevron")}
           </summary>
           <div class="tool-trace__body">

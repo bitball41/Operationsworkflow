@@ -37,11 +37,16 @@ export class DiscoveryError extends Error {
   }
 }
 
-function normalizeQuery(input = {}) {
+export function normalizeDiscoveryQuery(input = {}) {
   const number = (value, fallback) => (Number.isFinite(Number(value)) && value !== "" && value !== null ? Number(value) : fallback);
+  const businessType = String(input.businessType || input.business_type || "")
+    .trim()
+    .replace(/^leads?\s+(?:on|for)\s+/i, "")
+    .replace(/\s+business(?:es)?$/i, "")
+    .trim();
   return {
     location: String(input.location || "").trim(),
-    businessType: String(input.businessType || input.business_type || "").trim(),
+    businessType,
     radiusKm: number(input.radiusKm ?? input.radius_km, DISCOVERY_DEFAULTS.radiusKm),
     limit: Math.max(1, Math.min(250, number(input.limit, DISCOVERY_DEFAULTS.limit))),
     depth: String(input.depth || DISCOVERY_DEFAULTS.depth),
@@ -65,7 +70,7 @@ function normalizeQuery(input = {}) {
  * @returns {Promise<{runId: string, results: Array, summary: object, query: object}>}
  */
 export async function runDiscoverySearch(input = {}, { onProgress, onRunCreated } = {}) {
-  const query = normalizeQuery(input);
+  const query = normalizeDiscoveryQuery(input);
   if (!query.location) throw new DiscoveryError("A location is required, e.g. \"Austin, TX\".");
   if (!query.businessType) throw new DiscoveryError("A business type is required, e.g. \"plumber\".");
 

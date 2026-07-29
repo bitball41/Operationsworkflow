@@ -2,7 +2,7 @@
  * Persistent assistant conversations.
  *
  * The transcript remains provider-neutral, exactly like the agent loop, and is
- * stored in the owner-scoped Supabase workspace.
+ * stored in the Operations workspace.
  */
 import { getState, setAssistant } from "../../core/state.js";
 import { createRecord, deleteRecord, findRecord, updateRecord } from "../data.js";

@@ -9,6 +9,8 @@ import {
   outlookConnectionStatus,
 } from "../worker/outlook.js";
 
+const WORKSPACE_ID = "2847b8e2-8a34-4a72-8e44-2cfc1be4255b";
+
 class MemoryKV {
   constructor() {
     this.values = new Map();
@@ -34,13 +36,13 @@ function env() {
     MICROSOFT_TENANT: "common",
     OUTLOOK_TOKEN_ENCRYPTION_KEY: "test-only-encryption-key-that-is-long-enough",
     OUTLOOK_TOKENS: new MemoryKV(),
+    OPERATIONS_WORKSPACE_ID: WORKSPACE_ID,
   };
 }
 
-function request(path, { method = "GET", auth = true } = {}) {
+function request(path, { method = "GET" } = {}) {
   return new Request(`https://operations.conno.fun${path}`, {
     method,
-    headers: auth ? { authorization: "Bearer supabase-user-token" } : {},
   });
 }
 
@@ -54,17 +56,12 @@ async function withFetch(handler, action) {
   }
 }
 
-function supabaseUserResponse() {
-  return new Response(JSON.stringify({ id: "user-123", email: "owner@example.com" }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
-}
-
-test("Outlook connect requires a verified Supabase session", async () => {
-  const response = await handleOutlookConnect(request("/api/outlook/connect", { method: "POST", auth: false }), env());
-  assert.equal(response.status, 401);
-  assert.match((await response.json()).message, /Sign in to Supabase/i);
+test("Outlook connect requires the Operations workspace configuration", async () => {
+  const bindings = env();
+  delete bindings.OPERATIONS_WORKSPACE_ID;
+  const response = await handleOutlookConnect(request("/api/outlook/connect", { method: "POST" }), bindings);
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).message, /OPERATIONS_WORKSPACE_ID/i);
 });
 
 test("Outlook OAuth state is one-time and tokens are encrypted before KV storage", async () => {
@@ -73,7 +70,6 @@ test("Outlook OAuth state is one-time and tokens are encrypted before KV storage
 
   await withFetch(async (url, options = {}) => {
     const target = String(url);
-    if (target.includes("/auth/v1/user")) return supabaseUserResponse();
     if (target.includes("/oauth2/v2.0/token")) {
       return new Response(JSON.stringify({
         access_token: "access-token",
@@ -109,14 +105,14 @@ test("Outlook OAuth state is one-time and tokens are encrypted before KV storage
     assert.ok(await bindings.OUTLOOK_TOKENS.get(`outlook:state:${state}`));
 
     const callback = await handleOutlookCallback(
-      request(`/api/outlook/callback?code=authorization-code&state=${encodeURIComponent(state)}`, { auth: false }),
+      request(`/api/outlook/callback?code=authorization-code&state=${encodeURIComponent(state)}`),
       bindings,
     );
     assert.equal(callback.status, 302);
     assert.match(callback.headers.get("location"), /outlook=connected/);
     assert.equal(await bindings.OUTLOOK_TOKENS.get(`outlook:state:${state}`), null, "OAuth state is consumed once");
 
-    const stored = await bindings.OUTLOOK_TOKENS.get("outlook:token:user-123");
+    const stored = await bindings.OUTLOOK_TOKENS.get(`outlook:token:${WORKSPACE_ID}`);
     assert.ok(stored);
     assert.doesNotMatch(stored, /access-token|refresh-token/, "KV receives only ciphertext");
 
@@ -137,7 +133,7 @@ test("Outlook OAuth state is one-time and tokens are encrypted before KV storage
 
 test("Outlook callback rejects missing or replayed state", async () => {
   const response = await handleOutlookCallback(
-    request("/api/outlook/callback?code=authorization-code&state=not-real", { auth: false }),
+    request("/api/outlook/callback?code=authorization-code&state=not-real"),
     env(),
   );
   assert.equal(response.status, 302);
@@ -150,7 +146,6 @@ async function connectedBindings({ scope = "Mail.Send Mail.Read" } = {}) {
   const bindings = env();
   await withFetch(async (url) => {
     const target = String(url);
-    if (target.includes("/auth/v1/user")) return supabaseUserResponse();
     if (target.includes("/oauth2/v2.0/token")) {
       return new Response(JSON.stringify({
         access_token: "access-token",
@@ -165,35 +160,30 @@ async function connectedBindings({ scope = "Mail.Send Mail.Read" } = {}) {
     const connect = await handleOutlookConnect(request("/api/outlook/connect", { method: "POST" }), bindings);
     const state = new URL((await connect.json()).authorization_url).searchParams.get("state");
     await handleOutlookCallback(
-      request(`/api/outlook/callback?code=authorization-code&state=${encodeURIComponent(state)}`, { auth: false }),
+      request(`/api/outlook/callback?code=authorization-code&state=${encodeURIComponent(state)}`),
       bindings,
     );
   });
   return bindings;
 }
 
-test("status tells the three Outlook failure states apart", async () => {
+test("status tells Outlook configuration and connection states apart", async () => {
   /* Missing secrets is not the same as "you have not connected a mailbox", and
      reporting both as `false` is what made a working Worker look unconfigured. */
   const unconfigured = await outlookConnectionStatus(request("/api/status"), { OUTLOOK_TOKENS: new MemoryKV() });
   assert.equal(unconfigured.configured, false);
   assert.ok(unconfigured.missing.includes("MICROSOFT_CLIENT_ID"));
 
-  await withFetch(async () => new Response("no", { status: 401 }), async () => {
-    const anonymous = await outlookConnectionStatus(request("/api/status", { auth: false }), env());
-    assert.equal(anonymous.configured, true, "the Worker is configured");
-    assert.equal(anonymous.signed_in, false, "but nobody is signed in");
-    assert.equal(anonymous.connected, false);
-  });
+  const ready = await outlookConnectionStatus(request("/api/status"), env());
+  assert.equal(ready.configured, true, "the Worker is configured");
+  assert.equal(ready.connected, false, "but no mailbox is connected");
+  assert.equal("signed_in" in ready, false, "there is no application account state");
 
   const bindings = await connectedBindings();
-  await withFetch(async () => supabaseUserResponse(), async () => {
-    const connected = await outlookConnectionStatus(request("/api/status"), bindings);
-    assert.equal(connected.configured, true);
-    assert.equal(connected.signed_in, true);
-    assert.equal(connected.connected, true);
-    assert.equal(connected.can_read_mail, true);
-  });
+  const connected = await outlookConnectionStatus(request("/api/status"), bindings);
+  assert.equal(connected.configured, true);
+  assert.equal(connected.connected, true);
+  assert.equal(connected.can_read_mail, true);
 });
 
 test("sending accepts several recipients and rejects a bad address", async () => {
@@ -202,7 +192,6 @@ test("sending accepts several recipients and rejects a bad address", async () =>
 
   await withFetch(async (url, options = {}) => {
     const target = String(url);
-    if (target.includes("/auth/v1/user")) return supabaseUserResponse();
     if (target === "https://graph.microsoft.com/v1.0/me/sendMail") {
       payload = JSON.parse(options.body);
       return new Response(null, { status: 202 });
@@ -234,21 +223,18 @@ test("sending accepts several recipients and rejects a bad address", async () =>
 
 test("the inbox is readable once, and only once, Mail.Read was granted", async () => {
   const sendOnly = await connectedBindings({ scope: "Mail.Send" });
-  await withFetch(async () => supabaseUserResponse(), async () => {
-    const refused = await handleOutlookMessages(
-      request("/api/outlook/messages"),
-      sendOnly,
-      new URL("https://operations.conno.fun/api/outlook/messages"),
-    );
-    assert.equal(refused.status, 503);
-    assert.match((await refused.json()).message, /reconnect/i);
-  });
+  const refused = await handleOutlookMessages(
+    request("/api/outlook/messages"),
+    sendOnly,
+    new URL("https://operations.conno.fun/api/outlook/messages"),
+  );
+  assert.equal(refused.status, 503);
+  assert.match((await refused.json()).message, /reconnect/i);
 
   const bindings = await connectedBindings();
   let requested = "";
   await withFetch(async (url) => {
     const target = String(url);
-    if (target.includes("/auth/v1/user")) return supabaseUserResponse();
     if (target.startsWith("https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages")) {
       requested = target;
       return new Response(JSON.stringify({
