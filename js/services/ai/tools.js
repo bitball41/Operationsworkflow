@@ -179,17 +179,18 @@ define({
   kind: "external",
   summary: "Search Google Places for local businesses with no real website and add them as leads. This is how new leads enter the system.",
   params: [
-    { name: "location", required: true, description: "City, state, region or address, e.g. \"Austin, TX\" or \"Idaho\". States and regions are searched across their full area." },
-    { name: "business_type", required: true, description: "The niche only, e.g. tree trimming, plumber, roofer or dentist. Do not include words such as leads or businesses." },
+    { name: "location", required: true, description: "One concrete city, state, region or address only, e.g. \"Austin, TX\" or \"Idaho\". Never put planning text, save instructions, or phrases such as \"the same city\" here." },
+    { name: "business_type", required: true, description: "The niche only, e.g. \"tree trimming\", \"plumber\", \"roofer\" or \"dentist\". Never include a count, the words lead/business, website requirements, a location, or save instructions." },
     { name: "limit", type: "number", description: "The target number of qualified leads to save (default 50, max 250)" },
     { name: "radius_km", type: "number", description: "Search radius in kilometres (default 15)" },
     { name: "depth", description: "quick, standard (default) or deep" },
     { name: "min_confidence", type: "number", description: "0-100 confidence that the business has no real website (default 70)" },
     { name: "min_rating", type: "number", description: "Minimum Google rating (default 0, no filter)" },
     { name: "must_have_phone", type: "boolean", description: "Only keep businesses with a public phone number" },
+    { name: "must_have_email", type: "boolean", description: "True only when the user explicitly requires email-ready results. This strict filter may produce fewer leads; false still researches and preserves every verified public email found." },
     { name: "skip_known", type: "boolean", description: "Skip businesses already saved as leads (default true)" },
     { name: "verify", type: "boolean", description: "Run local direct website verification when available" },
-    { name: "save", type: "boolean", description: "Save the results straight to leads (default true). False leaves them for review on Lead Discovery. No-website and public-email requirements are always enforced." },
+    { name: "save", type: "boolean", description: "Save the results straight to leads (default true). False leaves them for review on Lead Discovery. The no-official-website requirement is always enforced." },
   ],
   run: async (input) => {
     const query = {
@@ -201,6 +202,7 @@ define({
       minConfidence: input.min_confidence,
       minRating: input.min_rating,
       mustHavePhone: input.must_have_phone,
+      mustHaveEmail: input.must_have_email,
       skipKnown: input.skip_known,
       verify: input.verify,
     };
@@ -210,6 +212,7 @@ define({
       const requested = search.summary?.requested || query.limit || 50;
       const found = search.results.length;
       const scanned = search.summary?.scanned || 0;
+      const withEmail = search.results.filter((lead) => Boolean(lead.email)).length;
       const complete = found >= requested;
       return {
         ...(scanned ? {} : {
@@ -217,8 +220,18 @@ define({
           error: `Lead discovery scanned no businesses for ${query.businessType} in ${query.location}. The operation did not complete.`,
         }),
         complete,
-        data: { run_id: search.runId, requested, found, scanned, shortfall: Math.max(0, requested - found) },
-        summary: `Found ${found} of ${requested} requested candidate(s) from ${scanned} businesses scanned and left them for review.`,
+        data: {
+          run_id: search.runId,
+          requested,
+          found,
+          with_email: withEmail,
+          scanned,
+          openscout_candidates: search.summary?.totalLeads || 0,
+          official_sites_filtered: search.summary?.excludedExistingWebsite || 0,
+          inconclusive_checks: search.summary?.inconclusiveWebsiteChecks || 0,
+          shortfall: Math.max(0, requested - found),
+        },
+        summary: `Found ${found} of ${requested} requested candidate(s) from ${scanned} businesses scanned, including ${withEmail} with a verified public email, and left them for review.`,
       };
     }
 
@@ -226,6 +239,7 @@ define({
     const requested = result.summary?.requested || query.limit || 50;
     const scanned = result.summary?.scanned || 0;
     const saved = result.saved.length;
+    const withEmail = result.saved.filter((lead) => Boolean(lead.email)).length;
     const complete = saved >= requested;
     return {
       ...(scanned ? {} : {
@@ -237,13 +251,26 @@ define({
         run_id: result.runId,
         requested,
         scanned,
+        openscout_candidates: result.summary?.totalLeads || 0,
+        presence_checked: result.summary?.webPresenceChecked || 0,
+        official_sites_filtered: result.summary?.excludedExistingWebsite || 0,
+        inconclusive_checks: result.summary?.inconclusiveWebsiteChecks || 0,
+        emails_matched: result.summary?.emailsMatched || 0,
+        saved_with_email: withEmail,
         found: result.results.length,
-        saved: result.saved.map((lead) => ({ id: lead.id, business: lead.business_name, city: lead.city, phone: lead.phone, score: lead.lead_score })),
+        saved: result.saved.map((lead) => ({
+          id: lead.id,
+          business: lead.business_name,
+          city: lead.city,
+          email: lead.email,
+          phone: lead.phone,
+          score: lead.lead_score,
+        })),
         duplicates: result.duplicates.length,
         shortfall: Math.max(0, requested - saved),
         search_scope: result.summary?.searchScope || "local",
       },
-      summary: `Saved ${saved} of ${requested} requested lead(s) from ${scanned} businesses scanned${result.duplicates.length ? `; ${result.duplicates.length} already known` : ""}.`,
+      summary: `Saved ${saved} of ${requested} requested lead(s) from ${scanned} businesses scanned, including ${withEmail} with a verified public email${result.duplicates.length ? `; ${result.duplicates.length} already known` : ""}.`,
     };
   },
 });

@@ -56,18 +56,111 @@ export async function browseToMarkdown(url, env) {
   const target = safeResearchUrl(url);
   if (!target) throw new Error("Only public HTTP and HTTPS pages can be researched.");
 
-  const response = await env.BROWSER.quickAction("markdown", {
-    url: target.toString(),
-    gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
-    rejectResourceTypes: ["media", "font"],
-  });
-  if (!response.ok) throw new Error(`Browser Run returned ${response.status}.`);
+  let response;
+  let responseDetail = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    response = await env.BROWSER.quickAction("markdown", {
+      url: target.toString(),
+      gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
+      rejectResourceTypes: ["media", "font"],
+    });
+    if (response.status !== 429 || attempt === 1) break;
+    responseDetail = await response.clone().text().catch(() => "");
+    if (/browser time limit exceeded/i.test(responseDetail)) break;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter * 1_000
+      : 10_000;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  if (!response.ok) {
+    const detail = responseDetail || await response.clone().text().catch(() => "");
+    throw new Error(`Browser Run returned ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}.`);
+  }
   const markdown = await response.text();
   return {
     url: target.toString(),
     title: response.headers.get("x-browser-title") || "",
     markdown: markdown.slice(0, MAX_MARKDOWN),
     truncated: markdown.length > MAX_MARKDOWN,
+  };
+}
+
+function decodeHtml(value) {
+  const named = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+  return String(value || "").replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, code) => {
+    if (code[0] !== "#") return named[code.toLowerCase()] ?? entity;
+    const radix = code[1].toLowerCase() === "x" ? 16 : 10;
+    const digits = radix === 16 ? code.slice(2) : code.slice(1);
+    const point = Number.parseInt(digits, radix);
+    return Number.isFinite(point) ? String.fromCodePoint(point) : entity;
+  });
+}
+
+function plainHtmlText(value) {
+  return decodeHtml(
+    String(value || "")
+      .replace(/<(?:script|style|svg)\b[^>]*>[\s\S]*?<\/(?:script|style|svg)>/gi, " ")
+      .replace(/<[^>]+>/g, " "),
+  ).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Bing's normal result HTML is enough for links, snippets and public email
+ * evidence. Fetching it directly avoids spending a Browser Run Quick Action on
+ * every candidate; the browser remains reserved for promising result pages.
+ */
+export function searchHtmlToMarkdown(html, baseUrl = "https://www.bing.com/") {
+  let text = String(html || "")
+    .replace(/<(?:script|style|svg)\b[^>]*>[\s\S]*?<\/(?:script|style|svg)>/gi, " ")
+    .replace(/<(?:br|\/p|\/li|\/h[1-6]|\/div)>/gi, "\n");
+
+  text = text.replace(/<a\b[^>]*\bhref=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi, (whole, quote, href, label) => {
+    let target;
+    try {
+      target = new URL(decodeHtml(href), baseUrl);
+    } catch {
+      return plainHtmlText(label);
+    }
+    if (!["http:", "https:"].includes(target.protocol)) return plainHtmlText(label);
+    const title = plainHtmlText(label);
+    return title ? `[${title}](${target.toString()})` : "";
+  });
+
+  return decodeHtml(text.replace(/<[^>]+>/g, " "))
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, MAX_MARKDOWN);
+}
+
+async function fetchSearchToMarkdown(url) {
+  const target = safeResearchUrl(url);
+  if (!target || !hostMatches(target.hostname, new Set(["bing.com"]))) {
+    throw new Error("Only the configured public search endpoint can be fetched directly.");
+  }
+  const response = await fetch(target, {
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "user-agent": "Mozilla/5.0 (compatible; OperationsWorkflow/3.0; +https://operations.conno.fun)",
+    },
+    redirect: "follow",
+  });
+  if (!response.ok) throw new Error(`Public search returned ${response.status}.`);
+  const html = await response.text();
+  return {
+    url: response.url || target.toString(),
+    title: "Public web search",
+    markdown: searchHtmlToMarkdown(html, response.url || target.toString()),
+    truncated: html.length > MAX_MARKDOWN,
   };
 }
 
@@ -83,7 +176,8 @@ const BLOCKED_EMAIL_DOMAINS = new Set([
   "wixpress.com",
 ]);
 const CONTACT_LOCAL_PARTS = new Set(["contact", "hello", "info", "office", "sales", "service", "support"]);
-const MAX_WEBSITE_CANDIDATES = 5;
+const MAX_WEBSITE_CANDIDATES = 3;
+const MAX_EMAIL_SOURCE_CANDIDATES = 3;
 const MARKDOWN_LINK_PATTERN = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/gi;
 
 /*
@@ -339,17 +433,26 @@ export async function inspectBusinessWebsiteResults(
   const confirmations = [];
   const failures = [];
   const inspected = candidates.slice(0, MAX_WEBSITE_CANDIDATES);
-  for (const candidate of inspected) {
+  const outcomes = await Promise.all(inspected.map(async (candidate) => {
     try {
       const page = await browsePage(candidate.url);
       const match = identityMatch(`${page.title || ""}\n${page.markdown || ""}`, identity);
-      if (match.matched) confirmations.push({ ...candidate, evidence: match.evidence });
+      return match.matched
+        ? { kind: "confirmed", candidate: { ...candidate, evidence: match.evidence } }
+        : { kind: "unmatched", candidate };
     } catch (error) {
-      failures.push({
-        ...candidate,
-        error: error?.message || "The candidate page could not be opened.",
-      });
+      return {
+        kind: "failed",
+        candidate: {
+          ...candidate,
+          error: error?.message || "The candidate page could not be opened.",
+        },
+      };
     }
+  }));
+  for (const outcome of outcomes) {
+    if (outcome.kind === "confirmed") confirmations.push(outcome.candidate);
+    if (outcome.kind === "failed") failures.push(outcome.candidate);
   }
 
   const confirmedHosts = new Set(confirmations.map((candidate) => candidate.host));
@@ -401,8 +504,49 @@ function nearbyPublicUrl(markdown, index) {
   const before = String(markdown || "").slice(Math.max(0, index - 600), index + 120);
   const urls = [...before.matchAll(/\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g)].map((match) => match[1]);
   const candidate = urls.at(-1);
-  const safe = candidate ? safeResearchUrl(candidate) : null;
+  const safe = candidate ? unwrapSearchResultUrl(candidate) : null;
   return safe ? safe.toString() : "";
+}
+
+/**
+ * Finds identity-related result pages that may publish a business email.
+ * Directory and social profiles are intentionally eligible here: they are not
+ * an official website, but the page can still be useful public contact
+ * evidence after the page itself matches the business.
+ */
+export function extractEmailSourceCandidates(markdown, identity = {}) {
+  const text = String(markdown || "");
+  const candidates = new Map();
+  const searchHosts = new Set(["bing.com", "microsoft.com", "google.com", "googleusercontent.com"]);
+
+  for (const match of text.matchAll(MARKDOWN_LINK_PATTERN)) {
+    const target = unwrapSearchResultUrl(match[2]);
+    if (!target || hostMatches(target.hostname, searchHosts)) continue;
+
+    const lineStart = text.lastIndexOf("\n", match.index) + 1;
+    const nextBreak = text.indexOf("\n", match.index + match[0].length);
+    const lineEnd = nextBreak === -1 ? text.length : nextBreak;
+    const context = text.slice(lineStart, lineEnd);
+    const combined = `${match[1]} ${context} ${target.hostname}`;
+    const evidence = identityMatch(combined, identity);
+    const nameMatched = businessNameMatches(combined, identity);
+    if (!evidence.matched && !nameMatched) continue;
+
+    const key = `${target.hostname.toLowerCase()}${target.pathname.replace(/\/+$/, "")}`;
+    const score = evidence.matched ? 100 : domainMentionsBusiness(target.hostname, identity) ? 70 : 55;
+    const existing = candidates.get(key);
+    if (!existing || score > existing.score) {
+      candidates.set(key, {
+        url: target.toString(),
+        host: target.hostname.toLowerCase().replace(/^www\./, ""),
+        score,
+      });
+    }
+  }
+
+  return [...candidates.values()]
+    .sort((a, b) => b.score - a.score || a.url.localeCompare(b.url))
+    .slice(0, MAX_EMAIL_SOURCE_CANDIDATES);
 }
 
 /**
@@ -410,7 +554,10 @@ function nearbyPublicUrl(markdown, index) {
  * A candidate must appear beside the business name, city, phone, or a matching
  * business domain; unrelated addresses in search chrome are ignored.
  */
-export function findPublicBusinessEmail(markdown, identity = {}) {
+export function findPublicBusinessEmail(markdown, identity = {}, {
+  identityConfirmed = false,
+  sourceUrl = "",
+} = {}) {
   const text = String(markdown || "");
   const businessTokens = identityTokens(identity.business_name || identity.business);
   const city = String(identity.city || "").trim().toLowerCase();
@@ -429,6 +576,7 @@ export function findPublicBusinessEmail(markdown, identity = {}) {
       !localPart
       || !domain
       || BLOCKED_EMAIL_DOMAINS.has(domain)
+      || isThirdPartyWebsiteHost(domain)
       || ["png", "jpg", "jpeg", "gif", "webp", "svg", "css", "js"].includes(tld)
       || /^(no-?reply|donotreply|mailer-daemon)$/.test(localPart)
       || /^(test|example|yourname|name)$/.test(localPart)
@@ -444,12 +592,13 @@ export function findPublicBusinessEmail(markdown, identity = {}) {
     if (phoneDigits && compactContext.includes(phoneDigits)) score += 4;
     if (CONTACT_LOCAL_PARTS.has(localPart)) score += 1;
     if (businessTokens.some((token) => domain.includes(token))) score += 3;
+    if (identityConfirmed) score += 3;
 
     if (score < 3) continue;
     candidates.push({
       email,
       score,
-      source_url: nearbyPublicUrl(text, match.index),
+      source_url: sourceUrl || nearbyPublicUrl(text, match.index),
       evidence: context.replace(/\s+/g, " ").trim().slice(0, 280),
     });
   }
@@ -465,26 +614,8 @@ function businessEmailSearchUrl(identity = {}) {
   const terms = [
     business ? '"' + business + '"' : "",
     location ? '"' + location + '"' : "",
-    phone ? '"' + phone + '"' : "",
-    "email",
-  ].filter(Boolean).join(" ");
-  const url = new URL("https://www.bing.com/search");
-  url.searchParams.set("q", terms);
-  return url;
-}
-
-function businessWebsiteSearchUrl(identity = {}) {
-  const business = String(identity.business_name || identity.business || "").trim();
-  const location = [identity.city, identity.region]
-    .map((value) => String(value || "").trim())
-    .filter(Boolean)
-    .join(", ");
-  const phone = String(identity.phone || "").trim();
-  const street = String(identity.address || "").split(",")[0].trim();
-  const terms = [
-    business ? `"${business}"` : "",
-    location ? `"${location}"` : "",
-    phone ? `"${phone}"` : street ? `"${street}"` : "",
+    !location && phone ? '"' + phone + '"' : "",
+    '("email" OR "contact")',
   ].filter(Boolean).join(" ");
   const url = new URL("https://www.bing.com/search");
   url.searchParams.set("q", terms);
@@ -502,10 +633,31 @@ function emptyEmailResult(error = "") {
   };
 }
 
-async function searchBusinessEmail(identity, browsePage) {
+async function searchBusinessEmail(identity, browsePage, searchPage = browsePage) {
   const searchUrl = businessEmailSearchUrl(identity);
-  const page = await browsePage(searchUrl);
-  const match = findPublicBusinessEmail(page.markdown, identity);
+  const page = await searchPage(searchUrl);
+  const directMatch = findPublicBusinessEmail(page.markdown, identity);
+  const pageMatches = [];
+
+  if (!directMatch) {
+    const sources = extractEmailSourceCandidates(page.markdown, identity);
+    const inspected = await Promise.all(sources.map(async (source) => {
+      try {
+        const sourcePage = await browsePage(source.url);
+        const evidence = identityMatch(`${sourcePage.title || ""}\n${sourcePage.markdown || ""}`, identity);
+        if (!evidence.matched) return null;
+        return findPublicBusinessEmail(sourcePage.markdown, identity, {
+          identityConfirmed: true,
+          sourceUrl: source.url,
+        });
+      } catch {
+        return null;
+      }
+    }));
+    pageMatches.push(...inspected.filter(Boolean));
+  }
+
+  const match = directMatch || pageMatches.sort((a, b) => b.score - a.score || a.email.localeCompare(b.email))[0] || null;
   return {
     page,
     result: {
@@ -518,68 +670,73 @@ async function searchBusinessEmail(identity, browsePage) {
   };
 }
 
+function createSerialBrowser(browse, env) {
+  const pageCache = new Map();
+  let tail = Promise.resolve();
+  return (url) => {
+    const key = String(url);
+    if (!pageCache.has(key)) {
+      const page = tail.catch(() => {}).then(() => browse(key, env));
+      tail = page.catch(() => {});
+      pageCache.set(key, page);
+    }
+    return pageCache.get(key);
+  };
+}
+
+function createSearchBrowser(browsePage) {
+  return async (url) => {
+    try {
+      return await fetchSearchToMarkdown(url);
+    } catch (fetchError) {
+      try {
+        return await browsePage(url);
+      } catch (browserError) {
+        throw new Error(
+          `Public search failed (${fetchError?.message || "fetch unavailable"}); browser fallback failed (${browserError?.message || "browser unavailable"}).`,
+        );
+      }
+    }
+  };
+}
+
 export async function lookupBusinessEmail(identity, env) {
   const business = String(identity?.business_name || identity?.business || "").trim();
   if (!business) throw new Error("A business name is required for email lookup.");
 
-  const { result } = await searchBusinessEmail(identity, (url) => browseToMarkdown(url, env));
+  const browsePage = createSerialBrowser(browseToMarkdown, env);
+  const { result } = await searchBusinessEmail(identity, browsePage, createSearchBrowser(browsePage));
   return result;
 }
 
-function combineWebsiteVerdicts(primary, secondary) {
-  if (primary.status === "found") return primary;
-  if (secondary.status === "found") return secondary;
-  if (primary.status === "unknown") return primary;
-  if (secondary.status === "unknown") return secondary;
-  return primary;
-}
-
 /**
- * Runs the independent website gate and the existing evidence-matched email
- * search. The website search goes first and can short-circuit a confirmed site.
- * If it does not, the email search page is also inspected so a site exposed by
- * that existing search cannot slip through again.
+ * Runs one combined public-presence search, extracts evidence-matched email,
+ * and inspects any first-party website exposed by the same results. One search
+ * per business matters on Workers Free, where Quick Actions are limited to one
+ * request every ten seconds.
  */
-export async function lookupBusinessPresence(identity, env, { browse = browseToMarkdown } = {}) {
+export async function lookupBusinessPresence(identity, env, {
+  browse = browseToMarkdown,
+  search = null,
+} = {}) {
   const business = String(identity?.business_name || identity?.business || "").trim();
   if (!business) throw new Error("A business name is required for web-presence lookup.");
 
-  const pageCache = new Map();
-  const browsePage = async (url) => {
-    const key = String(url);
-    if (!pageCache.has(key)) pageCache.set(key, Promise.resolve().then(() => browse(key, env)));
-    return pageCache.get(key);
-  };
+  /*
+   * The current Browser Run binding rejects overlapping Quick Actions with
+   * 429s. Keep the higher-level research independent, but queue the underlying
+   * page loads and cache duplicates so evidence is not lost to rate limits.
+  */
+  const browsePage = createSerialBrowser(browse, env);
+  const searchPage = search || (browse === browseToMarkdown ? createSearchBrowser(browsePage) : browsePage);
 
-  const websiteSearchUrl = businessWebsiteSearchUrl(identity);
-  let website;
-  try {
-    const page = await browsePage(websiteSearchUrl);
-    website = await inspectBusinessWebsiteResults(
-      page.markdown,
-      identity,
-      browsePage,
-      websiteSearchUrl.toString(),
-    );
-  } catch (error) {
-    website = websiteVerdict("unknown", {
-      reason: "The public website search could not be completed.",
-      evidence: error?.message || "Search unavailable.",
-      searchedUrl: websiteSearchUrl.toString(),
-    });
-  }
-
-  if (website.status === "found") {
-    return {
-      website: { ...website, checked_at: new Date().toISOString() },
-      email: { ...emptyEmailResult(), skipped: true },
-    };
-  }
-
+  let website = websiteVerdict("unknown", {
+    reason: "The public presence search could not be completed.",
+  });
   let email = emptyEmailResult();
   let emailPage = null;
   try {
-    const emailSearch = await searchBusinessEmail(identity, browsePage);
+    const emailSearch = await searchBusinessEmail(identity, browsePage, searchPage);
     emailPage = emailSearch.page;
     email = {
       address: emailSearch.result.email,
@@ -591,6 +748,10 @@ export async function lookupBusinessPresence(identity, env, { browse = browseToM
     };
   } catch (error) {
     email = emptyEmailResult(error?.message || "Email search unavailable.");
+    website = websiteVerdict("unknown", {
+      reason: "The public presence search could not be completed.",
+      evidence: error?.message || "Search unavailable.",
+    });
   }
 
   if (emailPage) {
@@ -602,13 +763,13 @@ export async function lookupBusinessPresence(identity, env, { browse = browseToM
         browsePage,
         emailSearchUrl,
       );
-      website = combineWebsiteVerdicts(website, emailWebsite);
+      website = emailWebsite;
     } catch (error) {
-      website = combineWebsiteVerdicts(website, websiteVerdict("unknown", {
+      website = websiteVerdict("unknown", {
         reason: "A website exposed by the email search could not be verified.",
         evidence: error?.message || "Verification unavailable.",
         searchedUrl: emailSearchUrl,
-      }));
+      });
     }
   }
 

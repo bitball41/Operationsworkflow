@@ -95,6 +95,12 @@ when that is a reasonable interpretation of the request. When some leads were sa
 the reported shortfall on the retry. If the target still is not met, state the exact saved count and
 the shortfall; never turn "0 businesses scanned" into a completed result.
 
+For discover_leads, business_type must contain only the niche and location must contain only one
+concrete place. Never put counts, "leads", "businesses", website requirements, save instructions,
+or planning text into either field. Put the requested count in limit and the email requirement in
+must_have_email. A single discovery call can request at most 250 leads. For a larger request, make
+separate calls for concrete cities or regions instead of putting multi-step instructions in a field.
+
 When a tool comes back blocked, say plainly what is not connected and what would fix it. Never
 claim something was sent, published or saved unless a tool reported that it was. Keep replies
 short and concrete: the person reading them is mid-task, not browsing.`;

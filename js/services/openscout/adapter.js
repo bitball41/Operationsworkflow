@@ -79,10 +79,6 @@ export async function discoverWithOpenScout(options, onProgress) {
   }));
 
   if (options.mustHavePhone) leads = leads.filter((lead) => Boolean(lead.phone));
-  if (options.strictlyBlankWebsite) {
-    leads = leads.filter((lead) => lead.source_metadata?.openscout?.leadCategory === "none");
-  }
-
   const requested = Math.max(1, Math.min(250, Number(options.limit) || 50));
   let presenceStats = {
     webPresenceChecked: 0,
@@ -90,11 +86,12 @@ export async function discoverWithOpenScout(options, onProgress) {
     inconclusiveWebsiteChecks: 0,
     emailsMatched: 0,
   };
-  if (options.strictlyBlankWebsite || options.mustHaveEmail) {
+  if (options.requireNoOfficialWebsite || options.mustHaveEmail) {
     const screened = await screenLeadsForBusinessPresence(leads, {
       limit: requested,
       requireEmail: options.mustHaveEmail,
       onProgress,
+      lookup: options.presenceLookup || lookupBusinessPresence,
     });
     leads = screened.leads;
     presenceStats = screened.stats;
@@ -111,14 +108,15 @@ export async function discoverWithOpenScout(options, onProgress) {
 }
 
 /**
- * Checks every Google-siteless candidate for an identity-matched first-party
+ * Checks every OpenScout candidate for an identity-matched first-party
  * website, then applies the existing public-email rule. Confirmed websites are
- * removed. Unknown checks remain eligible, with their warning evidence stored,
- * as long as the public email requirement is also satisfied.
+ * removed. Unknown checks remain eligible with their warning evidence stored.
+ * Public email is attached when found and only becomes a filter when the caller
+ * explicitly requires it.
  */
 export async function screenLeadsForBusinessPresence(leads, {
   limit = 50,
-  requireEmail = true,
+  requireEmail = false,
   onProgress,
   lookup = lookupBusinessPresence,
 } = {}) {
@@ -136,7 +134,13 @@ export async function screenLeadsForBusinessPresence(leads, {
   let completed = 0;
   let failed = 0;
   let firstError = null;
-  const workerCount = Math.min(4, candidates.length);
+  /*
+   * Browser Run currently permits one Quick Action at a time for this binding.
+   * Parallel lead lookups produce 429s and, when email is required, turn a
+   * healthy Places result into zero. Process candidates serially and let the
+   * progress callback keep the UI informed.
+   */
+  const workerCount = Math.min(1, candidates.length);
 
   const runWorker = async () => {
     while (cursor < candidates.length && matches.length < limit) {
@@ -207,6 +211,25 @@ export async function screenLeadsForBusinessPresence(leads, {
         firstError ||= error;
         stats.webPresenceChecked += 1;
         stats.inconclusiveWebsiteChecks += 1;
+        if (!requireEmail) {
+          const website = {
+            status: "unknown",
+            url: "",
+            evidence: String(error?.message || "Research unavailable."),
+            reason: "The independent website check could not be completed.",
+            searched_url: "",
+            checked_at: new Date().toISOString(),
+          };
+          matches.push({
+            order,
+            lead: {
+              ...lead,
+              website_status: "Website check uncertain",
+              source_payload: { ...lead.source_payload, web_presence: website },
+              source_metadata: { ...lead.source_metadata, web_presence: website },
+            },
+          });
+        }
       } finally {
         completed += 1;
         onProgress?.({
@@ -221,7 +244,7 @@ export async function screenLeadsForBusinessPresence(leads, {
   };
 
   await Promise.all(Array.from({ length: workerCount }, runWorker));
-  if (completed && failed === completed && firstError) {
+  if (requireEmail && completed && failed === completed && firstError) {
     throw new Error("Business web-presence checks could not run: " + (firstError.message || "research unavailable"));
   }
 

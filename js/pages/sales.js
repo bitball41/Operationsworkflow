@@ -122,11 +122,11 @@ export function renderDiscovery() {
             ${field("Minimum rating", input("min_rating", 0, { type: "number", attrs: 'min="0" max="5" step="0.1"' }))}
           </div>
           ${checkbox("no_website", "Only businesses with no official website", true, "disabled")}
-          ${checkbox("must_have_email", "Require a public email address", true, "disabled")}
+          ${checkbox("must_have_email", "Require a public email address", false)}
           ${checkbox("must_have_phone", "Require a phone number", true)}
           ${checkbox("skip_known", "Skip businesses already in leads", true)}
           ${checkbox("verify", canVerify ? "Verify ambiguous links live" : "Verify ambiguous links live (local preview only)", canVerify, canVerify ? "" : "disabled")}
-          <p class="faint">OpenScout starts with blank Google website listings, then filters identity-matched official sites found elsewhere on the web and requires a publicly linked email address.</p>
+          <p class="faint">OpenScout results keep their original lead categories, then identity-matched official sites found elsewhere on the web are filtered out. Public emails are attached when found and can be required explicitly.</p>
         `)}
 
         ${discovery.error ? notice("Search could not finish", discovery.error, { tone: "error", iconName: "alert" }) : ""}
@@ -169,7 +169,7 @@ export function renderDiscovery() {
           }),
           emptyState: empty({
             title: discovery.status === "running" ? "Searching…" : allRows.length ? "No results match this filter" : "No searches yet",
-            message: allRows.length ? "Change the decision filter or search text." : "Enter a niche and location above to find businesses with a public email and no official website found.",
+            message: allRows.length ? "Change the decision filter or search text." : "Enter a niche and location above to find businesses with no official website found.",
           }),
         })}`,
       })}

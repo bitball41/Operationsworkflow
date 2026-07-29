@@ -1238,6 +1238,7 @@ async function runDiscovery(values) {
       minConfidence: number(values.min_confidence, 70),
       minRating: number(values.min_rating, 0),
       noWebsite: values.no_website !== false,
+      mustHaveEmail: Boolean(values.must_have_email),
       mustHavePhone: Boolean(values.must_have_phone),
       skipKnown: values.skip_known !== false,
       verify: Boolean(values.verify),

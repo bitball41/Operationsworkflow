@@ -19,7 +19,7 @@ import {
 } from "../services/ai/tools.js";
 
 const EXAMPLES = [
-  { label: "Find leads", text: "Find 25 plumbers in Austin with no website and a public email" },
+  { label: "Find leads", text: "Find 25 plumbers in Austin with no official website" },
   { label: "Plan today", text: "What needs my attention today, in priority order?" },
   { label: "Pick outreach", text: "Which five leads should I contact next, and why?" },
   { label: "Check replies", text: "Sync the inbox and summarize every reply that needs action" },

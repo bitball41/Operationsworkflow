@@ -4,12 +4,14 @@ import test from "node:test";
 import { buildBundleForTemplateRecord, composeDocument } from "../js/services/sites/bundle.js";
 import { normalizeTemplateAssetPaths } from "../js/services/sites/templates.js";
 import {
+  extractEmailSourceCandidates,
   extractWebsiteCandidates,
   findPublicBusinessEmail,
   inspectBusinessWebsiteResults,
   isThirdPartyWebsiteHost,
   lookupBusinessPresence,
   safeResearchUrl,
+  searchHtmlToMarkdown,
 } from "../worker/browser.js";
 import { handleDemoPublish, servePublicDemo } from "../worker/demos.js";
 import worker from "../worker/index.js";
@@ -90,6 +92,40 @@ test("public email extraction requires matching business evidence", () => {
     city: "Austin",
   });
   assert.equal(unrelated, null);
+});
+
+test("public search HTML keeps result links, snippets and email evidence", () => {
+  const markdown = searchHtmlToMarkdown(`
+    <ol>
+      <li class="b_algo">
+        <h2><a href="https://directory.example/northstar">Northstar Plumbing</a></h2>
+        <p>Northstar Plumbing serves Austin. Email hello@northstar.example.</p>
+      </li>
+    </ol>
+  `);
+  assert.match(markdown, /\[Northstar Plumbing\]\(https:\/\/directory\.example\/northstar\)/);
+  assert.match(markdown, /hello@northstar\.example/);
+});
+
+test("email-source candidates include identity-related directory profiles", () => {
+  const candidates = extractEmailSourceCandidates([
+    "[Northstar Plumbing on Yelp](https://www.yelp.com/biz/northstar-plumbing) Austin, TX",
+    "[Unrelated electrician](https://directory.example/unrelated) Dallas, TX",
+  ].join("\n"), {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    region: "TX",
+  });
+  assert.deepEqual(candidates.map((candidate) => candidate.host), ["yelp.com"]);
+});
+
+test("identity-confirmed pages never turn a platform support address into the business email", () => {
+  const match = findPublicBusinessEmail(
+    "Northstar Plumbing in Austin. Platform help: support@yelp.com.",
+    { business_name: "Northstar Plumbing", city: "Austin" },
+    { identityConfirmed: true, sourceUrl: "https://yelp.com/biz/northstar-plumbing" },
+  );
+  assert.equal(match, null);
 });
 
 test("website candidates ignore third-party profiles but keep hosted business sites", () => {
@@ -190,6 +226,83 @@ test("conflicting or unavailable official website candidates stay uncertain", as
   assert.match(unavailable.evidence, /timed out/i);
 });
 
+test("plausible website candidates are opened concurrently", async () => {
+  const releases = [];
+  const started = [];
+  const inspection = inspectBusinessWebsiteResults([
+    "[Northstar Plumbing One](https://northstar-one.example) Austin",
+    "[Northstar Plumbing Two](https://northstar-two.example) Austin",
+    "[Northstar Plumbing Three](https://northstar-three.example) Austin",
+  ].join("\n"), {
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+  }, (url) => new Promise((resolve) => {
+    started.push(url);
+    releases.push(() => resolve({ title: "Other company", markdown: "Serving Dallas." }));
+  }));
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(started.length, 3, "one slow candidate must not block the next candidate");
+  for (const release of releases) release();
+  const result = await inspection;
+  assert.equal(result.status, "not_found");
+});
+
+test("business presence uses one combined search on a rate-limited Browser Run binding", async () => {
+  let searches = 0;
+  const result = await lookupBusinessPresence({
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+  }, { BROWSER: {} }, {
+    browse: async () => {
+      searches += 1;
+      return { title: "Search", markdown: "No matching results." };
+    },
+  });
+
+  assert.equal(searches, 1);
+  assert.equal(result.website.status, "not_found");
+  assert.equal(result.email.address, "");
+});
+
+test("email research opens an identity-matched public profile when search snippets omit the address", async () => {
+  let profileOpened = false;
+  const result = await lookupBusinessPresence({
+    business_name: "Northstar Plumbing",
+    city: "Austin",
+    region: "TX",
+  }, { BROWSER: {} }, {
+    browse: async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.hostname === "www.bing.com") {
+        const query = parsed.searchParams.get("q") || "";
+        return {
+          title: "Search",
+          markdown: /\bemail\b/i.test(query)
+            ? "[Northstar Plumbing directory profile](https://chamberofcommerce.com/business-directory/texas/austin/northstar) Austin, TX"
+            : "[Northstar Plumbing on Yelp](https://yelp.com/biz/northstar-plumbing) Austin, TX",
+        };
+      }
+      if (parsed.hostname === "chamberofcommerce.com") {
+        profileOpened = true;
+        return {
+          title: "Northstar Plumbing",
+          markdown: "Northstar Plumbing serves Austin, TX. Reach the team at estimates@northstar-mail.example.",
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    },
+  });
+
+  assert.equal(profileOpened, true);
+  assert.equal(result.website.status, "not_found");
+  assert.equal(result.email.address, "estimates@northstar-mail.example");
+  assert.equal(
+    result.email.source_url,
+    "https://chamberofcommerce.com/business-directory/texas/austin/northstar",
+  );
+});
+
 test("business presence catches an official site exposed by the email search", async () => {
   const identity = {
     business_name: "Northstar Plumbing",
@@ -231,19 +344,19 @@ test("business presence catches an official site exposed by the email search", a
 });
 
 test("business presence preserves an email when the website search is inconclusive", async () => {
-  let searchCount = 0;
   const browse = async (url) => {
     const parsed = new URL(String(url));
-    if (parsed.hostname !== "www.bing.com") throw new Error(`Unexpected URL: ${url}`);
-    searchCount += 1;
-    if (searchCount === 1) throw new Error("Website search timed out");
-    return {
-      title: "Search",
-      markdown: [
-        "[Uncertain Electric on Yelp](https://yelp.com/biz/uncertain-electric)",
-        "Uncertain Electric serves Austin. Email hello@uncertainelectric.example.",
-      ].join("\n"),
-    };
+    if (parsed.hostname === "www.bing.com") {
+      return {
+        title: "Search",
+        markdown: [
+          "[Uncertain Electric](https://uncertainelectric.example) Austin",
+          "Uncertain Electric serves Austin. Email hello@uncertainelectric.example.",
+        ].join("\n"),
+      };
+    }
+    if (parsed.hostname === "uncertainelectric.example") throw new Error("Website search timed out");
+    throw new Error(`Unexpected URL: ${url}`);
   };
 
   const result = await lookupBusinessPresence({
