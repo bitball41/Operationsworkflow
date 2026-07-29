@@ -149,6 +149,58 @@ test("lead discovery leads with three inputs and hides the rest", () => {
   }
 });
 
+test("lead discovery reports filtered websites and marks uncertain checks", () => {
+  const previousDiscovery = structuredClone(getState().discovery);
+  try {
+    const presence = {
+      status: "unknown",
+      reason: "A plausible website could not be opened.",
+      searched_url: "https://www.bing.com/search?q=uncertain",
+    };
+    setState({
+      route: "discovery",
+      routeParams: {},
+      discovery: {
+        ...previousDiscovery,
+        results: [{
+          id: "uncertain-result",
+          decision: "pending",
+          business_name: "Uncertain Electric",
+          website_status: "Website check uncertain",
+          lead_score: 88,
+          normalized_data: {
+            business_name: "Uncertain Electric",
+            category: "Electrician",
+            city: "Austin",
+            region: "TX",
+            email: "hello@example.com",
+            phone: "(512) 555-0199",
+            has_website: false,
+            website_status: "Website check uncertain",
+            source_metadata: { web_presence: presence },
+          },
+          raw_source_metadata: {
+            openscout: { rating: 4.8, ratingCount: 21 },
+            web_presence: presence,
+          },
+        }],
+        summary: {
+          webPresenceChecked: 7,
+          excludedExistingWebsite: 3,
+          inconclusiveWebsiteChecks: 1,
+        },
+      },
+    }, { silent: true });
+
+    const html = renderers.discovery();
+    assert.match(html, /Web checked 7/);
+    assert.match(html, /3 official sites filtered/);
+    assert.match(html, /Check uncertain/);
+  } finally {
+    setState({ discovery: previousDiscovery }, { silent: true });
+  }
+});
+
 test("studio previews the real bundle in a sandboxed frame", () => {
   setState({ route: "studio", routeParams: {} }, { silent: true });
   const html = renderers.studio();

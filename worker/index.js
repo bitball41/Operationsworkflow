@@ -29,7 +29,11 @@
 import { ANTHROPIC, OPENAI, PLACES } from "./upstreams.js";
 import { verifyCloudflareAccess } from "./access.js";
 import { getModel, resolveModel } from "../js/data/models.js";
-import { handleBrowserResearch, handleBusinessEmailLookup } from "./browser.js";
+import {
+  handleBrowserResearch,
+  handleBusinessEmailLookup,
+  handleBusinessPresenceLookup,
+} from "./browser.js";
 import { demoHostingStatus, handleDemoPublish, servePublicDemo } from "./demos.js";
 import { handleMcp } from "./mcp.js";
 import { handleWhopWebhook, whopWebhookConfigured } from "./whop.js";
@@ -338,6 +342,9 @@ async function handleApi(request, env, url) {
     }
     if (path === "/api/browser/contact-email" && isPost) {
       return await handleBusinessEmailLookup(request, env, await readJson(request, 40_000));
+    }
+    if (path === "/api/browser/business-presence" && isPost) {
+      return await handleBusinessPresenceLookup(request, env, await readJson(request, 40_000));
     }
     if (path === "/api/demos/publish" && isPost) return await handleDemoPublish(request, env);
     if (path === "/api/ai/anthropic/messages" && isPost) return await handleAnthropic(request, env);

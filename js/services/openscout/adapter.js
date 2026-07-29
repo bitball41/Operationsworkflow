@@ -7,7 +7,7 @@
  */
 
 import { getState } from "../../core/state.js";
-import { fetchMapsKey, lookupBusinessEmail } from "../api.js";
+import { fetchMapsKey, lookupBusinessPresence } from "../api.js";
 
 const ENGINE_VERSION = "openscout-2026-07-25";
 
@@ -84,13 +84,26 @@ export async function discoverWithOpenScout(options, onProgress) {
   }
 
   const requested = Math.max(1, Math.min(250, Number(options.limit) || 50));
-  if (options.mustHaveEmail) {
-    leads = await enrichLeadsWithPublicEmails(leads, { limit: requested, onProgress });
+  let presenceStats = {
+    webPresenceChecked: 0,
+    excludedExistingWebsite: 0,
+    inconclusiveWebsiteChecks: 0,
+    emailsMatched: 0,
+  };
+  if (options.strictlyBlankWebsite || options.mustHaveEmail) {
+    const screened = await screenLeadsForBusinessPresence(leads, {
+      limit: requested,
+      requireEmail: options.mustHaveEmail,
+      onProgress,
+    });
+    leads = screened.leads;
+    presenceStats = screened.stats;
   }
   leads = leads.slice(0, requested);
 
   return {
     ...result,
+    ...presenceStats,
     requested,
     leads,
     engineVersion: ENGINE_VERSION,
@@ -98,14 +111,25 @@ export async function discoverWithOpenScout(options, onProgress) {
 }
 
 /**
- * Finds public email addresses for siteless OpenScout candidates. Google Places
- * does not expose email, so the Worker searches public pages and returns only
- * addresses that appear beside matching business identity signals. Guesses are
- * never generated.
+ * Checks every Google-siteless candidate for an identity-matched first-party
+ * website, then applies the existing public-email rule. Confirmed websites are
+ * removed. Unknown checks remain eligible, with their warning evidence stored,
+ * as long as the public email requirement is also satisfied.
  */
-export async function enrichLeadsWithPublicEmails(leads, { limit = 50, onProgress } = {}) {
+export async function screenLeadsForBusinessPresence(leads, {
+  limit = 50,
+  requireEmail = true,
+  onProgress,
+  lookup = lookupBusinessPresence,
+} = {}) {
   const candidates = Array.isArray(leads) ? leads : [];
-  if (!candidates.length) return [];
+  const stats = {
+    webPresenceChecked: 0,
+    excludedExistingWebsite: 0,
+    inconclusiveWebsiteChecks: 0,
+    emailsMatched: 0,
+  };
+  if (!candidates.length) return { leads: [], stats };
 
   const matches = [];
   let cursor = 0;
@@ -120,7 +144,7 @@ export async function enrichLeadsWithPublicEmails(leads, { limit = 50, onProgres
       const lead = candidates[cursor];
       cursor += 1;
       try {
-        const found = await lookupBusinessEmail({
+        const found = await lookup({
           business_name: lead.business_name,
           phone: lead.phone,
           address: lead.address,
@@ -128,30 +152,65 @@ export async function enrichLeadsWithPublicEmails(leads, { limit = 50, onProgres
           region: lead.region,
           listing_url: lead.listing_url,
         });
-        if (found?.email) {
-          const evidence = {
-            source_url: found.source_url || "",
-            evidence: found.evidence || "",
-            score: Number(found.score) || 0,
+
+        stats.webPresenceChecked += 1;
+        const website = {
+          status: ["found", "not_found", "unknown"].includes(found?.website?.status)
+            ? found.website.status
+            : "unknown",
+          url: String(found?.website?.url || ""),
+          evidence: String(found?.website?.evidence || ""),
+          reason: String(found?.website?.reason || ""),
+          searched_url: String(found?.website?.searched_url || ""),
+          checked_at: String(found?.website?.checked_at || new Date().toISOString()),
+        };
+
+        if (website.status === "found") {
+          stats.excludedExistingWebsite += 1;
+          continue;
+        }
+        if (website.status === "unknown") stats.inconclusiveWebsiteChecks += 1;
+
+        const address = String(found?.email?.address || found?.email?.email || "").trim().toLowerCase();
+        if (address) stats.emailsMatched += 1;
+        if (!requireEmail || address) {
+          const emailEvidence = address ? {
+            source_url: String(found?.email?.source_url || ""),
+            evidence: String(found?.email?.evidence || ""),
+            score: Number(found?.email?.score) || 0,
+            searched_url: String(found?.email?.searched_url || ""),
             checked_at: new Date().toISOString(),
-          };
+          } : null;
           matches.push({
             order,
             lead: {
               ...lead,
-              email: String(found.email).trim().toLowerCase(),
-              source_payload: { ...lead.source_payload, email: evidence },
-              source_metadata: { ...lead.source_metadata, email: evidence },
+              email: address,
+              website_status: website.status === "unknown"
+                ? "Website check uncertain"
+                : "No official site found",
+              source_payload: {
+                ...lead.source_payload,
+                ...(emailEvidence ? { email: emailEvidence } : {}),
+                web_presence: website,
+              },
+              source_metadata: {
+                ...lead.source_metadata,
+                ...(emailEvidence ? { email: emailEvidence } : {}),
+                web_presence: website,
+              },
             },
           });
         }
       } catch (error) {
         failed += 1;
         firstError ||= error;
+        stats.webPresenceChecked += 1;
+        stats.inconclusiveWebsiteChecks += 1;
       } finally {
         completed += 1;
         onProgress?.({
-          phase: "email",
+          phase: "presence",
           completed,
           total: candidates.length,
           scanned: completed,
@@ -163,13 +222,33 @@ export async function enrichLeadsWithPublicEmails(leads, { limit = 50, onProgres
 
   await Promise.all(Array.from({ length: workerCount }, runWorker));
   if (completed && failed === completed && firstError) {
-    throw new Error("Public email lookup could not run: " + (firstError.message || "research unavailable"));
+    throw new Error("Business web-presence checks could not run: " + (firstError.message || "research unavailable"));
   }
 
-  return matches
-    .sort((a, b) => a.order - b.order)
-    .slice(0, limit)
-    .map((match) => match.lead);
+  onProgress?.({
+    phase: "presence",
+    completed,
+    total: completed || 1,
+    scanned: completed,
+    leads: matches.length,
+  });
+
+  return {
+    leads: matches
+      .sort((a, b) => a.order - b.order)
+      .slice(0, limit)
+      .map((match) => match.lead),
+    stats,
+  };
+}
+
+/** Back-compatible helper for callers that only need the screened lead array. */
+export async function enrichLeadsWithPublicEmails(leads, options = {}) {
+  const screened = await screenLeadsForBusinessPresence(leads, {
+    ...options,
+    requireEmail: true,
+  });
+  return screened.leads;
 }
 
 export function canUseDirectWebsiteVerification() {

@@ -200,6 +200,10 @@ export async function lookupBusinessEmail(payload, { signal } = {}) {
   return request("/browser/contact-email", { method: "POST", body: payload, signal });
 }
 
+export async function lookupBusinessPresence(payload, { signal } = {}) {
+  return request("/browser/business-presence", { method: "POST", body: payload, signal });
+}
+
 export async function callAnthropic(payload, { signal } = {}) {
   return request("/ai/anthropic/messages", { method: "POST", body: payload, signal });
 }

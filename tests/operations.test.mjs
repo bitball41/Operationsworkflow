@@ -35,7 +35,12 @@ const { matchCommand } = await import("../js/services/ai/commands.js");
 const { isConnected, integrationList } = await import("../js/services/integrations.js");
 const { providerReady } = await import("../js/services/ai/provider.js");
 const { canSend } = await import("../js/services/email/outreach.js");
-const { normalizeLead, duplicateKey, splitAddress } = await import("../js/services/openscout/adapter.js");
+const {
+  normalizeLead,
+  duplicateKey,
+  screenLeadsForBusinessPresence,
+  splitAddress,
+} = await import("../js/services/openscout/adapter.js");
 const { normalizeDiscoveryQuery } = await import("../js/services/discovery.js");
 const { updateRecord } = await import("../js/services/data.js");
 const { recentTranscript, serializeToolResult } = await import("../js/services/ai/provider.js");
@@ -392,6 +397,76 @@ test("the OpenScout adapter still normalizes leads the same way", () => {
     postalCode: "76010",
     country: "USA",
   });
+});
+
+test("business presence screening excludes official sites without consuming the result limit", async () => {
+  const candidates = ["site", "clear", "uncertain"].map((id) => ({
+    business_name: `${id} business`,
+    source_key: id,
+    phone: "555-0100",
+    address: "1 Main St, Austin, TX",
+    city: "Austin",
+    region: "TX",
+    listing_url: `https://maps.example/${id}`,
+    source_payload: {},
+    source_metadata: {},
+  }));
+  const lookup = async ({ business_name: businessName }) => {
+    if (businessName.startsWith("site")) {
+      return {
+        website: { status: "found", url: "https://site.example", checked_at: "2026-07-28T00:00:00.000Z" },
+        email: { address: "" },
+      };
+    }
+    const uncertain = businessName.startsWith("uncertain");
+    return {
+      website: {
+        status: uncertain ? "unknown" : "not_found",
+        reason: uncertain ? "Candidate timed out" : "No official site found",
+        checked_at: "2026-07-28T00:00:00.000Z",
+      },
+      email: {
+        address: `${uncertain ? "uncertain" : "clear"}@example.com`,
+        source_url: "https://directory.example/profile",
+        evidence: "Identity matched",
+        score: 7,
+      },
+    };
+  };
+
+  const screened = await screenLeadsForBusinessPresence(candidates, {
+    limit: 2,
+    lookup,
+  });
+  assert.deepEqual(screened.leads.map((lead) => lead.source_key), ["clear", "uncertain"]);
+  assert.equal(screened.stats.webPresenceChecked, 3);
+  assert.equal(screened.stats.excludedExistingWebsite, 1);
+  assert.equal(screened.stats.inconclusiveWebsiteChecks, 1);
+  assert.equal(screened.stats.emailsMatched, 2);
+  assert.equal(screened.leads[0].website_status, "No official site found");
+  assert.equal(screened.leads[1].website_status, "Website check uncertain");
+  assert.equal(screened.leads[1].source_metadata.web_presence.status, "unknown");
+});
+
+test("an uncertain website check without a public email remains excluded", async () => {
+  const screened = await screenLeadsForBusinessPresence([{
+    business_name: "Uncertain Electric",
+    source_key: "uncertain-no-email",
+    source_payload: {},
+    source_metadata: {},
+  }], {
+    limit: 5,
+    lookup: async () => ({
+      website: {
+        status: "unknown",
+        reason: "Search unavailable",
+        checked_at: "2026-07-28T00:00:00.000Z",
+      },
+      email: { address: "" },
+    }),
+  });
+  assert.equal(screened.leads.length, 0);
+  assert.equal(screened.stats.inconclusiveWebsiteChecks, 1);
 });
 
 test("statewide discovery uses the full region instead of a tiny center radius", () => {
