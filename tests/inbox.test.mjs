@@ -66,7 +66,7 @@ test("a reply is matched to its lead and moves them out of contacted", async () 
   assert.equal(thread.lead_id, "lead-1");
   assert.equal(thread.is_unread, true);
   assert.equal(getState().data.emails[0].direction, "inbound");
-  assert.equal(getState().data.leads.find((lead) => lead.id === "lead-1").status, "replied");
+  assert.equal(getState().data.leads.find((lead) => lead.id === "lead-1").status, "interested");
 });
 
 test("a reply from someone else at the business still finds the lead by domain", async () => {

@@ -37,7 +37,7 @@ setData({
     business_name: "Ironwood Electric",
     category: "Electrician",
     city: "Mansfield",
-    status: "qualified",
+    status: "ready_to_contact",
     lead_score: 91,
     has_website: false,
     email: "",

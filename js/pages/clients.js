@@ -2,7 +2,7 @@
 import { PROJECT_STAGES } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, relativeTime, statusLabel, sum } from "../core/utils.js";
-import { bar, btn, empty, externalLink, icon, pill, row, rows, section, stats, table, td } from "../components/ui.js";
+import { bar, btn, empty, icon, pill, row, rows, section, stats, table, td } from "../components/ui.js";
 import { byId, clientName, filterSelect, searchInput } from "./shared.js";
 
 export function renderClients() {
@@ -11,7 +11,9 @@ export function renderClients() {
   const status = routeParams.status || "all";
   const clients = data.clients
     .filter((client) => (status === "all" || client.status === status))
-    .filter((client) => !query || `${clientName(data, client)} ${client.contact_name} ${client.domain}`.toLowerCase().includes(query));
+    .filter((client) => !query || `${clientName(data, client)} ${client.contact_name} ${client.email} ${client.package_name}`.toLowerCase().includes(query));
+  const activeSubscriptions = data.maintenanceSubscriptions.filter((item) => item.status === "active");
+  const openSupport = data.maintenanceRequests.filter((request) => request.status !== "completed");
 
   return `
     <div class="stack">
@@ -19,8 +21,9 @@ export function renderClients() {
         body: stats([
           ["Clients", formatNumber(data.clients.length)],
           ["Active", formatNumber(data.clients.filter((client) => client.status === "active").length)],
-          ["Collected", formatCurrency(sum(data.clients, (client) => client.amount_received))],
-          ["Outstanding", formatCurrency(sum(data.clients, (client) => Math.max(0, Number(client.agreed_price || 0) - Number(client.amount_received || 0))))],
+          ["Setup contracted", formatCurrency(sum(data.clients, (client) => client.setup_fee || client.agreed_price))],
+          ["Management MRR", formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))],
+          ["Open support", formatNumber(openSupport.length)],
         ]),
       })}
 
@@ -32,14 +35,15 @@ export function renderClients() {
       </div>
 
       ${table({
-        columns: ["Business", "Contact", "Site", "Price", "Paid", "Status", ""],
+        columns: ["Business", "Primary contact", "Offer", "Setup", "Monthly", "Onboarding", "Delivery", ""],
         rows: clients.map((client) => `<tr data-action="client-open" data-id="${client.id}">
-          ${td("Business", `<div class="cell"><strong>${escapeHtml(clientName(data, client))}</strong><span>${escapeHtml(client.package_name || "Website client")}</span></div>`)}
-          ${td("Contact", escapeHtml(client.contact_name || client.email || "—"))}
-          ${td("Site", client.production_url ? externalLink(client.production_url, client.domain || "Open") : escapeHtml(client.domain || "Not live"))}
-          ${td("Price", formatCurrency(client.agreed_price))}
-          ${td("Paid", `${formatCurrency(client.amount_received)} ${pill(client.payment_status || "pending")}`)}
-          ${td("Status", pill(client.status))}
+          ${td("Business", `<div class="cell"><strong>${escapeHtml(clientName(data, client))}</strong><span>${escapeHtml(client.email || client.phone || "No contact details")}</span></div>`)}
+          ${td("Primary contact", escapeHtml(client.contact_name || "—"))}
+          ${td("Offer", escapeHtml(client.package_name || "Managed AI automation"))}
+          ${td("Setup", formatCurrency(client.setup_fee || client.agreed_price))}
+          ${td("Monthly", `${formatCurrency(client.monthly_fee || 0)}/mo`)}
+          ${td("Onboarding", pill(client.onboarding_status || "not_started"))}
+          ${td("Delivery", pill(client.status))}
           ${td("", icon("chevron"))}
         </tr>`),
         emptyState: empty({ title: "No clients yet", message: "Convert a won lead into a client to start fulfilment." }),
@@ -75,7 +79,7 @@ export function renderProjects() {
         return `<div class="row">
           <span class="row__main">
             <strong>${escapeHtml(project.name)}</strong>
-            <span>${escapeHtml(clientName(data, byId(data.clients, project.client_id)))} · ${done}/${tasks.length} tasks · due ${formatDate(project.deadline)}</span>
+            <span>${escapeHtml(clientName(data, byId(data.clients, project.client_id)))} · ${escapeHtml(project.automation_type || "Automation project")} · ${done}/${tasks.length} tasks · target ${formatDate(project.target_launch || project.deadline)}</span>
             ${bar(project.progress)}
           </span>
           <span class="row__side">
@@ -84,7 +88,7 @@ export function renderProjects() {
             ${btn("Open", { action: "project-open", size: "sm", attrs: `data-id="${project.id}"` })}
           </span>
         </div>`;
-      })) : empty({ title: "No projects", message: "Projects track fulfilment from payment to launch." })}
+      })) : empty({ title: "No projects", message: "Projects track automation delivery from discovery through maintenance." })}
     </div>
   `;
 }

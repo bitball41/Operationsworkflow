@@ -1,9 +1,9 @@
 # Operations
 
-A personal operations system for a website-selling business: find local
-businesses without websites, build them a real demo site, send one email, and
-follow the work through to a paid client — with automation doing the repetitive
-part.
+A private operating system for an AI automation agency: discover businesses,
+work calls and meetings, close custom implementation and management agreements,
+onboard clients, deliver automation projects, track provider-backed deployments,
+and follow revenue, recurring billing, direct costs, and sales commissions.
 
 It is one person's control centre, not a SaaS product. Plain HTML, CSS and
 JavaScript, with no browser framework or frontend build step.
@@ -48,7 +48,7 @@ js/
     data.js          account-free workspace client
     operations.js    every business action, exactly once
     integrations.js  "is this service actually connected?"
-    automation/      the batch engine
+    automation/      the preserved legacy website outreach batch engine
     ai/              provider boundary, context adapter, tool registry, commands
     sites/           template layouts, bundle builder, publish boundary
     email/           outreach copy and the send boundary
@@ -77,7 +77,26 @@ password form. Operational records are not cached, queued, or recovered from
 browser storage. Legacy workspace keys and obsolete Supabase auth tokens are
 erased without being imported.
 
-## Automation
+## Core agency flow
+
+The primary application flow is:
+
+```text
+lead → call → meeting → proposal → won → client + onboarding + project
+→ automation configuration → deployment record → recurring management
+```
+
+Calls, meetings, pipeline changes, won-lead conversion, setup payments, and
+commissions all use the same deterministic operations layer. A paid setup fee
+can earn the assigned salesperson's configured commission; recurring revenue
+does not do so by default.
+
+Automation Studio is a management layer. It stores configuration, prompts,
+provider references, versions, usage metadata, and errors without claiming to
+execute Retell, Vapi, n8n, or another provider. Provider adapters are activated
+only when their server-side credentials and contracts exist.
+
+## Legacy website outreach
 
 `services/automation/engine.js` runs a fixed sequence per lead, built from the
 deterministic operations layer:
@@ -91,10 +110,9 @@ Research and template selection run in parallel; everything else is ordered
 because it depends on the previous step. A lead takes a couple of seconds, not
 minutes. The AI is never inside this loop — it only starts and stops it.
 
-Start it from the Automation page, from Home, from the command palette, or by
-typing `go` to the assistant. Settings (daily target, price, niche and location
-filters, follow-up cadence, pacing) live behind one disclosure with working
-defaults.
+This engine and its website artifact infrastructure are retained for existing
+records but are no longer in the primary navigation. It remains reachable by a
+legacy route while the agency migration is underway.
 
 **Outlook sends through Microsoft Graph.** The send step remains blocked until
 the Operations workspace connects a Microsoft mailbox from Integrations.
@@ -112,16 +130,19 @@ A full-page workspace at `#/assistant`. Three parts already work:
   every stage of the workflow, not just reading it:
   - *Discovery* — `discover_leads` (a real Google Places search that adds
     leads), `save_discovered_leads`
-  - *Leads* — `get_next_lead`, `search_leads`, `get_lead`, `create_lead`,
-    `update_lead`, `research_business`, `update_pipeline`
+  - *Leads / sales* — `get_next_lead`, `search_leads`, `get_lead`,
+    `create_lead`, `update_lead`, `research_business`, `update_pipeline`,
+    `record_sales_call`, `create_meeting`
   - *Websites* — `list_templates`, `choose_template`, `create_demo`,
     `update_demo`, `publish_demo`
   - *Outreach* — `draft_email`, `send_draft`, `send_email` (any address, lead
     or not), `reply_to_thread`, `sync_inbox`, `create_followup`, `get_inbox`,
     `classify_reply`
-  - *Business* — `get_clients`, `get_payments`, `get_revenue`, `get_tasks`,
-    `get_status`, `get_follow_ups`, `get_integrations`,
-    `record_payment`, `record_expense`
+  - *Business* — `get_agency_summary`, `get_clients`, `get_payments`,
+    `get_revenue`, `get_commissions`, `get_tasks`, `get_status`,
+    `get_follow_ups`, `get_integrations`, `record_payment`, `record_expense`
+  - *Automation operations* — `list_automations` reads the actual stored
+    management records without implying a live provider query
   - *Workspace* — `create_task`, `complete_task`, `create_note`,
     `create_calendar_event`, `get_activity`
   - *Automation* — `start_automation`, `stop_automation`, `run_one_lead`
@@ -189,7 +210,7 @@ Settings, Costs and Analytics read. OpenAI models are selectable but unpriced
 here; their spend shows as tokens rather than as a dollar figure that might be
 wrong.
 
-## Websites
+## Preserved website artifacts
 
 The repo catalogue remains the fallback, but Templates now accepts a portable
 `index.html`, optional `style.css` and `script.js`, plus original PNG, JPEG,

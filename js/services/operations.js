@@ -22,7 +22,7 @@ import { NotConnectedError } from "./integrations.js";
 import { buildBundleForTemplateRecord, catalogForRecord, chooseTemplate } from "./sites/bundle.js";
 import { publishBundle } from "./sites/publish.js";
 
-const OPEN_STATUSES = ["new", "qualified", "demo_ready"];
+const OPEN_STATUSES = ["new", "ready_to_contact"];
 const CLOSED_STATUSES = ["won", "lost"];
 
 function data() {
@@ -50,9 +50,9 @@ export function hasBeenContacted(lead) {
 
 /**
  * The next best lead to work: email-ready first, then highest score and oldest
- * first. Phone-only leads remain eligible as a fallback instead of disappearing
- * from the workspace, but the email outreach loop does not waste its first
- * builds on leads it cannot yet contact.
+ * first. Website presence is useful context for an automation agency, not an
+ * exclusion rule; the optional discovery filter is the only place where a
+ * no-website constraint belongs.
  */
 export function getNextLead({ niche = "", location = "", skipIds = [] } = {}) {
   const skip = new Set(skipIds.map(String));
@@ -63,7 +63,6 @@ export function getNextLead({ niche = "", location = "", skipIds = [] } = {}) {
     if (skip.has(String(lead.id))) return false;
     if (!OPEN_STATUSES.includes(lead.status)) return false;
     if (hasBeenContacted(lead)) return false;
-    if (lead.has_website) return false;
     if (nicheValue && !`${lead.category || ""} ${(lead.tags || []).join(" ")}`.toLowerCase().includes(nicheValue)) return false;
     if (locationValue && !`${lead.city || ""} ${lead.region || ""} ${lead.address || ""}`.toLowerCase().includes(locationValue)) return false;
     return true;
@@ -175,7 +174,7 @@ export async function createOrUpdateDemo(leadOrId, { templateRecord, overrides =
 
   if (!existing) {
     await updateRecord("templates", choice.record.id, { use_count: Number(choice.record.use_count || 0) + 1 });
-    if (lead.status === "new" || lead.status === "qualified") await updateRecord("leads", lead.id, { status: "demo_ready" });
+    if (lead.status === "new") await updateRecord("leads", lead.id, { status: "ready_to_contact", stage_entered_at: new Date().toISOString() });
     await logActivity("demo_created", "Demo built", `${lead.business_name} · ${choice.record.name}`, { lead_id: lead.id });
   }
 
@@ -385,7 +384,9 @@ export async function createFollowUp(leadId, { days, attempt, draftId = null, su
 const LEAD_FIELDS = [
   "business_name", "contact_name", "email", "phone", "address", "city", "region",
   "postal_code", "country", "category", "website_url", "has_website", "notes",
-  "deal_value", "asking_price", "lead_score", "priority", "tags",
+  "deal_value", "asking_price", "lead_score", "priority", "tags", "service_type",
+  "assigned_team_member_id", "qualification_status", "opportunity_tags", "opportunity_summary",
+  "objections", "pain_points", "current_tools", "quoted_setup_fee", "quoted_monthly_fee",
 ];
 
 function pickLeadFields(values = {}) {
@@ -433,9 +434,259 @@ export async function updatePipeline(leadId, status) {
   if (!PIPELINE_STAGES.some((stage) => stage.id === status)) throw new Error(`Unknown pipeline stage "${status}".`);
   const lead = leadById(leadId);
   if (!lead) throw new Error("Lead not found.");
-  const updated = await updateRecord("leads", leadId, { status });
+  const updated = await updateRecord("leads", leadId, {
+    status,
+    ...(lead.status === status ? {} : { stage_entered_at: new Date().toISOString() }),
+  });
   await logActivity("pipeline_moved", "Pipeline updated", `${lead.business_name}: ${lead.status} → ${status}`, { lead_id: leadId });
+  if (status === "won") await ensureClientForWonLead(updated);
   return updated;
+}
+
+export function getNextCallLead({ leadId = "", assigneeId = "" } = {}) {
+  if (leadId) return leadById(leadId);
+  const now = Date.now();
+  return data().leads
+    .filter((lead) => !CLOSED_STATUSES.includes(lead.status))
+    .filter((lead) => !assigneeId || String(lead.assigned_team_member_id || "") === String(assigneeId))
+    .sort((a, b) => {
+      const aDue = a.follow_up_at ? new Date(a.follow_up_at).getTime() : Number.POSITIVE_INFINITY;
+      const bDue = b.follow_up_at ? new Date(b.follow_up_at).getTime() : Number.POSITIVE_INFINITY;
+      const aReady = aDue <= now ? 0 : 1;
+      const bReady = bDue <= now ? 0 : 1;
+      return aReady - bReady
+        || aDue - bDue
+        || Number(Boolean(b.phone)) - Number(Boolean(a.phone))
+        || Number(a.calls_attempted || 0) - Number(b.calls_attempted || 0)
+        || Number(b.lead_score || 0) - Number(a.lead_score || 0);
+    })[0] || null;
+}
+
+export async function createMeeting(values = {}) {
+  const lead = values.lead_id ? leadById(values.lead_id) : null;
+  const title = String(values.title || (lead ? `Discovery meeting · ${lead.business_name}` : "Discovery meeting")).trim();
+  const startsAt = new Date(values.starts_at || values.meeting_starts_at || "");
+  if (!title) throw new Error("A meeting needs a title.");
+  if (Number.isNaN(startsAt.getTime())) throw new Error("A meeting needs a valid start time.");
+
+  const meeting = await createRecord("meetings", {
+    title,
+    lead_id: values.lead_id || null,
+    client_id: values.client_id || null,
+    salesperson_id: values.salesperson_id || null,
+    starts_at: startsAt.toISOString(),
+    ends_at: values.ends_at ? new Date(values.ends_at).toISOString() : null,
+    outcome: values.outcome || "scheduled",
+    attendees: Array.isArray(values.attendees) ? values.attendees : [],
+    current_workflow: values.current_workflow || null,
+    biggest_pain_point: values.biggest_pain_point || null,
+    approximate_volume: values.approximate_volume || null,
+    existing_crm: values.existing_crm || null,
+    calendar_system: values.calendar_system || null,
+    phone_provider: values.phone_provider || null,
+    tools_used: Array.isArray(values.tools_used) ? values.tools_used : [],
+    automation_proposed: values.automation_proposed || null,
+    required_integrations: Array.isArray(values.required_integrations) ? values.required_integrations : [],
+    implementation_complexity: values.implementation_complexity || null,
+    quoted_setup_fee: values.quoted_setup_fee ?? null,
+    quoted_monthly_fee: values.quoted_monthly_fee ?? null,
+    usage_allowance: values.usage_allowance || null,
+    decision_maker: values.decision_maker || null,
+    notes: values.notes || null,
+    next_action: values.next_action || null,
+  });
+  if (lead && !["won", "lost"].includes(lead.status)) {
+    await updateRecord("leads", lead.id, {
+      status: "meeting_scheduled",
+      stage_entered_at: new Date().toISOString(),
+      quoted_setup_fee: values.quoted_setup_fee ?? lead.quoted_setup_fee,
+      quoted_monthly_fee: values.quoted_monthly_fee ?? lead.quoted_monthly_fee,
+    });
+  }
+  await logActivity("meeting_scheduled", "Meeting scheduled", `${lead?.business_name || title} · ${startsAt.toLocaleString()}`, {
+    lead_id: lead?.id || null,
+    client_id: values.client_id || null,
+    metadata: { meeting_id: meeting.id },
+  });
+  return meeting;
+}
+
+export async function recordSalesCall(leadId, values = {}) {
+  const lead = leadById(leadId);
+  if (!lead) throw new Error("Lead not found.");
+  const outcome = String(values.outcome || "");
+  const allowed = ["no_answer", "voicemail", "gatekeeper", "wrong_number", "interested", "meeting_booked", "call_back_later", "not_interested", "already_has_solution", "unqualified"];
+  if (!allowed.includes(outcome)) throw new Error("Choose a valid call outcome.");
+  const calledAt = values.called_at ? new Date(values.called_at).toISOString() : new Date().toISOString();
+  const nextFollowUpAt = values.next_follow_up_at ? new Date(values.next_follow_up_at).toISOString() : null;
+  const call = await createRecord("salesCalls", {
+    lead_id: leadId,
+    salesperson_id: values.salesperson_id || lead.assigned_team_member_id || null,
+    outcome,
+    notes: values.notes || "",
+    objection: values.objection || null,
+    pain_point: values.pain_point || null,
+    duration_seconds: Number(values.duration_seconds) || null,
+    called_at: calledAt,
+    next_follow_up_at: nextFollowUpAt,
+  });
+
+  const status = {
+    interested: "interested",
+    meeting_booked: "meeting_scheduled",
+    call_back_later: "follow_up_later",
+    wrong_number: "lost",
+    not_interested: "lost",
+    already_has_solution: "lost",
+    unqualified: "lost",
+  }[outcome] || "contacted";
+  const qualificationStatus = outcome === "unqualified"
+    ? "unqualified"
+    : ["interested", "meeting_booked"].includes(outcome) ? "qualified" : lead.qualification_status === "unreviewed" ? "potential" : lead.qualification_status;
+  const objections = [...new Set([...(lead.objections || []), values.objection].filter(Boolean))];
+  const painPoints = [...new Set([...(lead.pain_points || []), values.pain_point].filter(Boolean))];
+  await updateRecord("leads", leadId, {
+    status,
+    stage_entered_at: lead.status === status ? lead.stage_entered_at : calledAt,
+    qualification_status: qualificationStatus,
+    calls_attempted: Number(lead.calls_attempted || 0) + 1,
+    last_contacted_at: calledAt,
+    follow_up_at: nextFollowUpAt,
+    objections,
+    pain_points: painPoints,
+  });
+
+  if (nextFollowUpAt) {
+    const sequence = data().followUps.filter((item) => String(item.lead_id) === String(leadId)).length + 1;
+    await createRecord("followUps", {
+      lead_id: leadId,
+      sequence_number: Math.min(12, sequence),
+      due_at: nextFollowUpAt,
+      status: "scheduled",
+      suggested_text: values.notes || `Follow up after ${outcome.replaceAll("_", " ")}.`,
+    });
+  }
+  if (outcome === "meeting_booked" && values.meeting_starts_at) {
+    await createMeeting({
+      lead_id: leadId,
+      salesperson_id: values.salesperson_id || lead.assigned_team_member_id || null,
+      starts_at: values.meeting_starts_at,
+      title: `Discovery meeting · ${lead.business_name}`,
+    });
+  }
+  await logActivity("sales_call", "Call recorded", `${lead.business_name} · ${outcome.replaceAll("_", " ")}`, {
+    lead_id: leadId,
+    metadata: { call_id: call.id, outcome },
+  });
+  return call;
+}
+
+export async function ensureClientForWonLead(leadOrId) {
+  const lead = typeof leadOrId === "object" ? leadOrId : leadById(leadOrId);
+  if (!lead) throw new Error("Lead not found.");
+  const existing = data().clients.find((client) => String(client.lead_id) === String(lead.id));
+  if (existing) return existing;
+  const setupFee = Number(lead.quoted_setup_fee ?? lead.deal_value ?? CONFIG.defaultSetupFee);
+  const monthlyFee = Number(lead.quoted_monthly_fee ?? CONFIG.defaultMonthlyFee);
+  const client = await createRecord("clients", {
+    lead_id: lead.id,
+    status: "onboarding",
+    package_name: "Managed AI automation",
+    contact_name: lead.contact_name || "",
+    email: lead.email || null,
+    phone: lead.phone || null,
+    agreed_price: setupFee,
+    amount_received: 0,
+    setup_fee: setupFee,
+    monthly_fee: monthlyFee,
+    payment_status: "pending",
+    purchase_date: new Date().toISOString().slice(0, 10),
+    primary_team_member_id: lead.assigned_team_member_id || null,
+    onboarding_status: "not_started",
+    onboarding_progress: 0,
+    pricing: { setup_fee: setupFee, monthly_fee: monthlyFee },
+  });
+  await createRecord("onboardingRecords", {
+    client_id: client.id,
+    status: "not_started",
+    progress: 0,
+    business: { business_name: lead.business_name, service_type: lead.service_type || lead.category || "" },
+    customer_handling: {},
+    technical: { current_tools: lead.current_tools || {} },
+    automation_goals: { pain_points: lead.pain_points || [], opportunity_tags: lead.opportunity_tags || [] },
+  });
+  await createRecord("projects", {
+    client_id: client.id,
+    owner_id: lead.assigned_team_member_id || null,
+    name: `${lead.business_name} · AI automation`,
+    status: "discovery",
+    automation_type: (lead.opportunity_tags || []).includes("booking") ? "AI receptionist / lead booking" : "Custom automation",
+    complexity: "standard",
+    start_date: new Date().toISOString().slice(0, 10),
+    progress: 0,
+    requirements: { pain_points: lead.pain_points || [], opportunity_tags: lead.opportunity_tags || [] },
+  });
+  await logActivity("client_created", "Won lead converted", `${lead.business_name} · onboarding and project created`, {
+    lead_id: lead.id,
+    client_id: client.id,
+  });
+  return client;
+}
+
+export function commissionAmount(values = {}) {
+  const revenue = Math.max(0, Number(values.collected_setup_revenue || 0));
+  if (!revenue) return 0;
+  const rate = Math.max(0, Number(values.commission_rate ?? 0.10));
+  const floor = Math.max(0, Number(values.commission_min ?? 250));
+  const cap = Math.max(floor, Number(values.commission_max ?? 1000));
+  return Math.round(Math.max(floor, Math.min(cap, revenue * rate)) * 100) / 100;
+}
+
+export async function syncCommissionForPayment(payment) {
+  if (!payment) return null;
+  if (payment.client_id) {
+    const client = findRecord("clients", payment.client_id);
+    if (client) {
+      const collectedSetup = sum(data().payments.filter((item) => (
+        String(item.client_id || "") === String(payment.client_id)
+        && item.payment_type === "setup_fee"
+        && ["paid", "available"].includes(item.status)
+      )), (item) => item.amount);
+      const contractedSetup = Number(client.setup_fee || client.agreed_price || 0);
+      await updateRecord("clients", client.id, {
+        amount_received: collectedSetup,
+        payment_status: contractedSetup > 0 && collectedSetup >= contractedSetup ? "paid" : collectedSetup > 0 ? "partial" : "pending",
+      });
+    }
+  }
+  const existing = data().commissions.find((item) => String(item.payment_id) === String(payment.id));
+  if (payment.status === "refunded") {
+    if (!existing || existing.status === "reversed") return existing || null;
+    return updateRecord("commissions", existing.id, { status: "reversed", reversed_at: new Date().toISOString() });
+  }
+  if (payment.payment_type !== "setup_fee" || !["paid", "available"].includes(payment.status) || !payment.client_id) return null;
+  if (existing) return existing;
+  const client = findRecord("clients", payment.client_id);
+  const lead = client?.lead_id ? leadById(client.lead_id) : null;
+  const salesperson = data().teamMembers.find((item) => String(item.id) === String(lead?.assigned_team_member_id || client?.primary_team_member_id || ""));
+  const commission = await createRecord("commissions", {
+    salesperson_id: salesperson?.id || null,
+    client_id: payment.client_id,
+    lead_id: lead?.id || null,
+    payment_id: payment.id,
+    collected_setup_revenue: Number(payment.amount || 0),
+    commission_rate: Number(salesperson?.commission_rate ?? 0.10),
+    commission_min: Number(salesperson?.commission_min ?? 250),
+    commission_max: Number(salesperson?.commission_max ?? 1000),
+    status: "earned",
+    earned_at: payment.paid_at || new Date().toISOString(),
+  });
+  await logActivity("commission_earned", "Commission earned", `${salesperson?.full_name || "Unassigned salesperson"} · ${commissionAmount(commission)}`, {
+    lead_id: lead?.id || null,
+    client_id: payment.client_id,
+    metadata: { commission_id: commission.id, payment_id: payment.id },
+  });
+  return commission;
 }
 
 /* ---------- inbox ---------- */
@@ -457,9 +708,9 @@ export async function classifyReply(threadId, classification) {
   const leadStatus = {
     interested: "interested",
     needs_changes: "interested",
-    price_objection: "replied",
-    maybe: "replied",
-    follow_up_later: "replied",
+    price_objection: "negotiating",
+    maybe: "interested",
+    follow_up_later: "follow_up_later",
     not_interested: "lost",
     wrong_person: "lost",
   }[classification];
@@ -490,7 +741,17 @@ function futureDate(value, { fallbackDays = null } = {}) {
 
 const TASK_PRIORITIES = ["low", "normal", "high", "urgent"];
 
-export async function createTask({ title, description = "", priority = "normal", due_at: dueAt, lead_id: leadId = null, created_by: createdBy = "user" } = {}) {
+export async function createTask({
+  title,
+  description = "",
+  priority = "normal",
+  due_at: dueAt,
+  lead_id: leadId = null,
+  client_id: clientId = null,
+  project_id: projectId = null,
+  automation_id: automationId = null,
+  created_by: createdBy = "user",
+} = {}) {
   const value = String(title || "").trim();
   if (!value) throw new Error("A task needs a title.");
   return createRecord("tasks", {
@@ -500,6 +761,9 @@ export async function createTask({ title, description = "", priority = "normal",
     due_at: futureDate(dueAt),
     status: "pending",
     lead_id: leadId,
+    client_id: clientId,
+    project_id: projectId,
+    automation_id: automationId,
     created_by: createdBy,
   });
 }
@@ -539,7 +803,7 @@ export async function createCalendarEvent({ title, starts_at: startsAt, event_ty
   });
 }
 
-export async function recordPayment({ customer_name: customerName, amount, payment_type: paymentType = "website_sale", fee_amount: feeAmount = 0, status = "paid", client_id: clientId = null } = {}) {
+export async function recordPayment({ customer_name: customerName, amount, payment_type: paymentType = "setup_fee", fee_amount: feeAmount = 0, status = "paid", client_id: clientId = null, project_id: projectId = null, due_date: dueDate = null } = {}) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) throw new Error("A payment needs a positive amount.");
   const name = String(customerName || "").trim();
@@ -548,19 +812,32 @@ export async function recordPayment({ customer_name: customerName, amount, payme
     customer_name: name,
     amount: value,
     fee_amount: Math.max(0, Number(feeAmount) || 0),
-    payment_type: paymentType === "maintenance" ? "maintenance" : "website_sale",
-    status: ["pending", "paid", "available", "failed", "refunded"].includes(status) ? status : "paid",
+    payment_type: ["setup_fee", "recurring_subscription", "usage_overage", "custom_invoice", "refund", "website_sale", "maintenance"].includes(paymentType) ? paymentType : "setup_fee",
+    status: ["pending", "paid", "available", "overdue", "failed", "refunded"].includes(status) ? status : "paid",
     source: "manual",
     client_id: clientId,
-    paid_at: new Date().toISOString(),
+    project_id: projectId,
+    due_date: dueDate,
+    paid_at: ["paid", "available", "refunded"].includes(status) ? new Date().toISOString() : null,
   });
   await logActivity("payment_received", "Payment recorded", `${name} · ${value}`, { client_id: clientId });
+  await syncCommissionForPayment(payment);
   return payment;
 }
 
 const EXPENSE_CATEGORIES = ["hosting", "domains", "apis", "software", "payment_fees", "ai", "other"];
 
-export async function recordExpense({ description, amount, category = "other", vendor = "" } = {}) {
+export async function recordExpense({
+  description,
+  amount,
+  category = "other",
+  vendor = "",
+  client_id: clientId = null,
+  project_id: projectId = null,
+  automation_id: automationId = null,
+  cost_scope: costScope = "overhead",
+  recurring = false,
+} = {}) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) throw new Error("An expense needs a positive amount.");
   const text = String(description || "").trim();
@@ -570,6 +847,11 @@ export async function recordExpense({ description, amount, category = "other", v
     amount: value,
     category: EXPENSE_CATEGORIES.includes(category) ? category : "other",
     vendor,
+    client_id: clientId,
+    project_id: projectId,
+    automation_id: automationId,
+    cost_scope: clientId ? "client" : (["overhead", "client"].includes(costScope) ? costScope : "overhead"),
+    recurring: Boolean(recurring),
     occurred_on: new Date().toISOString().slice(0, 10),
   });
 }
@@ -581,7 +863,9 @@ export function getClients({ status = "" } = {}) {
 }
 
 export function getPayments({ range = "all" } = {}) {
-  const paid = data().payments.filter((payment) => ["paid", "available"].includes(payment.status));
+  const paid = data().payments
+    .filter((payment) => ["paid", "available"].includes(payment.status))
+    .map((payment) => payment.payment_type === "refund" ? { ...payment, amount: -Math.abs(Number(payment.amount || 0)) } : payment);
   if (range === "today") return paid.filter((payment) => isToday(payment.paid_at || payment.created_at));
   if (range === "week") {
     const since = Date.now() - 7 * 86_400_000;
@@ -607,6 +891,49 @@ export function revenueSummary() {
   return { paid, gross, fees, costs, profit: gross - fees - costs };
 }
 
+/** Compact agency metrics used by Home and the assistant. */
+export function agencySummary() {
+  const workspace = data();
+  const paid = getPayments();
+  const paidThisMonth = getPayments({ range: "month" });
+  const activeSubscriptions = workspace.maintenanceSubscriptions.filter((item) => item.status === "active");
+  const openStages = new Set(PIPELINE_STAGES.map((stage) => stage.id).filter((stage) => !["won", "lost"].includes(stage)));
+  const closedLeads = workspace.leads.filter((lead) => ["won", "lost"].includes(lead.status));
+  const wonLeads = workspace.leads.filter((lead) => lead.status === "won");
+  const monthCosts = sum(
+    workspace.expenses.filter((expense) => isSameMonth(expense.occurred_on || expense.created_at)),
+    (expense) => expense.amount,
+  ) + sum(
+    workspace.aiUsage.filter((usage) => isSameMonth(usage.occurred_at || usage.created_at)),
+    (usage) => usage.cost,
+  );
+  const monthRevenue = sum(paidThisMonth, (payment) => payment.amount);
+  const automationAttention = workspace.automations.filter((item) => item.last_error || ["failed", "offline"].includes(item.status));
+  const outstandingPayments = workspace.payments.filter((payment) => ["pending", "overdue", "failed"].includes(payment.status));
+  const scheduledMeetings = workspace.meetings.filter((meeting) => (
+    new Date(meeting.starts_at).getTime() >= Date.now()
+    && !["cancelled", "lost"].includes(meeting.outcome)
+  ));
+
+  return {
+    totalRevenue: sum(paid, (payment) => payment.amount),
+    monthlyRecurringRevenue: sum(activeSubscriptions, (item) => item.monthly_amount),
+    setupRevenueThisMonth: sum(paidThisMonth.filter((payment) => payment.payment_type === "setup_fee"), (payment) => payment.amount),
+    activeClients: workspace.clients.filter((client) => client.status === "active").length,
+    automationsLive: workspace.automations.filter((item) => item.status === "live").length,
+    automationsRequiringAttention: automationAttention.length,
+    leadsInPipeline: workspace.leads.filter((lead) => openStages.has(lead.status)).length,
+    meetingsScheduled: scheduledMeetings.length,
+    dealsWon: wonLeads.length,
+    dealsWonThisMonth: wonLeads.filter((lead) => isSameMonth(lead.stage_entered_at || lead.updated_at)).length,
+    salesConversionRate: closedLeads.length ? (wonLeads.length / closedLeads.length) * 100 : 0,
+    upcomingTasks: getTasks({ view: "open" }).filter((task) => task.due_at && new Date(task.due_at).getTime() >= Date.now()).length,
+    outstandingPayments: sum(outstandingPayments, (payment) => payment.amount),
+    usageCostsThisMonth: monthCosts,
+    estimatedGrossMargin: monthRevenue ? ((monthRevenue - monthCosts) / monthRevenue) * 100 : null,
+  };
+}
+
 export function emailsSentToday() {
   return data().drafts.filter((draft) => draft.status === "sent" && isToday(draft.sent_at || draft.updated_at)).length;
 }
@@ -629,6 +956,33 @@ export function unreadReplies() {
 /** Everything that genuinely needs a human right now, most urgent first. */
 export function attentionItems() {
   const items = [];
+
+  const automationErrors = data().automations.filter((item) => item.last_error);
+  if (automationErrors.length) {
+    items.push({
+      id: "automation-record-errors",
+      weight: 0,
+      tone: "red",
+      iconName: "alert",
+      title: `${automationErrors.length} client automation${automationErrors.length === 1 ? "" : "s"} reporting errors`,
+      detail: automationErrors.slice(0, 3).map((item) => item.name).join(", "),
+      route: "automation-studio",
+      params: { status: "all" },
+    });
+  }
+
+  const overduePayments = data().payments.filter((payment) => payment.status === "overdue");
+  if (overduePayments.length) {
+    items.push({
+      id: "overdue-payments",
+      weight: 1,
+      tone: "amber",
+      iconName: "dollar",
+      title: `${overduePayments.length} overdue payment${overduePayments.length === 1 ? "" : "s"}`,
+      detail: `${sum(overduePayments, (payment) => payment.amount)} outstanding`,
+      route: "payments",
+    });
+  }
 
   unreadReplies().forEach((thread) => {
     const lead = thread.lead_id ? leadById(thread.lead_id) : null;
@@ -667,7 +1021,7 @@ export function attentionItems() {
       tone: "red",
       iconName: "globe",
       title: failed.length === 1 ? "A deployment needs attention" : `${failed.length} deployments need attention`,
-      detail: failed.map((item) => item.domain || "Client site").join(", "),
+      detail: failed.map((item) => item.version || item.domain || "Automation deployment").join(", "),
       route: "deployments",
     });
   }
@@ -681,7 +1035,7 @@ export function attentionItems() {
       iconName: "alert",
       title: `${automation.failures.length} automation item${automation.failures.length === 1 ? "" : "s"} failed`,
       detail: automation.failures[0]?.reason || "Open Automation for details",
-      route: "automation",
+      route: "automation-studio",
     });
   }
 

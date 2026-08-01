@@ -38,6 +38,7 @@ const clients = await import("../js/pages/clients.js");
 const business = await import("../js/pages/business.js");
 const workspace = await import("../js/pages/workspace.js");
 const system = await import("../js/pages/system.js");
+const agency = await import("../js/pages/agency.js");
 
 setData(createSeedData(), { silent: true });
 setState({ route: "home", routeParams: {} }, { silent: true });
@@ -49,17 +50,23 @@ const renderers = {
   discovery: sales.renderDiscovery,
   leads: sales.renderLeads,
   pipeline: sales.renderPipeline,
+  calling: agency.renderCalling,
+  meetings: agency.renderMeetings,
   outreach: outreach.renderOutreach,
   inbox: outreach.renderInbox,
   "follow-ups": outreach.renderFollowUps,
   studio: studio.renderStudio,
   templates: websites.renderTemplates,
   demos: websites.renderDemos,
-  deployments: websites.renderDeployments,
+  deployments: agency.renderAgencyDeployments,
   clients: clients.renderClients,
+  onboarding: agency.renderOnboarding,
   projects: clients.renderProjects,
+  "automation-studio": agency.renderAutomationStudio,
   maintenance: clients.renderMaintenance,
   payments: business.renderPayments,
+  subscriptions: agency.renderSubscriptions,
+  commissions: agency.renderCommissions,
   analytics: business.renderAnalytics,
   costs: business.renderCosts,
   pricing: business.renderPricing,
@@ -69,6 +76,7 @@ const renderers = {
   activity: workspace.renderActivity,
   integrations: system.renderIntegrations,
   settings: system.renderSettings,
+  team: agency.renderTeam,
 };
 
 for (const [route, render] of Object.entries(renderers)) {
@@ -87,10 +95,10 @@ test("every route has a renderer and every renderer has a route", () => {
   assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("navigation includes the AI Assistant and Automation routes", () => {
+test("navigation includes the AI Assistant and agency automation routes", () => {
   const labels = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.label));
   assert.ok(labels.includes("AI Assistant"));
-  assert.ok(labels.includes("Automation"));
+  assert.ok(labels.includes("Automation Studio"));
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
 });
@@ -125,14 +133,15 @@ test("marketing copy is gone", () => {
   }
 });
 
-test("home shows attention, automation and today without a metric wall", () => {
+test("home shows agency health, attention, and today's sales work", () => {
   setState({ route: "home", routeParams: {} }, { silent: true });
   const html = renderers.home();
   assert.match(html, /Needs attention/);
-  assert.match(html, /Today/);
-  assert.match(html, /sent today/);
-  /* Home should stay light: no more than a handful of stat blocks. */
-  assert.ok((html.match(/class="stat"/g) || []).length <= 8);
+  assert.match(html, /Agency pulse/);
+  assert.match(html, /Calls today/);
+  assert.match(html, /MRR/);
+  /* Metrics stay grouped into three operating questions, not an unstructured wall. */
+  assert.ok((html.match(/class="stat"/g) || []).length <= 14);
 });
 
 test("lead discovery leads with three inputs and hides the rest", () => {

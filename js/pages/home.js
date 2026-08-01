@@ -1,60 +1,21 @@
-/**
- * Home answers three questions and nothing else:
- * what needs attention, what is automation doing, how is today going.
- */
+/** Agency command center: money, sales, delivery health, and the next work. */
 import { getState } from "../core/state.js";
-import { escapeHtml, formatCurrency, greeting, relativeTime } from "../core/utils.js";
-import { bar, btn, dot, empty, icon, row, rows, section, stats } from "../components/ui.js";
-import { automationSettings } from "../services/automation/engine.js";
-import { canSend } from "../services/email/outreach.js";
-import { attentionItems, todayStats } from "../services/operations.js";
+import { escapeHtml, formatCurrency, greeting, isToday, relativeTime } from "../core/utils.js";
+import { btn, empty, icon, pill, row, rows, section, stats } from "../components/ui.js";
+import { agencySummary, attentionItems } from "../services/operations.js";
 import { timeline } from "./shared.js";
-
-function automationStrip() {
-  const { automation } = getState();
-  const settings = automationSettings();
-  const running = automation.status === "running" || automation.status === "stopping";
-  const today = todayStats();
-
-  const state = running
-    ? `${dot("green")} Running`
-    : automation.status === "error"
-      ? `${dot("red")} Stopped on error`
-      : `${dot()} Idle`;
-
-  const detail = running
-    ? `${automation.currentLeadName || "Selecting lead"} · ${automation.currentStep || "starting"}`
-    : automation.stopReason || (canSend() ? "Ready to start" : "Ready to start · emails stop at “ready” until Outlook is connected");
-
-  return `
-    <div class="control-strip">
-      <div class="control-strip__main">
-        <strong>${state}</strong>
-        <span>${escapeHtml(detail)}</span>
-      </div>
-      <div class="control-strip__actions">
-        <span class="pill">${today.sent} / ${settings.batchTarget} sent today</span>
-        ${running
-          ? btn("Stop", { action: "automation-stop", iconName: "pause" })
-          : btn("Start", { action: "automation-start", iconName: "play", variant: "primary" })}
-        ${btn("Open", { action: "navigate", attrs: 'data-route-target="automation"' })}
-      </div>
-      ${running ? bar(Math.round((automation.processed / Math.max(1, settings.batchTarget)) * 100), "accent") : ""}
-    </div>
-  `;
-}
 
 function attentionSection() {
   const items = attentionItems();
   if (!items.length) {
     return section("Needs attention", {
-      body: empty({ title: "Nothing needs you right now", message: "Replies, overdue follow-ups and failures show up here." }),
+      body: empty({ title: "Nothing urgent", message: "Overdue follow-ups, tasks, invoices, and automation failures appear here." }),
     });
   }
 
   return section("Needs attention", {
     count: items.length,
-    body: rows(items.slice(0, 6).map((item) => row({
+    body: rows(items.slice(0, 7).map((item) => row({
       main: item.title,
       sub: item.detail,
       iconName: item.iconName,
@@ -68,8 +29,10 @@ function attentionSection() {
 
 export function renderHome() {
   const { data } = getState();
-  const today = todayStats();
+  const summary = agencySummary();
   const name = data.profile?.full_name || "Connor";
+  const callsToday = data.salesCalls.filter((call) => isToday(call.called_at || call.created_at));
+  const contactsToday = callsToday.filter((call) => !["no_answer", "voicemail", "gatekeeper", "wrong_number"].includes(call.outcome));
 
   return `
     <div class="stack">
@@ -78,29 +41,51 @@ export function renderHome() {
         <p>${escapeHtml(new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }))}</p>
       </div>
 
-      ${automationStrip()}
-
-      ${attentionSection()}
-
-      ${section("Today", {
+      ${section("Agency pulse", {
+        subtitle: "Collected revenue and current operating state",
         body: stats([
-          ["Sent", `${today.sent}<span class="faint"> / ${today.target}</span>`],
-          ["Replies", today.replies, today.interested ? `${today.interested} interested` : ""],
-          ["Demos built", today.demos],
-          ["New leads", today.newLeads],
-          ["Revenue", formatCurrency(today.revenue)],
+          ["Total revenue", formatCurrency(summary.totalRevenue)],
+          ["MRR", formatCurrency(summary.monthlyRecurringRevenue)],
+          ["Setup revenue · month", formatCurrency(summary.setupRevenueThisMonth)],
+          ["Active clients", summary.activeClients],
+          ["Automations live", summary.automationsLive, summary.automationsRequiringAttention ? `${summary.automationsRequiringAttention} need attention` : "all stored records clear"],
+          ["Gross margin · month", summary.estimatedGrossMargin == null ? "—" : `${summary.estimatedGrossMargin.toFixed(1)}%`, "estimate from recorded revenue and costs"],
         ]),
       })}
 
-      ${section("Recent work", {
-        actions: `${btn("Activity", { action: "navigate", attrs: 'data-route-target="activity"', size: "sm" })}`,
-        body: timeline(data.activity, 6),
+      <div class="split split--even">
+        ${section("Sales now", {
+          actions: btn("Open Calling", { action: "navigate", attrs: 'data-route-target="calling"', size: "sm", variant: "primary" }),
+          body: stats([
+            ["Pipeline", summary.leadsInPipeline],
+            ["Scheduled meetings", summary.meetingsScheduled],
+            ["Calls today", callsToday.length, `${contactsToday.length} contacts`],
+            ["Deals won", summary.dealsWon, `${summary.salesConversionRate.toFixed(1)}% closed-deal conversion`],
+          ]),
+        })}
+        ${section("Cash and delivery", {
+          actions: btn("Automation Studio", { action: "navigate", attrs: 'data-route-target="automation-studio"', size: "sm" }),
+          body: stats([
+            ["Outstanding", formatCurrency(summary.outstandingPayments)],
+            ["Costs · month", formatCurrency(summary.usageCostsThisMonth, 2)],
+            ["Upcoming tasks", summary.upcomingTasks],
+            ["Attention", summary.automationsRequiringAttention, "stored automation errors only"],
+          ]),
+        })}
+      </div>
+
+      ${attentionSection()}
+
+      ${section("Recent activity", {
+        actions: btn("View all", { action: "navigate", attrs: 'data-route-target="activity"', size: "sm" }),
+        body: timeline(data.activity, 8),
       })}
 
-      ${data.leads.length ? "" : section("Get started", {
+      ${data.leads.length ? "" : section("Start the operating flow", {
         body: rows([
-          row({ main: "Find leads", sub: "Search a niche and location with OpenScout", iconName: "radar", action: "navigate", attrs: 'data-route-target="discovery"', side: icon("chevron") }),
-          row({ main: "Connect a model", sub: "Add a key to the worker, then pick a model in Settings", iconName: "sparkle", action: "navigate", attrs: 'data-route-target="settings"', side: icon("chevron") }),
+          row({ main: "Discover automation-fit businesses", sub: "Search a niche and location, then review evidence-backed opportunity tags", iconName: "radar", action: "navigate", attrs: 'data-route-target="discovery"', side: icon("chevron") }),
+          row({ main: "Add your internal team records", sub: "Set assignments and commission rules without creating application accounts", iconName: "user", action: "navigate", attrs: 'data-route-target="team"', side: icon("chevron") }),
+          row({ main: "Review secure integrations", sub: "Provider connections stay server-side and unavailable actions are labeled honestly", iconName: "plug", action: "navigate", attrs: 'data-route-target="integrations"', side: icon("chevron") }),
         ]),
       })}
     </div>

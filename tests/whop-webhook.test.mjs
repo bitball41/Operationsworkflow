@@ -54,7 +54,7 @@ test("a valid signed Whop event is normalized and sent only to the server-side R
     return Response.json({ duplicate: false, payment_id: "pay-row" });
   }, async () => handleWhopWebhook(await signedRequest({
     type: "payment.succeeded",
-    data: { id: "whop-payment-1", status: "succeeded", final_amount: 500, user: { name: "Taylor" } },
+    data: { id: "whop-payment-1", status: "succeeded", final_amount: 500, metadata: { client_id: "22222222-2222-4222-8222-222222222222" }, user: { name: "Taylor" } },
   }), ENV));
 
   assert.equal(response.status, 200);
@@ -65,6 +65,8 @@ test("a valid signed Whop event is normalized and sent only to the server-side R
   assert.equal(payload.p_user_id, ENV.OPERATIONS_WORKSPACE_ID);
   assert.equal(payload.p_payment.external_transaction_id, "whop-payment-1");
   assert.equal(payload.p_payment.status, "paid");
+  assert.equal(payload.p_payment.payment_type, "setup_fee");
+  assert.equal(payload.p_payment.client_id, "22222222-2222-4222-8222-222222222222");
 });
 
 test("forged signatures cannot create receipts or payments", async () => {

@@ -22,7 +22,7 @@ export const DISCOVERY_DEFAULTS = Object.freeze({
   depth: "standard",
   minConfidence: 70,
   minRating: 0,
-  noWebsite: true,
+  noWebsite: false,
   mustHaveEmail: false,
   mustHavePhone: false,
   skipKnown: true,
@@ -105,7 +105,7 @@ export function normalizeDiscoveryQuery(input = {}) {
     minConfidence: number(input.minConfidence ?? input.min_confidence, DISCOVERY_DEFAULTS.minConfidence),
     minRating: number(input.minRating ?? input.min_rating, DISCOVERY_DEFAULTS.minRating),
     filters: {
-      noWebsite: true,
+      noWebsite: Boolean(input.noWebsite ?? input.no_website ?? DISCOVERY_DEFAULTS.noWebsite),
       mustHaveEmail: Boolean(input.mustHaveEmail ?? input.must_have_email ?? DISCOVERY_DEFAULTS.mustHaveEmail),
       mustHavePhone: Boolean(input.mustHavePhone ?? input.must_have_phone),
       skipKnown: (input.skipKnown ?? input.skip_known ?? DISCOVERY_DEFAULTS.skipKnown) !== false,

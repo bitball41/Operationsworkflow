@@ -36,8 +36,9 @@ export function renderPayments() {
         body: stats([
           ["Received", formatCurrency(sum(paid, (payment) => payment.amount))],
           ["This month", formatCurrency(sum(getPayments({ range: "month" }), (payment) => payment.amount))],
-          ["Website sales", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "website_sale"), (payment) => payment.amount))],
-          ["Maintenance", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "maintenance"), (payment) => payment.amount))],
+          ["Setup fees", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "setup_fee"), (payment) => payment.amount))],
+          ["Subscriptions", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "recurring_subscription"), (payment) => payment.amount))],
+          ["Overages", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "usage_overage"), (payment) => payment.amount))],
           ["Fees", formatCurrency(sum(paid, (payment) => payment.fee_amount), 2)],
         ]),
       })}
@@ -50,13 +51,13 @@ export function renderPayments() {
 
       <div class="toolbar">
         ${searchInput("Search customer or transaction", routeParams.q || "")}
-        ${filterSelect("type", [{ value: "website_sale", label: "Website sale" }, { value: "maintenance", label: "Maintenance" }], type, "All types")}
+        ${filterSelect("type", ["setup_fee", "recurring_subscription", "usage_overage", "custom_invoice", "refund"].map((value) => ({ value, label: statusLabel(value) })), type, "All types")}
         <span class="toolbar__spacer"></span>
         ${btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary", size: "sm" })}
       </div>
 
       ${table({
-        columns: ["Customer", "Type", "Amount", "Status", "Date", "Fee"],
+        columns: ["Customer", "Type", "Amount", "Status", "Date", "Fee", ""],
         rows: payments.map((payment) => `<tr>
           ${td("Customer", `<div class="cell"><strong>${escapeHtml(payment.customer_name || clientName(data, byId(data.clients, payment.client_id)))}</strong><span>${escapeHtml(payment.source || "manual")}</span></div>`)}
           ${td("Type", escapeHtml(statusLabel(payment.payment_type)))}
@@ -64,8 +65,9 @@ export function renderPayments() {
           ${td("Status", pill(payment.status))}
           ${td("Date", formatDate(payment.paid_at || payment.created_at, { year: "numeric" }))}
           ${td("Fee", formatCurrency(payment.fee_amount, 2))}
+          ${td("", btn("Edit", { action: "payment-open", size: "sm", attrs: `data-id="${payment.id}"` }))}
         </tr>`),
-        emptyState: empty({ title: "No payments recorded", message: "Record the first website sale to track revenue." }),
+        emptyState: empty({ title: "No payments recorded", message: "Record a collected setup fee, subscription payment, overage, or custom invoice." }),
       })}
     </div>
   `;
@@ -74,18 +76,19 @@ export function renderPayments() {
 export function renderAnalytics() {
   const { data } = getState();
   const { gross, profit, costs } = revenueSummary();
-  const sent = data.drafts.filter((draft) => draft.status === "sent").length;
-  const replies = data.emailThreads.length;
+  const calls = data.salesCalls.length;
+  const contacts = data.salesCalls.filter((call) => !["no_answer", "voicemail", "gatekeeper", "wrong_number"].includes(call.outcome)).length;
+  const meetings = data.meetings.length;
   const won = data.leads.filter((lead) => lead.status === "won").length;
   const trend = monthlyRevenue(getPayments());
 
   const funnel = [
     { label: "Leads", value: data.leads.length },
-    { label: "Demos", value: data.demos.length },
-    { label: "Emails", value: sent },
-    { label: "Replies", value: replies },
-    { label: "Interested", value: data.leads.filter((lead) => ["interested", "closing", "won"].includes(lead.status)).length },
-    { label: "Sales", value: won },
+    { label: "Calls", value: calls },
+    { label: "Contacts", value: contacts },
+    { label: "Meetings", value: meetings },
+    { label: "Proposals", value: data.leads.filter((lead) => ["proposal_sent", "negotiating", "won"].includes(lead.status)).length },
+    { label: "Won", value: won },
   ];
 
   const byNiche = Object.entries(groupBy(data.leads.filter((lead) => lead.status === "won"), (lead) => lead.category || "Unknown"))
@@ -101,7 +104,8 @@ export function renderAnalytics() {
           ["Costs", formatCurrency(costs, 2)],
           ["Sales", formatNumber(won)],
           ["Close rate", `${data.leads.length ? ((won / data.leads.length) * 100).toFixed(1) : "0.0"}%`],
-          ["Reply rate", `${sent ? ((replies / sent) * 100).toFixed(1) : "0.0"}%`],
+          ["Contact rate", `${calls ? ((contacts / calls) * 100).toFixed(1) : "0.0"}%`],
+          ["Meeting rate", `${contacts ? ((meetings / contacts) * 100).toFixed(1) : "0.0"}%`],
         ]),
       })}
 
@@ -117,9 +121,9 @@ export function renderAnalytics() {
       ${section("Per-unit economics", {
         body: stats([
           ["Revenue / lead", formatCurrency(data.leads.length ? gross / data.leads.length : 0, 2)],
-          ["Revenue / email", formatCurrency(sent ? gross / sent : 0, 2)],
+          ["Revenue / call", formatCurrency(calls ? gross / calls : 0, 2)],
           ["Cost / lead", formatCurrency(data.leads.length ? costs / data.leads.length : 0, 2)],
-          ["Cost / demo", formatCurrency(data.demos.length ? costs / data.demos.length : 0, 2)],
+          ["Cost / live automation", formatCurrency(data.automations.filter((item) => item.status === "live").length ? costs / data.automations.filter((item) => item.status === "live").length : 0, 2)],
           ["Margin", `${gross ? ((profit / gross) * 100).toFixed(1) : "0.0"}%`],
         ]),
       })}
@@ -141,7 +145,7 @@ export function renderCosts() {
         body: stats([
           ["Total costs", formatCurrency(costs, 2)],
           ["This month", formatCurrency(monthCosts, 2)],
-          ["AI spend", formatCurrency(sum(data.aiUsage, (usage) => usage.cost), 2), data.aiUsage.length ? "" : "no provider connected"],
+          ["AI / LLM spend", formatCurrency(sum(data.aiUsage, (usage) => usage.cost), 2), data.aiUsage.length ? "" : "no usage recorded"],
           ["Net profit", formatCurrency(profit)],
         ]),
       })}
@@ -152,16 +156,18 @@ export function renderCosts() {
       </div>
 
       ${table({
-        columns: ["Date", "Category", "Vendor", "Description", "Amount", ""],
+        columns: ["Date", "Scope", "Client", "Category", "Vendor", "Description", "Amount", ""],
         rows: data.expenses.map((expense) => `<tr>
           ${td("Date", formatDate(expense.occurred_on, { year: "numeric" }))}
+          ${td("Scope", escapeHtml(statusLabel(expense.cost_scope || (expense.client_id ? "client" : "overhead"))))}
+          ${td("Client", escapeHtml(expense.client_id ? clientName(data, byId(data.clients, expense.client_id)) : "—"))}
           ${td("Category", escapeHtml(statusLabel(expense.category)))}
           ${td("Vendor", escapeHtml(expense.vendor || "—"))}
           ${td("Description", escapeHtml(expense.description || "—"))}
           ${td("Amount", `<strong>${formatCurrency(expense.amount, 2)}</strong>`)}
           ${td("", btn("Edit", { action: "expense-open", size: "sm", attrs: `data-id="${expense.id}"` }))}
         </tr>`),
-        emptyState: empty({ title: "No expenses recorded", message: "Add hosting, domains and API costs to see real profit." }),
+        emptyState: empty({ title: "No expenses recorded", message: "Add provider usage, phone, SMS, hosting, and overhead costs to estimate margin." }),
       })}
 
       ${byCategory.length ? section("By category", { body: bars(byCategory, (value) => formatCurrency(value, 2)) }) : ""}

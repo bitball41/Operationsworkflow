@@ -20,11 +20,21 @@ import { renderAutomation } from "./pages/automation.js";
 import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
 import { renderClients, renderMaintenance, renderProjects } from "./pages/clients.js";
 import { renderHome } from "./pages/home.js";
+import {
+  renderAgencyDeployments,
+  renderAutomationStudio,
+  renderCalling,
+  renderCommissions,
+  renderMeetings,
+  renderOnboarding,
+  renderSubscriptions,
+  renderTeam,
+} from "./pages/agency.js";
 import { renderFollowUps, renderInbox, renderOutreach } from "./pages/outreach.js";
 import { renderDiscovery, renderLeads, renderPipeline } from "./pages/sales.js";
 import { renderStudio, mountStudio } from "./pages/studio.js";
 import { renderIntegrations, renderSettings } from "./pages/system.js";
-import { renderDemos, renderDeployments, renderTemplates } from "./pages/websites.js";
+import { renderDemos, renderTemplates } from "./pages/websites.js";
 import { renderActivity, renderCalendar, renderNotes, renderTasks } from "./pages/workspace.js";
 
 const PAGES = {
@@ -34,17 +44,23 @@ const PAGES = {
   discovery: renderDiscovery,
   leads: renderLeads,
   pipeline: renderPipeline,
+  calling: renderCalling,
+  meetings: renderMeetings,
   outreach: renderOutreach,
   inbox: renderInbox,
   "follow-ups": renderFollowUps,
   studio: renderStudio,
   templates: renderTemplates,
   demos: renderDemos,
-  deployments: renderDeployments,
+  deployments: renderAgencyDeployments,
   clients: renderClients,
+  onboarding: renderOnboarding,
   projects: renderProjects,
+  "automation-studio": renderAutomationStudio,
   maintenance: renderMaintenance,
   payments: renderPayments,
+  subscriptions: renderSubscriptions,
+  commissions: renderCommissions,
   analytics: renderAnalytics,
   costs: renderCosts,
   pricing: renderPricing,
@@ -53,6 +69,7 @@ const PAGES = {
   notes: renderNotes,
   activity: renderActivity,
   integrations: renderIntegrations,
+  team: renderTeam,
   settings: renderSettings,
 };
 
