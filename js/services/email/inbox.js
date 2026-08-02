@@ -121,7 +121,7 @@ export async function syncInbox({ limit = 50, fetchMessages = fetchOutlookMessag
     /* A reply from someone we emailed is the single most important event in
        this workflow, so it moves the lead out of "contacted" on its own. */
     if (lead && lead.status === "contacted") {
-      await updateRecord("leads", lead.id, { status: "replied" });
+      await updateRecord("leads", lead.id, { status: "interested", stage_entered_at: new Date().toISOString() });
     }
   }
 

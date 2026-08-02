@@ -23,13 +23,15 @@ test("a settled Whop charge becomes a payment the revenue totals can use", () =>
     status: "succeeded",
     final_amount: 500,
     fee_amount: 14.5,
+    metadata: { client_id: "11111111-1111-4111-8111-111111111111" },
     user: { name: "Dana Reyes", email: "dana@example.com" },
     created_at: 1785000000,
   });
 
   assert.equal(record.external_transaction_id, "pay_abc123");
   assert.equal(record.status, "paid");
-  assert.equal(record.payment_type, "website_sale");
+  assert.equal(record.payment_type, "setup_fee");
+  assert.equal(record.client_id, "11111111-1111-4111-8111-111111111111");
   assert.equal(record.customer_name, "Dana Reyes");
   assert.equal(record.amount, 500);
   assert.equal(record.fee_amount, 14.5);
@@ -37,7 +39,7 @@ test("a settled Whop charge becomes a payment the revenue totals can use", () =>
   assert.equal(record.paid_at, new Date(1785000000 * 1000).toISOString());
 });
 
-test("a recurring plan is filed as maintenance, not a website sale", () => {
+test("a recurring plan is filed as a recurring subscription, not setup revenue", () => {
   const record = toPaymentRecord({
     id: "pay_sub",
     status: "paid",
@@ -47,7 +49,7 @@ test("a recurring plan is filed as maintenance, not a website sale", () => {
     paid_at: "2026-07-01T12:00:00Z",
   });
 
-  assert.equal(record.payment_type, "maintenance");
+  assert.equal(record.payment_type, "recurring_subscription");
   assert.equal(record.customer_name, "acme");
   assert.equal(record.paid_at, "2026-07-01T12:00:00.000Z");
 });

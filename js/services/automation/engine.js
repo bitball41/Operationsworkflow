@@ -156,7 +156,7 @@ export async function runLeadCycle(lead, settings = automationSettings(), runId 
 
   setStep("pipeline");
   if (send.sent) await markContacted(lead.id);
-  else await updateRecord("leads", lead.id, { status: "demo_ready" });
+  else await updateRecord("leads", lead.id, { status: "ready_to_contact", stage_entered_at: new Date().toISOString() });
   await sleep(delay);
 
   setStep("followup");

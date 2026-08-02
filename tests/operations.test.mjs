@@ -104,15 +104,13 @@ test("get_next_lead picks the best uncontacted lead and skips the rest", () => {
   const next = operations.getNextLead();
   assert.ok(next, "expected a lead");
   assert.ok(next.email, "email-ready leads should be worked before phone-only leads");
-  assert.ok(["new", "qualified", "demo_ready"].includes(next.status));
+  assert.ok(["new", "ready_to_contact"].includes(next.status));
   assert.equal(next.last_contacted_at, null);
-  assert.equal(next.has_website, false);
 
   const others = getState().data.leads.filter((lead) => (
     lead.id !== next.id
     && lead.email
     && !operations.hasBeenContacted(lead)
-    && !lead.has_website
   ));
   for (const lead of others) {
     assert.ok(Number(next.lead_score) >= Number(lead.lead_score), "expected the highest scoring email-ready lead first");
@@ -268,16 +266,75 @@ test("research reports that the tool is not connected", async () => {
 
 test("write tools mutate through the operations layer", async () => {
   const lead = getState().data.leads.find((item) => item.status === "new");
-  const result = await runTool("update_pipeline", { lead_id: lead.id, status: "qualified" });
+  const result = await runTool("update_pipeline", { lead_id: lead.id, status: "ready_to_contact" });
   assert.equal(result.ok, true);
-  assert.equal(getState().data.leads.find((item) => item.id === lead.id).status, "qualified");
+  assert.equal(getState().data.leads.find((item) => item.id === lead.id).status, "ready_to_contact");
 
   const bad = await runTool("update_pipeline", { lead_id: lead.id, status: "not_a_stage" });
   assert.equal(bad.ok, false);
 });
 
+test("a booked call writes one call, one meeting, and advances the lead", async () => {
+  const lead = getState().data.leads.find((item) => item.business_name === "North Star Tree Care");
+  const callsBefore = getState().data.salesCalls.length;
+  const meetingsBefore = getState().data.meetings.length;
+  const startsAt = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  const result = await runTool("record_sales_call", {
+    lead_id: lead.id,
+    outcome: "meeting_booked",
+    notes: "Owner confirmed a discovery call.",
+    pain_point: "Missed storm calls",
+    meeting_starts_at: startsAt,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(getState().data.salesCalls.length, callsBefore + 1);
+  assert.equal(getState().data.meetings.length, meetingsBefore + 1);
+  const updated = getState().data.leads.find((item) => item.id === lead.id);
+  assert.equal(updated.status, "meeting_scheduled");
+  assert.equal(updated.calls_attempted, 1);
+  assert.deepEqual(updated.pain_points, ["Missed storm calls"]);
+});
+
+test("winning a lead creates the client, onboarding, and project exactly once", async () => {
+  const lead = getState().data.leads.find((item) => item.business_name === "Summit Fence Works");
+  await operations.updatePipeline(lead.id, "won");
+  await operations.updatePipeline(lead.id, "won");
+  const clients = getState().data.clients.filter((item) => item.lead_id === lead.id);
+  assert.equal(clients.length, 1);
+  assert.equal(getState().data.onboardingRecords.filter((item) => item.client_id === clients[0].id).length, 1);
+  assert.equal(getState().data.projects.filter((item) => item.client_id === clients[0].id).length, 1);
+});
+
+test("only collected setup revenue earns a capped commission", async () => {
+  const client = getState().data.clients.find((item) => item.lead_id === getState().data.leads.find((lead) => lead.business_name === "Summit Fence Works").id);
+  const before = getState().data.commissions.length;
+  const setup = await operations.recordPayment({
+    customer_name: "Summit Fence Works",
+    client_id: client.id,
+    amount: 20_000,
+    payment_type: "setup_fee",
+    status: "paid",
+  });
+  assert.equal(getState().data.commissions.length, before + 1);
+  const commission = getState().data.commissions.find((item) => item.payment_id === setup.id);
+  assert.equal(operations.commissionAmount(commission), 1000);
+  assert.equal(getState().data.clients.find((item) => item.id === client.id).amount_received, 20_000);
+  assert.equal(getState().data.clients.find((item) => item.id === client.id).payment_status, "paid");
+
+  await operations.recordPayment({
+    customer_name: "Summit Fence Works",
+    client_id: client.id,
+    amount: 500,
+    payment_type: "recurring_subscription",
+    status: "paid",
+  });
+  assert.equal(getState().data.commissions.length, before + 1, "recurring revenue must not create commission");
+  assert.equal(getState().data.clients.find((item) => item.id === client.id).amount_received, 20_000, "recurring revenue must not change the setup balance");
+});
+
 test("a demo can be built, published and drafted end to end", async () => {
-  const lead = getState().data.leads.find((item) => item.status === "qualified" && !operations.demoForLead(item.id));
+  const lead = getState().data.leads.find((item) => item.status === "ready_to_contact" && !operations.demoForLead(item.id));
   const built = await runTool("create_demo", { lead_id: lead.id });
   assert.equal(built.ok, true);
   const demo = built.data;
@@ -292,9 +349,9 @@ test("a demo can be built, published and drafted end to end", async () => {
 
   const drafted = await runTool("draft_email", { lead_id: lead.id });
   assert.equal(drafted.ok, true);
-  assert.match(drafted.data.body, /I came across/);
+  assert.match(drafted.data.body, /AI call handling and lead-booking systems/);
   assert.match(drafted.data.body, new RegExp(lead.business_name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(drafted.data.body, /one-time fee of \$\d+/);
+  assert.match(drafted.data.body, /implementation/);
   assert.equal(drafted.data.status, "ready");
 });
 
@@ -488,6 +545,22 @@ test("business presence screening excludes official sites without consuming the 
   assert.equal(screened.leads[0].website_status, "No official site found");
   assert.equal(screened.leads[1].website_status, "Website check uncertain");
   assert.equal(screened.leads[1].source_metadata.web_presence.status, "unknown");
+});
+
+test("agency discovery can preserve an official site while requiring a public email", async () => {
+  const [lead] = getState().data.leads;
+  const screened = await screenLeadsForBusinessPresence([lead], {
+    requireEmail: true,
+    excludeOfficialWebsite: false,
+    lookup: async () => ({
+      website: { status: "found", url: "https://northstar.example", evidence: "Matched phone" },
+      email: { address: "owner@northstar.example", source_url: "https://northstar.example/contact", evidence: "Public contact page" },
+    }),
+  });
+  assert.equal(screened.leads.length, 1);
+  assert.equal(screened.leads[0].has_website, true);
+  assert.equal(screened.leads[0].email, "owner@northstar.example");
+  assert.equal(screened.stats.excludedExistingWebsite, 0);
 });
 
 test("a no-site OpenScout result remains eligible when no public email is found", async () => {

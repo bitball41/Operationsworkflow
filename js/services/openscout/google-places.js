@@ -119,6 +119,7 @@
     depth = "standard",
     radiusKm,
     minConfidence = 0,
+    includeAllBusinesses = false,
     verify = true,
     onProgress,
   } = {}) {
@@ -201,7 +202,7 @@
     if (!classify) {
       // Defensive fallback if classify.js failed to load: treat empty website
       // as a lead so the app still works, just without confidence scoring.
-      const leads = open.filter((place) => !place.website);
+      const leads = includeAllBusinesses ? open : open.filter((place) => !place.website);
       return basicResult(query, queue.length, errorCount, open, leads);
     }
 
@@ -249,11 +250,16 @@
       };
     });
 
-    const allLeads = scored.filter((place) => place.isLead);
+    const agencyCandidates = scored
+      .filter((place) => place.leadCategory !== "chain")
+      .map((place) => includeAllBusinesses ? automationCandidate(place) : place);
+    const allLeads = includeAllBusinesses ? agencyCandidates : scored.filter((place) => place.isLead);
     const excludedChains = scored.filter((place) => place.leadCategory === "chain").length;
     const threshold = Number(minConfidence) || 0;
     const surfaced = sortLeads(allLeads.filter((lead) => lead.confidence >= threshold));
-    const withWebsite = Math.max(0, scored.length - allLeads.length - excludedChains);
+    const withWebsite = includeAllBusinesses
+      ? scored.filter((place) => Boolean(place.website)).length
+      : Math.max(0, scored.length - allLeads.length - excludedChains);
 
     return {
       query,
@@ -270,6 +276,44 @@
       hiddenLowConfidence: allLeads.length - surfaced.length,
       totalLeads: allLeads.length,
       ...accuracyStats(surfaced),
+    };
+  }
+
+  function automationCandidate(place) {
+    const reviewCount = Number(place.ratingCount) || 0;
+    const rating = Number(place.rating) || 0;
+    let confidence = 45;
+    const reasons = [];
+    if (place.phone) {
+      confidence += 20;
+      reasons.push("Public phone number available");
+    }
+    if (reviewCount >= 250) {
+      confidence += 25;
+      reasons.push("High public review volume");
+    } else if (reviewCount >= 75) {
+      confidence += 18;
+      reasons.push("Established public review volume");
+    } else if (reviewCount >= 20) {
+      confidence += 10;
+      reasons.push("Meaningful public review volume");
+    }
+    if (rating >= 4) {
+      confidence += 5;
+      reasons.push("Strong public rating");
+    }
+    if (place.website) {
+      confidence += 5;
+      reasons.push("Existing digital presence");
+    }
+    return {
+      ...place,
+      isLead: true,
+      leadTier: confidence >= 88 ? "strong" : confidence >= 72 ? "medium" : "weak",
+      leadCategory: "automation",
+      leadType: "Automation opportunity",
+      confidence: Math.max(35, Math.min(99, confidence)),
+      reasons,
     };
   }
 

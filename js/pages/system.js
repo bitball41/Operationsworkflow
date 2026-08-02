@@ -187,7 +187,7 @@ export function renderIntegrations() {
       ${section("Tool layer", {
         subtitle: `${formatNumber(listTools().length)} operations available to the assistant and, later, to an MCP client`,
         body: rows([
-          row({ main: "Deterministic operations", sub: "Lead selection, demo build, publish, draft, send, follow-up, pipeline, inbox, money", iconName: "tool" }),
+          row({ main: "Deterministic operations", sub: "Discovery, assignment, calls, meetings, pipeline, onboarding, projects, payments, and commissions", iconName: "tool" }),
           row({ main: "Application context", sub: `${contextSections().length} sections exposed on every assistant turn`, iconName: "layers" }),
           row({
             main: "Model provider",
@@ -313,12 +313,12 @@ export function renderSettings() {
           body: `<div class="field-grid">
             ${field("Owner name", input("owner_name", settings.owner_name || CONFIG.owner))}
             ${field("Business name", input("business_name", settings.business_name || ""))}
-            ${field("Website price", input("default_site_price", settings.default_site_price ?? CONFIG.defaultPrice, { type: "number", attrs: 'min="0" step="50"' }))}
-            ${field("Maintenance / month", input("maintenance_price", settings.maintenance_price ?? 50, { type: "number", attrs: 'min="0"' }))}
+            ${field("Default setup fee", input("default_setup_fee", settings.default_setup_fee ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
+            ${field("Default monthly fee", input("default_monthly_fee", settings.default_monthly_fee ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="25"' }))}
           </div>`,
         })}
 
-        ${section("Outreach", {
+        ${section("Sales follow-up", {
           body: `
             <div class="field-grid">
               ${field("Sending email", input("default_email", settings.default_email || "", { type: "email", placeholder: "you@example.com" }))}
@@ -329,9 +329,9 @@ export function renderSettings() {
           `,
         })}
 
-        ${section("Websites", {
+        ${section("Operations", {
           body: `<div class="field-grid">
-            ${field("Preview domain", input("preview_domain", settings.preview_domain || CONFIG.previewDomain))}
+            ${field("Legacy preview domain", input("preview_domain", settings.preview_domain || CONFIG.previewDomain), { hint: "kept for existing website artifacts; not part of the primary agency workflow" })}
             ${field("Time zone", select("timezone", ["America/Chicago", "America/New_York", "America/Denver", "America/Los_Angeles", "UTC"].map((zone) => ({ value: zone, label: zone })), settings.timezone || "America/Chicago"))}
           </div>`,
         })}

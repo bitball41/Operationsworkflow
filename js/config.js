@@ -1,7 +1,9 @@
 export const CONFIG = Object.freeze({
   defaultRoute: "home",
   owner: "Connor",
-  defaultPrice: 500,
+  defaultPrice: 2500,
+  defaultSetupFee: 2500,
+  defaultMonthlyFee: 300,
   defaultBatchTarget: 48,
   /* Empty on purpose: no fake domain is baked into preview links. Until a real
      host is set in Settings, preview URLs are built from wherever the app is
@@ -9,14 +11,23 @@ export const CONFIG = Object.freeze({
   previewDomain: "",
 });
 
-/* Sidebar is the only navigation system. Groups map 1:1 to routes. */
+/* Sidebar is the only navigation system. Keep it focused on pages that perform
+   real work; closely related records live together instead of multiplying
+   placeholder routes. */
 export const NAV_GROUPS = Object.freeze([
   {
     label: "",
     items: [
       { id: "home", label: "Home", icon: "home" },
       { id: "assistant", label: "AI Assistant", icon: "sparkle" },
-      { id: "automation", label: "Automation", icon: "play" },
+    ],
+  },
+  {
+    label: "Overview",
+    items: [
+      { id: "activity", label: "Activity", icon: "activity" },
+      { id: "tasks", label: "Tasks", icon: "check-square" },
+      { id: "calendar", label: "Calendar", icon: "calendar" },
     ],
   },
   {
@@ -25,59 +36,73 @@ export const NAV_GROUPS = Object.freeze([
       { id: "discovery", label: "Lead Discovery", icon: "radar" },
       { id: "leads", label: "Leads", icon: "building" },
       { id: "pipeline", label: "Pipeline", icon: "columns" },
-      { id: "outreach", label: "Outreach", icon: "send" },
-      { id: "inbox", label: "Inbox", icon: "inbox" },
+      { id: "calling", label: "Calling", icon: "phone" },
+      { id: "meetings", label: "Meetings", icon: "calendar" },
       { id: "follow-ups", label: "Follow-Ups", icon: "timer" },
-    ],
-  },
-  {
-    label: "Websites",
-    items: [
-      { id: "studio", label: "Website Studio", icon: "code" },
-      { id: "templates", label: "Templates", icon: "layers" },
-      { id: "demos", label: "Demos", icon: "monitor" },
-      { id: "deployments", label: "Deployments", icon: "globe" },
     ],
   },
   {
     label: "Clients",
     items: [
       { id: "clients", label: "Clients", icon: "briefcase" },
-      { id: "projects", label: "Projects", icon: "check-square" },
-      { id: "maintenance", label: "Maintenance", icon: "refresh" },
+      { id: "onboarding", label: "Onboarding", icon: "check-square" },
+      { id: "projects", label: "Projects", icon: "layers" },
+    ],
+  },
+  {
+    label: "Automation",
+    items: [
+      { id: "automation-studio", label: "Automation Studio", icon: "tool" },
+      { id: "integrations", label: "Integrations", icon: "plug" },
+      { id: "deployments", label: "Deployments", icon: "globe" },
     ],
   },
   {
     label: "Business",
     items: [
       { id: "payments", label: "Payments", icon: "wallet" },
+      { id: "subscriptions", label: "Subscriptions", icon: "refresh" },
+      { id: "commissions", label: "Commissions", icon: "dollar" },
       { id: "analytics", label: "Analytics", icon: "chart" },
       { id: "costs", label: "Costs", icon: "dollar" },
-      { id: "pricing", label: "Pricing Experiments", icon: "flask" },
     ],
   },
   {
     label: "Workspace",
     items: [
-      { id: "tasks", label: "Tasks", icon: "check-square" },
-      { id: "calendar", label: "Calendar", icon: "calendar" },
       { id: "notes", label: "Notes", icon: "note" },
-      { id: "activity", label: "Activity", icon: "activity" },
     ],
   },
   {
     label: "System",
     items: [
-      { id: "integrations", label: "Integrations", icon: "plug" },
+      { id: "team", label: "Team", icon: "user" },
       { id: "settings", label: "Settings", icon: "settings" },
     ],
   },
 ]);
 
-export const ROUTES = Object.freeze(NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id)));
+/* Legacy website routes remain renderable for existing bookmarks and records,
+   but are intentionally absent from the agency navigation. */
+export const LEGACY_ROUTES = Object.freeze(["automation", "outreach", "inbox", "studio", "templates", "demos", "maintenance", "pricing"]);
+
+export const ROUTES = Object.freeze([
+  ...NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id)),
+  ...LEGACY_ROUTES,
+]);
 
 export const PAGE_TITLES = Object.freeze(Object.fromEntries(
-  NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item.label])),
+  [
+    ...NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item.label])),
+    ["automation", "Legacy website automation"],
+    ["outreach", "Outreach"],
+    ["inbox", "Inbox"],
+    ["studio", "Website Studio"],
+    ["templates", "Templates"],
+    ["demos", "Demos"],
+    ["maintenance", "Legacy maintenance"],
+    ["pricing", "Legacy pricing experiments"],
+  ],
 ));
 
 /* Routes that own the full viewport instead of the padded page container. */
@@ -85,23 +110,54 @@ export const FULL_BLEED_ROUTES = Object.freeze(["assistant", "studio"]);
 
 export const PIPELINE_STAGES = Object.freeze([
   { id: "new", label: "New" },
-  { id: "qualified", label: "Qualified" },
-  { id: "demo_ready", label: "Demo Ready" },
+  { id: "ready_to_contact", label: "Ready to Contact" },
   { id: "contacted", label: "Contacted" },
-  { id: "replied", label: "Replied" },
   { id: "interested", label: "Interested" },
-  { id: "closing", label: "Closing" },
+  { id: "meeting_scheduled", label: "Meeting Scheduled" },
+  { id: "demo_completed", label: "Demo Completed" },
+  { id: "proposal_sent", label: "Proposal Sent" },
+  { id: "negotiating", label: "Negotiating" },
   { id: "won", label: "Won" },
   { id: "lost", label: "Lost" },
+  { id: "follow_up_later", label: "Follow Up Later" },
 ]);
 
 export const PROJECT_STAGES = Object.freeze([
-  "payment_received",
-  "changes",
+  "discovery",
+  "designing",
+  "building",
+  "integrating",
+  "testing",
   "client_review",
-  "domain_setup",
-  "launch",
+  "limited_launch",
   "live",
+  "maintenance",
+  "paused",
+]);
+
+export const CALL_OUTCOMES = Object.freeze([
+  ["no_answer", "No answer"],
+  ["voicemail", "Voicemail"],
+  ["gatekeeper", "Gatekeeper"],
+  ["wrong_number", "Wrong number"],
+  ["interested", "Interested"],
+  ["meeting_booked", "Meeting booked"],
+  ["call_back_later", "Call back later"],
+  ["not_interested", "Not interested"],
+  ["already_has_solution", "Already has solution"],
+  ["unqualified", "Unqualified"],
+]);
+
+export const AUTOMATION_OPPORTUNITIES = Object.freeze([
+  ["high_call_volume", "Likely high call volume"],
+  ["appointment_based", "Appointment based"],
+  ["quote_based", "Quote based"],
+  ["emergency_service", "Emergency service"],
+  ["after_hours", "After-hours opportunity"],
+  ["missed_call", "Missed-call opportunity"],
+  ["support_heavy", "Support-heavy"],
+  ["lead_follow_up", "Lead follow-up opportunity"],
+  ["booking", "Booking opportunity"],
 ]);
 
 export const REPLY_CLASSIFICATIONS = Object.freeze([
@@ -117,7 +173,11 @@ export const REPLY_CLASSIFICATIONS = Object.freeze([
 
 export const INTEGRATIONS = Object.freeze([
   { provider: "supabase", name: "Workspace database", detail: "Server-side records and private assets behind Cloudflare Access", status: "connected", manage: "settings" },
-  { provider: "openscout", name: "OpenScout", detail: "Google Places lead discovery engine", status: "connected", manage: "discovery" },
+  { provider: "openscout", name: "OpenScout", detail: "Google Places business discovery and source evidence", status: "connected", manage: "discovery" },
+  { provider: "retell", name: "Retell", detail: "Voice-agent execution provider; connect when an account and server credentials are available", status: "not_connected" },
+  { provider: "vapi", name: "Vapi", detail: "Alternate voice-agent execution provider", status: "not_connected" },
+  { provider: "n8n", name: "n8n", detail: "Primary future workflow orchestration provider", status: "not_connected" },
+  { provider: "twilio", name: "Twilio", detail: "Telephony and messaging where provider-native capabilities are insufficient", status: "not_connected" },
   { provider: "outlook", name: "Outlook", detail: "Sends outreach through Microsoft Graph", status: "not_connected" },
   { provider: "cloudflare", name: "Cloudflare", detail: "Publishes demos and client sites", status: "not_connected" },
   { provider: "anthropic", name: "Anthropic", detail: "Model provider for the assistant and automation", status: "not_connected" },
@@ -130,6 +190,14 @@ export const INTEGRATIONS = Object.freeze([
 export const STATUS_LABELS = Object.freeze({
   new: "New",
   qualified: "Qualified",
+  unreviewed: "Unreviewed",
+  potential: "Potential",
+  unqualified: "Unqualified",
+  ready_to_contact: "Ready to contact",
+  meeting_scheduled: "Meeting scheduled",
+  demo_completed: "Demo completed",
+  proposal_sent: "Proposal sent",
+  negotiating: "Negotiating",
   demo_ready: "Demo ready",
   contacted: "Contacted",
   replied: "Replied",
@@ -168,6 +236,12 @@ export const STATUS_LABELS = Object.freeze({
   disabled: "Disabled",
   error: "Error",
   live: "Live",
+  designing: "Designing",
+  building: "Building",
+  integrating: "Integrating",
+  testing: "Testing",
+  limited_launch: "Limited launch",
+  production: "Production",
   healthy: "Healthy",
   warning: "Warning",
   unknown: "Unknown",
@@ -178,6 +252,7 @@ export const STATUS_LABELS = Object.freeze({
   rejected: "Rejected",
   saved: "Saved",
   payment_received: "Payment received",
+  discovery: "Discovery",
   changes: "Changes",
   client_review: "Client review",
   domain_setup: "Domain setup",
@@ -189,6 +264,22 @@ export const STATUS_LABELS = Object.freeze({
   ready_to_launch: "Ready to launch",
   website_sale: "Website sale",
   maintenance: "Maintenance",
+  setup_fee: "Setup fee",
+  recurring_subscription: "Recurring subscription",
+  usage_overage: "Usage overage",
+  custom_invoice: "Custom invoice",
+  refund: "Refund",
+  earned: "Earned",
+  reversed: "Reversed",
+  not_started: "Not started",
+  blocked: "Blocked",
+  critical: "Critical",
+  offline: "Offline",
+  medium: "Medium",
+  simple: "Simple",
+  standard: "Standard",
+  complex: "Complex",
+  custom: "Custom",
   interested_reply: "Interested",
   maybe: "Maybe",
   needs_changes: "Needs changes",
@@ -216,18 +307,15 @@ export const STATUS_LABELS = Object.freeze({
 
 /* The default outreach email. Kept as data so automation and the composer
    always produce the same message. */
-export const OUTREACH_SUBJECT = "I made a website for {{business}}";
+export const OUTREACH_SUBJECT = "A practical way to capture more calls at {{business}}";
 
 export const OUTREACH_BODY = `Hey,
 
-I came across {{business}} and noticed you didn't have a website, so I went ahead and made one for you.
+I work with local service businesses on AI call handling and lead-booking systems. The goal is simple: answer missed and after-hours calls, qualify the caller, book the right next step, and send your team a useful summary.
 
-Here's the preview: {{link}}
+I noticed {{business}} may be a fit. If call coverage or follow-up is costing you opportunities, I can map the current workflow and show you a focused demo.
 
-If you like it, I can customize anything you want, connect your domain, and get the full site live.
-
-I charge a one-time fee of \${{price}}.
-If you don't like it, you don't pay.
+Typical founding-client pricing starts at \${{price}} for implementation, with management priced separately around the actual workflow and usage.
 
 Interested?
 
@@ -235,13 +323,11 @@ Interested?
 
 export const FOLLOW_UP_BODY = `Hey,
 
-Just checking in on the website preview I sent for {{business}}:
+Just checking in about the call-handling and lead-booking workflow for {{business}}.
 
-{{link}}
+If missed calls, after-hours coverage, qualification, or appointment booking are a problem, I can map the current process and show where automation would actually help. Implementation starts around \${{price}}, with ongoing management scoped separately.
 
-Happy to change anything you want — colors, photos, wording, layout. Still \${{price}} one time, and you only pay if you like it.
-
-Want me to adjust anything?
+Would a short workflow review be useful?
 
 {{owner}}`;
 

@@ -30,8 +30,8 @@ function paymentStatus(payment) {
 function paymentType(payment) {
   const plan = String(payment?.plan_type || payment?.billing_period || payment?.plan?.plan_type || "").toLowerCase();
   return plan.includes("renewal") || plan.includes("recurring") || plan.includes("month") || plan.includes("year")
-    ? "maintenance"
-    : "website_sale";
+    ? "recurring_subscription"
+    : "setup_fee";
 }
 
 function customerName(payment) {
@@ -66,6 +66,8 @@ export function toPaymentRecord(payment) {
     refund_state: Number(payment?.refunded_amount) > 0 ? "refunded" : "none",
     source: "whop",
     external_transaction_id: firstString(payment?.id, payment?.receipt_id, payment?.transaction_id),
+    client_id: firstString(payment?.client_id, payment?.metadata?.client_id, payment?.custom_fields?.client_id) || null,
+    project_id: firstString(payment?.project_id, payment?.metadata?.project_id, payment?.custom_fields?.project_id) || null,
     paid_at: paidAt(payment),
   };
 }

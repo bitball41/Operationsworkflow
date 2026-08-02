@@ -1,5 +1,5 @@
 /* Single delegated event router: clicks, form submits and control changes. */
-import { PIPELINE_STAGES } from "./config.js";
+import { PIPELINE_STAGES, PROJECT_STAGES } from "./config.js";
 
 /* Worker secret name per integration, so "Set up" can say exactly what to run. */
 const WORKER_SECRET_NAMES = Object.freeze({
@@ -23,13 +23,19 @@ import {
   openFollowUpForm,
   openLeadDetails,
   openLeadForm,
+  openMeetingForm,
   openMaintenanceForm,
   openNoteForm,
+  openOnboardingForm,
   openPaymentForm,
   openPricingForm,
   openProjectForm,
+  openAutomationRecordForm,
+  openCommissionForm,
   openStageForm,
+  openSubscriptionForm,
   openTaskForm,
+  openTeamMemberForm,
   openTemplateChooser,
   openTemplatePreview,
   openTemplateUploadForm,
@@ -74,15 +80,19 @@ import { providerName } from "./services/integrations.js";
 import { syncInbox } from "./services/email/inbox.js";
 import {
   classifyReply,
+  createMeeting,
   createOrUpdateDemo,
   createOutreachDraft,
   demoForLead,
   ensureTemplateRecords,
   publishDemo,
   replyToThread,
+  recordPayment,
+  recordSalesCall,
   saveDemoFiles,
   sendDirectEmail,
   sendDraft,
+  syncCommissionForPayment,
   updatePipeline,
 } from "./services/operations.js";
 import { buildBundleForLead, buildBundleForTemplateRecord, catalogForRecord, composeDocument } from "./services/sites/bundle.js";
@@ -117,6 +127,18 @@ function iso(value) {
 
 function clean(values) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === "" ? null : value]));
+}
+
+function lines(value) {
+  return String(value || "").split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+}
+
+function jsonValue(value, label) {
+  try {
+    return JSON.parse(String(value || "{}").trim() || "{}");
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
 }
 
 /**
@@ -347,6 +369,14 @@ export async function onClick(event) {
     case "leads-export":
       exportLeads();
       break;
+    case "meeting-new":
+      openMeetingForm(null, target.dataset.leadId || "");
+      break;
+    case "meeting-open": {
+      const meeting = findRecord("meetings", id);
+      if (meeting) openMeetingForm(meeting);
+      break;
+    }
 
     /* --- outreach --- */
     case "outreach-batch":
@@ -559,12 +589,26 @@ export async function onClick(event) {
     case "project-advance": {
       const project = findRecord("projects", id);
       if (!project) break;
-      const stages = ["payment_received", "changes", "client_review", "domain_setup", "launch", "live"];
+      const stages = PROJECT_STAGES;
       const next = stages[Math.min(stages.indexOf(project.status) + 1, stages.length - 1)];
       await run(() => updateRecord("projects", id, {
         status: next,
         progress: Math.round((stages.indexOf(next) / (stages.length - 1)) * 100),
       }), "Project advanced");
+      break;
+    }
+    case "onboarding-open": {
+      const client = findRecord("clients", target.dataset.clientId);
+      const record = id ? findRecord("onboardingRecords", id) : null;
+      if (client) openOnboardingForm(record, client);
+      break;
+    }
+    case "automation-record-new":
+      openAutomationRecordForm();
+      break;
+    case "automation-record-open": {
+      const automation = findRecord("automations", id);
+      if (automation) openAutomationRecordForm(automation);
       break;
     }
     case "maintenance-new":
@@ -586,11 +630,30 @@ export async function onClick(event) {
       }), complete ? "Request completed" : "Request reopened");
       break;
     }
+    case "subscription-new":
+      closeModal();
+      openSubscriptionForm();
+      break;
+    case "subscription-open": {
+      const subscription = findRecord("maintenanceSubscriptions", id);
+      if (subscription) openSubscriptionForm(subscription);
+      break;
+    }
 
     /* --- money --- */
     case "payment-new":
       openPaymentForm();
       break;
+    case "payment-open": {
+      const payment = findRecord("payments", id);
+      if (payment) openPaymentForm(payment);
+      break;
+    }
+    case "commission-open": {
+      const commission = findRecord("commissions", id);
+      if (commission) openCommissionForm(commission);
+      break;
+    }
     case "expense-new":
       openExpenseForm();
       break;
@@ -610,6 +673,14 @@ export async function onClick(event) {
     case "pricing-open": {
       const experiment = findRecord("pricingExperiments", id);
       if (experiment) openPricingForm(experiment);
+      break;
+    }
+    case "team-member-new":
+      openTeamMemberForm();
+      break;
+    case "team-member-open": {
+      const member = findRecord("teamMembers", id);
+      if (member) openTeamMemberForm(member);
       break;
     }
 
@@ -793,8 +864,13 @@ export async function onSubmit(event) {
           lead_score: number(values.lead_score, 80),
           qualification_score: number(values.lead_score, 80),
           opportunity_score: number(values.lead_score, 80),
-          deal_value: number(values.deal_value, 500),
-          asking_price: number(values.deal_value, 500),
+          deal_value: number(values.deal_value, 2500),
+          asking_price: number(values.deal_value, 2500),
+          quoted_setup_fee: values.quoted_setup_fee === null ? null : number(values.quoted_setup_fee, 0),
+          quoted_monthly_fee: values.quoted_monthly_fee === null ? null : number(values.quoted_monthly_fee, 0),
+          opportunity_tags: lines(values.opportunity_tags),
+          pain_points: lines(values.pain_points),
+          objections: lines(values.objections),
           source: id ? findRecord("leads", id)?.source || "manual" : "manual",
           source_key: id ? findRecord("leads", id)?.source_key || null : `manual-${slugify(values.business_name || uid())}`,
           discovered_at: id ? findRecord("leads", id)?.discovered_at : new Date().toISOString(),
@@ -811,6 +887,58 @@ export async function onSubmit(event) {
         closeModal();
         toast("Stage updated");
         break;
+
+      case "sales-call": {
+        if (values.outcome === "meeting_booked" && !values.meeting_starts_at) {
+          throw new Error("Add the meeting time before saving a booked meeting.");
+        }
+        await recordSalesCall(form.dataset.leadId, {
+          ...values,
+          next_follow_up_at: values.next_follow_up_at ? iso(values.next_follow_up_at) : null,
+          meeting_starts_at: values.meeting_starts_at ? iso(values.meeting_starts_at) : null,
+        });
+        form.reset();
+        navigate("calling");
+        toast("Call saved", "The lead, activity, and any follow-up or meeting were updated.");
+        break;
+      }
+
+      case "meeting": {
+        const payload = {
+          title: values.title,
+          lead_id: values.lead_id,
+          client_id: values.client_id,
+          salesperson_id: values.salesperson_id,
+          starts_at: iso(values.starts_at),
+          ends_at: iso(values.ends_at),
+          outcome: values.outcome,
+          implementation_complexity: values.implementation_complexity,
+          quoted_setup_fee: values.quoted_setup_fee === null ? null : number(values.quoted_setup_fee, 0),
+          quoted_monthly_fee: values.quoted_monthly_fee === null ? null : number(values.quoted_monthly_fee, 0),
+          current_workflow: values.current_workflow,
+          biggest_pain_point: values.biggest_pain_point,
+          approximate_volume: values.approximate_volume,
+          decision_maker: values.decision_maker,
+          existing_crm: values.existing_crm,
+          calendar_system: values.calendar_system,
+          phone_provider: values.phone_provider,
+          usage_allowance: values.usage_allowance,
+          automation_proposed: values.automation_proposed,
+          tools_used: lines(values.tools_used),
+          required_integrations: lines(values.required_integrations),
+          notes: values.notes,
+          next_action: values.next_action,
+        };
+        const meeting = id ? await updateRecord("meetings", id, payload) : await createMeeting(payload);
+        if (id && meeting.lead_id) {
+          if (meeting.outcome === "won") await updatePipeline(meeting.lead_id, "won");
+          else if (meeting.outcome === "lost") await updatePipeline(meeting.lead_id, "lost");
+          else if (meeting.outcome === "proposal_needed") await updatePipeline(meeting.lead_id, "demo_completed");
+        }
+        closeModal();
+        toast("Meeting saved");
+        break;
+      }
 
       case "outreach": {
         const leadId = values.lead_id || form.dataset.leadId;
@@ -956,15 +1084,25 @@ export async function onSubmit(event) {
       }
 
       case "client": {
+        const setupFee = number(values.setup_fee, 2500);
         const payload = {
           ...values,
-          agreed_price: number(values.agreed_price, 500),
+          agreed_price: setupFee,
+          setup_fee: setupFee,
+          monthly_fee: number(values.monthly_fee, 300),
           amount_received: number(values.amount_received, 0),
-          payment_status: number(values.amount_received) >= number(values.agreed_price, 500) ? "paid" : "pending",
+          payment_status: number(values.amount_received) >= setupFee ? "paid" : "pending",
+          pricing: { setup_fee: setupFee, monthly_fee: number(values.monthly_fee, 300) },
         };
-        const saved = id ? await updateRecord("clients", id, payload) : await createRecord("clients", payload);
-        if (!id && values.lead_id) await updateRecord("leads", values.lead_id, { status: "won" });
-        if (!id) await logActivity("client_created", "Client created", saved.contact_name || "", { client_id: saved.id, lead_id: values.lead_id });
+        if (id) await updateRecord("clients", id, payload);
+        else {
+          if (!values.lead_id) throw new Error("Choose the won lead to convert.");
+          await updateRecord("leads", values.lead_id, { quoted_setup_fee: setupFee, quoted_monthly_fee: payload.monthly_fee });
+          await updatePipeline(values.lead_id, "won");
+          const created = getState().data.clients.find((client) => String(client.lead_id) === String(values.lead_id));
+          if (!created) throw new Error("The won lead could not be converted to a client.");
+          await updateRecord("clients", created.id, payload);
+        }
         closeModal();
         toast("Client saved");
         break;
@@ -974,12 +1112,77 @@ export async function onSubmit(event) {
         const payload = {
           ...values,
           progress: number(values.progress, 0),
-          requested_edits: String(values.requested_edits || "").split("\n").map((line) => line.trim()).filter(Boolean),
+          requirements: jsonValue(values.requirements, "Requirements"),
         };
         if (id) await updateRecord("projects", id, payload);
         else await createRecord("projects", payload);
         closeModal();
         toast("Project saved");
+        break;
+      }
+
+      case "onboarding": {
+        const payload = {
+          client_id: form.dataset.clientId,
+          status: values.status,
+          progress: number(values.progress, 0),
+          completed_at: values.status === "complete" ? new Date().toISOString() : null,
+          business: {
+            services: lines(values.business_services),
+            service_area: lines(values.business_service_area),
+            hours: values.business_hours || "",
+            staff: values.business_staff || "",
+          },
+          customer_handling: {
+            common_questions: lines(values.handling_common_questions),
+            qualification_criteria: lines(values.handling_qualification),
+            allowed_guidance: lines(values.handling_allowed),
+            forbidden_behavior: lines(values.handling_forbidden),
+            escalation_rules: values.handling_escalation || "",
+            appointment_rules: values.handling_appointment_rules || "",
+          },
+          technical: {
+            phone_system: values.technical_phone || "",
+            crm: values.technical_crm || "",
+            calendar: values.technical_calendar || "",
+            messaging: values.technical_messaging || "",
+            tools: values.technical_tools || "",
+          },
+          automation_goals: {
+            current_problem: values.goals_problem || "",
+            desired_outcome: values.goals_outcome || "",
+            current_workflow: values.goals_current_workflow || "",
+            proposed_workflow: values.goals_proposed_workflow || "",
+            success_metric: values.goals_success_metric || "",
+          },
+        };
+        if (id) await updateRecord("onboardingRecords", id, payload);
+        else await createRecord("onboardingRecords", payload);
+        await updateRecord("clients", form.dataset.clientId, { onboarding_status: payload.status, onboarding_progress: payload.progress });
+        closeModal();
+        toast("Onboarding saved");
+        break;
+      }
+
+      case "automation-record": {
+        if (!values.name || !values.client_id || !values.automation_type) throw new Error("Name, client, and type are required.");
+        const payload = {
+          name: values.name,
+          client_id: values.client_id,
+          automation_type: values.automation_type,
+          provider: values.provider,
+          status: values.status,
+          environment: values.environment,
+          development_version: values.development_version,
+          deployed_version: values.deployed_version,
+          system_prompt: values.system_prompt,
+          configuration: jsonValue(values.configuration, "Configuration"),
+          escalation_behavior: jsonValue(values.escalation_behavior, "Escalation behavior"),
+        };
+        if (id) await updateRecord("automations", id, payload);
+        else await createRecord("automations", payload);
+        closeModal();
+        toast("Automation saved");
         break;
       }
 
@@ -998,6 +1201,24 @@ export async function onSubmit(event) {
         break;
       }
 
+      case "subscription": {
+        const payload = {
+          ...values,
+          monthly_amount: number(values.monthly_amount, 300),
+          included_usage: values.included_usage === null ? null : number(values.included_usage, 0),
+          overage_rate: values.overage_rate === null ? null : number(values.overage_rate, 0),
+          billing_day: values.billing_day === null ? null : number(values.billing_day, 1),
+          hosting_included: false,
+          domain_managed: false,
+        };
+        if (id) await updateRecord("maintenanceSubscriptions", id, payload);
+        else await createRecord("maintenanceSubscriptions", payload);
+        if (values.client_id) await updateRecord("clients", values.client_id, { maintenance_status: values.status });
+        closeModal();
+        toast("Subscription saved");
+        break;
+      }
+
       case "payment": {
         const payload = {
           ...values,
@@ -1006,15 +1227,30 @@ export async function onSubmit(event) {
           paid_at: iso(values.paid_at),
           source: "manual",
         };
-        if (id) await updateRecord("payments", id, payload);
-        else await createRecord("payments", payload);
+        const payment = id
+          ? await updateRecord("payments", id, payload)
+          : await recordPayment(payload);
+        if (id) await syncCommissionForPayment(payment);
         closeModal();
         toast("Payment saved");
         break;
       }
 
+      case "commission": {
+        const patch = {
+          status: values.status,
+          notes: values.notes,
+          paid_at: values.status === "paid" ? new Date().toISOString() : null,
+          reversed_at: values.status === "reversed" ? new Date().toISOString() : null,
+        };
+        await updateRecord("commissions", id, patch);
+        closeModal();
+        toast("Commission updated");
+        break;
+      }
+
       case "expense": {
-        const payload = { ...values, amount: number(values.amount, 0) };
+        const payload = { ...values, amount: number(values.amount, 0), recurring: Boolean(values.recurring) };
         if (id) await updateRecord("expenses", id, payload);
         else await createRecord("expenses", payload);
         closeModal();
@@ -1035,6 +1271,27 @@ export async function onSubmit(event) {
         else await createRecord("pricingExperiments", payload);
         closeModal();
         toast("Experiment saved");
+        break;
+      }
+
+      case "team-member": {
+        const minimum = number(values.commission_min, 250);
+        const maximum = number(values.commission_max, 1000);
+        if (maximum < minimum) throw new Error("Commission maximum cannot be below the minimum.");
+        const payload = {
+          full_name: values.full_name,
+          access_email: values.access_email,
+          role: values.role,
+          status: values.status,
+          permissions: id ? findRecord("teamMembers", id)?.permissions || {} : {},
+          commission_rate: number(values.commission_rate, 10) / 100,
+          commission_min: minimum,
+          commission_max: maximum,
+        };
+        if (id) await updateRecord("teamMembers", id, payload);
+        else await createRecord("teamMembers", payload);
+        closeModal();
+        toast("Team member saved");
         break;
       }
 

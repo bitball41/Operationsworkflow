@@ -11,6 +11,7 @@ import { automationSettings } from "../automation/engine.js";
 import { integrationList } from "../integrations.js";
 import {
   attentionItems,
+  agencySummary,
   demoForLead,
   emailsSentToday,
   getPayments,
@@ -37,6 +38,14 @@ const LIMITS = {
   activity: 40,
   deployments: 20,
   discovery: 20,
+  teamMembers: 30,
+  salesCalls: 60,
+  meetings: 40,
+  onboardingRecords: 30,
+  automations: 40,
+  knowledgeEntries: 60,
+  commissions: 40,
+  subscriptions: 40,
 };
 
 function lead(item) {
@@ -51,7 +60,13 @@ function lead(item) {
     has_website: Boolean(item.has_website),
     score: item.lead_score,
     status: item.status,
+    assigned_team_member_id: item.assigned_team_member_id || null,
+    qualification: item.qualification_status || "unreviewed",
+    opportunity_tags: item.opportunity_tags || [],
     value: item.deal_value || item.asking_price,
+    quoted_setup_fee: item.quoted_setup_fee || null,
+    quoted_monthly_fee: item.quoted_monthly_fee || null,
+    calls_attempted: item.calls_attempted || 0,
     last_contacted_at: item.last_contacted_at,
     follow_up_at: item.follow_up_at,
     demo_id: demoForLead(item.id)?.id || null,
@@ -86,6 +101,7 @@ export function buildContext({ full = false } = {}) {
       recent_events: state.automation.events.slice(0, 10),
     },
     today: todayStats(),
+    agency: agencySummary(),
     attention: attentionItems().map((item) => ({ title: item.title, detail: item.detail, route: item.route })),
     money: {
       revenue_all_time: revenue.gross,
@@ -121,11 +137,47 @@ export function buildContext({ full = false } = {}) {
       id: item.id, lead_id: item.lead_id, attempt: item.sequence_number, due_at: item.due_at, status: item.status,
     })),
     clients: limit(data.clients, "clients").map((item) => ({
-      id: item.id, lead_id: item.lead_id, status: item.status, price: item.agreed_price, received: item.amount_received,
-      domain: item.domain, maintenance: item.maintenance_status,
+      id: item.id, lead_id: item.lead_id, status: item.status, setup_fee: item.setup_fee || item.agreed_price,
+      monthly_fee: item.monthly_fee, received: item.amount_received, onboarding: item.onboarding_status,
+      support: item.support_status, primary_team_member_id: item.primary_team_member_id || null,
     })),
     projects: limit(data.projects, "projects").map((item) => ({
-      id: item.id, client_id: item.client_id, name: item.name, status: item.status, progress: item.progress, deadline: item.deadline,
+      id: item.id, client_id: item.client_id, name: item.name, status: item.status, progress: item.progress,
+      automation_type: item.automation_type, target_launch: item.target_launch || item.deadline,
+      testing_status: item.testing_status, deployment_status: item.deployment_status, owner_id: item.owner_id || null,
+    })),
+    team: limit(data.teamMembers, "teamMembers").map((item) => ({
+      id: item.id, name: item.full_name, role: item.role, status: item.status,
+    })),
+    calls: limit(data.salesCalls, "salesCalls").map((item) => ({
+      id: item.id, lead_id: item.lead_id, salesperson_id: item.salesperson_id, outcome: item.outcome,
+      notes: item.notes, objection: item.objection, pain_point: item.pain_point, at: item.called_at || item.created_at,
+    })),
+    meetings: limit(data.meetings, "meetings").map((item) => ({
+      id: item.id, lead_id: item.lead_id, client_id: item.client_id, salesperson_id: item.salesperson_id,
+      title: item.title, starts_at: item.starts_at, outcome: item.outcome, next_action: item.next_action,
+    })),
+    onboarding: limit(data.onboardingRecords, "onboardingRecords").map((item) => ({
+      id: item.id, client_id: item.client_id, status: item.status, progress: item.progress,
+    })),
+    automations: limit(data.automations, "automations").map((item) => ({
+      id: item.id, client_id: item.client_id, project_id: item.project_id, name: item.name,
+      type: item.automation_type, provider: item.provider, status: item.status, environment: item.environment,
+      deployed_version: item.deployed_version, development_version: item.development_version,
+      last_error: item.last_error, last_activity_at: item.last_activity_at,
+    })),
+    knowledge: limit(data.knowledgeEntries, "knowledgeEntries").map((item) => ({
+      id: item.id, client_id: item.client_id, automation_id: item.automation_id, category: item.category,
+      title: item.title, approved: item.approved, active: item.active,
+    })),
+    subscriptions: limit(data.maintenanceSubscriptions, "subscriptions").map((item) => ({
+      id: item.id, client_id: item.client_id, monthly_amount: item.monthly_amount, status: item.status,
+      next_payment: item.next_charge_on, included_usage: item.included_usage, overage_rate: item.overage_rate,
+    })),
+    commissions: limit(data.commissions, "commissions").map((item) => ({
+      id: item.id, salesperson_id: item.salesperson_id, client_id: item.client_id,
+      collected_setup_revenue: item.collected_setup_revenue, calculated_commission: item.calculated_commission,
+      status: item.status, earned_at: item.earned_at, paid_at: item.paid_at,
     })),
     deployments: limit(data.deployments, "deployments").map((item) => ({
       id: item.id, domain: item.domain, status: item.status, health: item.hosting_health, last_deployed_at: item.last_deployed_at,
@@ -159,6 +211,9 @@ export function contextSections() {
     ["Current view", context.view.route],
     ["Leads", context.leads.length],
     ["Pipeline stages", context.pipeline.length],
+    ["Team", context.team.length],
+    ["Sales calls", context.calls.length],
+    ["Meetings", context.meetings.length],
     ["Templates", context.templates.length],
     ["Demos", context.demos.length],
     ["Outreach drafts", context.outreach.length],
@@ -166,7 +221,12 @@ export function contextSections() {
     ["Follow-ups", context.follow_ups.length],
     ["Clients", context.clients.length],
     ["Projects", context.projects.length],
+    ["Onboarding", context.onboarding.length],
+    ["Automations", context.automations.length],
+    ["Knowledge entries", context.knowledge.length],
     ["Deployments", context.deployments.length],
+    ["Subscriptions", context.subscriptions.length],
+    ["Commissions", context.commissions.length],
     ["Payments", context.payments.length],
     ["Expenses", context.expenses.length],
     ["Tasks", context.tasks.length],
@@ -181,9 +241,9 @@ export function contextSummary() {
   const context = buildContext();
   const parts = [
     `${context.leads.length} leads`,
-    `${context.today.sent}/${context.today.target} sent today`,
+    `${context.calls.filter((call) => new Date(call.at).toDateString() === new Date().toDateString()).length} calls today`,
     `${context.attention.length} needing attention`,
-    `${formatCurrency(context.money.revenue_this_month)} this month`,
+    `${formatCurrency(context.agency.monthlyRecurringRevenue)} MRR`,
   ];
   return parts.join(" · ");
 }

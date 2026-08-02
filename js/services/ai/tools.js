@@ -11,11 +11,13 @@ import { automationSettings, runOnce, startAutomation, stopAutomation } from "..
 import { NotConnectedError, integrationList, outlookBlocker } from "../integrations.js";
 import {
   attentionItems,
+  agencySummary,
   classifyReply,
   completeTask,
   createCalendarEvent,
   createFollowUp,
   createLead,
+  createMeeting,
   createNote,
   createOrUpdateDemo,
   createOutreachDraft,
@@ -31,6 +33,7 @@ import {
   publishDemo,
   recordExpense,
   recordPayment,
+  recordSalesCall,
   replyToThread,
   revenueSummary,
   saveDemoFiles,
@@ -177,20 +180,21 @@ define({
   name: "discover_leads",
   group: "Discovery",
   kind: "external",
-  summary: "Search Google Places for local businesses with no real website and add them as leads. This is how new leads enter the system.",
+  summary: "Search Google Places for local businesses that may benefit from automation, retain source evidence, and add reviewed candidates as leads.",
   params: [
     { name: "location", required: true, description: "One concrete city, state, region or address only, e.g. \"Austin, TX\" or \"Idaho\". Never put planning text, save instructions, or phrases such as \"the same city\" here." },
     { name: "business_type", required: true, description: "The niche only, e.g. \"tree trimming\", \"plumber\", \"roofer\" or \"dentist\". Never include a count, the words lead/business, website requirements, a location, or save instructions." },
     { name: "limit", type: "number", description: "The target number of qualified leads to save (default 50, max 250)" },
     { name: "radius_km", type: "number", description: "Search radius in kilometres (default 15)" },
     { name: "depth", description: "quick, standard (default) or deep" },
-    { name: "min_confidence", type: "number", description: "0-100 confidence that the business has no real website (default 70)" },
+    { name: "min_confidence", type: "number", description: "0-100 minimum discovery fit score (default 70)" },
     { name: "min_rating", type: "number", description: "Minimum Google rating (default 0, no filter)" },
     { name: "must_have_phone", type: "boolean", description: "Only keep businesses with a public phone number" },
     { name: "must_have_email", type: "boolean", description: "True only when the user explicitly requires email-ready results. This strict filter may produce fewer leads; false still researches and preserves every verified public email found." },
+    { name: "no_website", type: "boolean", description: "Optional legacy strict filter. Leave false for normal automation-opportunity discovery." },
     { name: "skip_known", type: "boolean", description: "Skip businesses already saved as leads (default true)" },
     { name: "verify", type: "boolean", description: "Run local direct website verification when available" },
-    { name: "save", type: "boolean", description: "Save the results straight to leads (default true). False leaves them for review on Lead Discovery. The no-official-website requirement is always enforced." },
+    { name: "save", type: "boolean", description: "Save the results straight to leads (default true). False leaves them for review on Lead Discovery." },
   ],
   run: async (input) => {
     const query = {
@@ -203,6 +207,7 @@ define({
       minRating: input.min_rating,
       mustHavePhone: input.must_have_phone,
       mustHaveEmail: input.must_have_email,
+      noWebsite: input.no_website,
       skipKnown: input.skip_known,
       verify: input.verify,
     };
@@ -298,7 +303,7 @@ define({
 define({
   name: "get_next_lead",
   group: "Leads",
-  summary: "Pick the best qualified lead that has not been contacted yet.",
+  summary: "Pick the highest-priority uncontacted lead, with email-ready leads first for legacy email workflows.",
   params: [
     { name: "niche", description: "Optional niche filter, e.g. plumbing" },
     { name: "location", description: "Optional city or region filter" },
@@ -307,7 +312,7 @@ define({
     const lead = getNextLead({ niche, location });
     return {
       data: lead,
-      summary: lead ? `${lead.business_name} · ${lead.category} · score ${lead.lead_score}` : "No uncontacted qualified leads.",
+      summary: lead ? `${lead.business_name} · ${lead.category} · score ${lead.lead_score}` : "No lead is ready to contact.",
     };
   },
 });
@@ -395,8 +400,15 @@ define({
     { name: "email" },
     { name: "phone" },
     { name: "contact_name" },
+    { name: "assigned_team_member_id", description: "Team member id to assign" },
+    { name: "qualification_status", description: "unreviewed, potential, qualified, or unqualified" },
+    { name: "opportunity_tags", type: "array", description: "Evidence-backed automation opportunity tags" },
+    { name: "pain_points", type: "array" },
+    { name: "objections", type: "array" },
     { name: "notes" },
     { name: "deal_value", type: "number", description: "What this lead is worth, in dollars" },
+    { name: "quoted_setup_fee", type: "number" },
+    { name: "quoted_monthly_fee", type: "number" },
   ],
   run: async ({ lead_id: leadId, ...patch }) => {
     const lead = await updateLead(leadId, patch);
@@ -411,11 +423,59 @@ define({
   summary: "Move a lead to another pipeline stage.",
   params: [
     { name: "lead_id", required: true },
-    { name: "status", required: true, description: "new, qualified, demo_ready, contacted, replied, interested, closing, won, lost" },
+    { name: "status", required: true, description: "new, ready_to_contact, contacted, interested, meeting_scheduled, demo_completed, proposal_sent, negotiating, won, lost, follow_up_later" },
   ],
   run: async ({ lead_id: leadId, status }) => {
     const lead = await updatePipeline(leadId, status);
     return { data: lead, summary: `${lead.business_name} moved to ${status}.` };
+  },
+});
+
+define({
+  name: "record_sales_call",
+  group: "Sales",
+  kind: "write",
+  summary: "Record a real sales-call outcome, update the lead, and create the requested follow-up or meeting through the shared operations layer.",
+  params: [
+    { name: "lead_id", required: true },
+    { name: "outcome", required: true, description: "no_answer, voicemail, gatekeeper, wrong_number, interested, meeting_booked, call_back_later, not_interested, already_has_solution, unqualified" },
+    { name: "notes" },
+    { name: "objection" },
+    { name: "pain_point" },
+    { name: "next_follow_up_at", description: "ISO datetime" },
+    { name: "meeting_starts_at", description: "ISO datetime, required for meeting_booked" },
+  ],
+  run: async ({ lead_id: leadId, ...input }) => {
+    if (input.outcome === "meeting_booked" && !input.meeting_starts_at) throw new Error("meeting_starts_at is required when a meeting is booked.");
+    const call = await recordSalesCall(leadId, input);
+    return { data: call, summary: `Sales call recorded as ${input.outcome}.` };
+  },
+});
+
+define({
+  name: "create_meeting",
+  group: "Sales",
+  kind: "write",
+  summary: "Create a discovery or demo meeting linked to a lead or client and move an open lead into Meeting Scheduled.",
+  params: [
+    { name: "title", required: true },
+    { name: "starts_at", required: true, description: "ISO datetime" },
+    { name: "lead_id" },
+    { name: "client_id" },
+    { name: "salesperson_id" },
+    { name: "attendees", type: "array" },
+    { name: "current_workflow" },
+    { name: "biggest_pain_point" },
+    { name: "automation_proposed" },
+    { name: "required_integrations", type: "array" },
+    { name: "quoted_setup_fee", type: "number" },
+    { name: "quoted_monthly_fee", type: "number" },
+    { name: "notes" },
+    { name: "next_action" },
+  ],
+  run: async (input) => {
+    const meeting = await createMeeting(input);
+    return { data: meeting, summary: `${meeting.title} scheduled.` };
   },
 });
 
@@ -636,6 +696,53 @@ define({
 });
 
 define({
+  name: "get_agency_summary",
+  group: "Business",
+  summary: "Read the agency command-center metrics: revenue, MRR, setup revenue, pipeline, meetings, live automations, outstanding payments, recorded costs, and estimated gross margin.",
+  run: () => {
+    const summary = agencySummary();
+    return { data: summary, summary: `${formatCurrency(summary.monthlyRecurringRevenue)} MRR · ${summary.leadsInPipeline} leads in pipeline · ${summary.automationsRequiringAttention} automations need attention.` };
+  },
+});
+
+define({
+  name: "list_automations",
+  group: "Automation operations",
+  summary: "List stored client automation management records by status, provider, or client. This reports Operations records and does not imply a live provider query.",
+  params: [
+    { name: "status" },
+    { name: "provider" },
+    { name: "client_id" },
+  ],
+  run: ({ status = "", provider = "", client_id: clientId = "" }) => {
+    const items = getState().data.automations.filter((item) => (
+      (!status || item.status === status)
+      && (!provider || String(item.provider || "").toLowerCase() === String(provider).toLowerCase())
+      && (!clientId || String(item.client_id) === String(clientId))
+    ));
+    return { data: items, summary: `${items.length} stored automation record(s).` };
+  },
+});
+
+define({
+  name: "get_commissions",
+  group: "Business",
+  summary: "List the setup-revenue commission ledger, optionally filtered by salesperson or status.",
+  params: [
+    { name: "salesperson_id" },
+    { name: "status", description: "pending, earned, paid, or reversed" },
+  ],
+  run: ({ salesperson_id: salespersonId = "", status = "" }) => {
+    const items = getState().data.commissions.filter((item) => (
+      (!salespersonId || String(item.salesperson_id) === String(salespersonId))
+      && (!status || item.status === status)
+    ));
+    const total = items.reduce((amount, item) => amount + Number(item.calculated_commission || 0), 0);
+    return { data: { commissions: items, total }, summary: `${formatCurrency(total)} across ${items.length} commission record(s).` };
+  },
+});
+
+define({
   name: "get_payments",
   group: "Business",
   summary: "List received payments for a period.",
@@ -677,10 +784,10 @@ define({
   summary: "What needs attention right now, plus today's numbers.",
   run: () => {
     const attention = attentionItems();
-    const today = todayStats();
+    const agency = agencySummary();
     return {
-      data: { attention, today, automation: getState().automation.status },
-      summary: `${attention.length} item(s) need attention · ${today.sent}/${today.target} sent today.`,
+      data: { attention, agency },
+      summary: `${attention.length} item(s) need attention · ${agency.leadsInPipeline} leads in pipeline · ${formatCurrency(agency.monthlyRecurringRevenue)} MRR.`,
     };
   },
 });
@@ -693,8 +800,12 @@ define({
   params: [
     { name: "customer_name", required: true },
     { name: "amount", type: "number", required: true },
-    { name: "payment_type", description: "website_sale (default) or maintenance" },
+    { name: "payment_type", description: "setup_fee (default), recurring_subscription, usage_overage, custom_invoice, or refund" },
     { name: "fee_amount", type: "number" },
+    { name: "client_id" },
+    { name: "project_id" },
+    { name: "status", description: "pending, paid, overdue, failed, or refunded" },
+    { name: "due_date", description: "ISO date" },
   ],
   run: async (input) => {
     const payment = await recordPayment(input);
@@ -712,6 +823,11 @@ define({
     { name: "amount", type: "number", required: true },
     { name: "category", description: "hosting, domains, apis, software, payment_fees, ai or other" },
     { name: "vendor" },
+    { name: "client_id" },
+    { name: "project_id" },
+    { name: "automation_id" },
+    { name: "cost_scope", description: "overhead or client" },
+    { name: "recurring", type: "boolean" },
   ],
   run: async (input) => {
     const expense = await recordExpense(input);
@@ -766,6 +882,9 @@ define({
     { name: "due_at", description: "ISO date, or a number of days from now" },
     { name: "priority", description: "low, normal, high or urgent" },
     { name: "lead_id" },
+    { name: "client_id" },
+    { name: "project_id" },
+    { name: "automation_id" },
     { name: "description" },
   ],
   run: async (input) => {

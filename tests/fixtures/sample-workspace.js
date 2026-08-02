@@ -43,10 +43,21 @@ function lead(n, business, category, city, status, score, extra = {}) {
     status,
     priority: score >= 92 ? "high" : "normal",
     qualification_score: score,
+    qualification_status: "potential",
     opportunity_score: score,
+    opportunity_tags: ["missed_call", "lead_follow_up"],
+    opportunity_summary: "Public listing signals suggest a call-handling workflow may be worth qualifying.",
     lead_score: score,
     asking_price: extra.price || CONFIG.defaultPrice,
     deal_value: extra.price || CONFIG.defaultPrice,
+    quoted_setup_fee: extra.price || CONFIG.defaultSetupFee,
+    quoted_monthly_fee: CONFIG.defaultMonthlyFee,
+    assigned_team_member_id: id(260),
+    calls_attempted: 0,
+    objections: [],
+    pain_points: [],
+    current_tools: [],
+    stage_entered_at: stamp(discovered),
     last_contacted_at: extra.lastContact ? stamp(extra.lastContact) : null,
     follow_up_at: extra.followUp ? stamp(extra.followUp) : null,
     notes: extra.notes || "",
@@ -136,17 +147,17 @@ export function createSeedData() {
   const leads = [
     lead(1, "North Star Tree Care", "Tree Service", "Arlington", "new", 96, { phone: "(817) 555-0148", rating: 4.9, ratingCount: 37, discovered: -1 }),
     lead(2, "ClearFlow Plumbing", "Plumbing", "Fort Worth", "new", 94, { phone: "(817) 555-0182", rating: 4.8, discovered: -1 }),
-    lead(3, "GreenLine Landscaping", "Landscaping", "Hurst", "demo_ready", 91, { phone: "(682) 555-0116", email: "hello@greenlineland.example", discovered: -6 }),
+    lead(3, "GreenLine Landscaping", "Landscaping", "Hurst", "ready_to_contact", 91, { phone: "(682) 555-0116", email: "hello@greenlineland.example", discovered: -6 }),
     lead(4, "Ridgeway Roofing", "Roofing", "Irving", "contacted", 89, { phone: "(972) 555-0129", contact: "Derek Walsh", email: "derek@ridgeway.example", lastContact: -6, followUp: -1, discovered: -11 }),
-    lead(5, "Polar Air Comfort", "HVAC", "Grapevine", "replied", 88, { phone: "(817) 555-0194", email: "service@polarair.example", contact: "Anika Patel", lastContact: -3, discovered: -13 }),
+    lead(5, "Polar Air Comfort", "HVAC", "Grapevine", "interested", 88, { phone: "(817) 555-0194", email: "service@polarair.example", contact: "Anika Patel", lastContact: -3, discovered: -13 }),
     lead(6, "BrightNest Cleaning", "Cleaning", "Keller", "contacted", 86, { phone: "(817) 555-0165", email: "maya@brightnest.example", contact: "Maya Chen", lastContact: -5, discovered: -15 }),
     lead(7, "Mirror Finish Auto Detail", "Auto Detailing", "Dallas", "interested", 94, { phone: "(214) 555-0150", email: "book@mirrorfinish.example", contact: "Luis Moreno", lastContact: -2, price: 700, discovered: -18 }),
-    lead(8, "Blue Oak Contractors", "General Contractor", "Plano", "closing", 87, { phone: "(469) 555-0131", email: "projects@blueoak.example", contact: "June Park", lastContact: -2, price: 700, discovered: -24 }),
+    lead(8, "Blue Oak Contractors", "General Contractor", "Plano", "negotiating", 87, { phone: "(469) 555-0131", email: "projects@blueoak.example", contact: "June Park", lastContact: -2, price: 700, discovered: -24 }),
     lead(9, "Cactus Wrench Handyman", "Handyman", "Denton", "won", 90, { phone: "(940) 555-0108", email: "sam@cactuswrench.example", contact: "Sam Ortega", lastContact: -20, price: 500, discovered: -31 }),
     lead(10, "Lone Star Gutter Co.", "Gutter Service", "Lewisville", "lost", 80, { phone: "(972) 555-0177", lastContact: -16, discovered: -35 }),
     lead(11, "Summit Fence Works", "Fencing", "Mansfield", "new", 93, { phone: "(817) 555-0121", rating: 4.8, discovered: -1 }),
     lead(12, "Bluebonnet Pressure Washing", "Pressure Washing", "Euless", "new", 90, { phone: "(682) 555-0193", rating: 4.6, discovered: -1 }),
-    lead(13, "Trinity Pool Service", "Pool Service", "Bedford", "qualified", 92, { phone: "(817) 555-0139", rating: 4.9, discovered: -2 }),
+    lead(13, "Trinity Pool Service", "Pool Service", "Bedford", "ready_to_contact", 92, { phone: "(817) 555-0139", rating: 4.9, discovered: -2 }),
     lead(14, "Ironwood Electric", "Electrician", "Southlake", "new", 91, { phone: "(817) 555-0157", rating: 4.7, discovered: -2 }),
   ];
 
@@ -189,6 +200,16 @@ export function createSeedData() {
       },
     },
     leads,
+    teamMembers: [
+      { id: id(260), full_name: "Jordan Lee", access_email: "jordan@example.test", role: "salesperson", status: "active", permissions: {}, commission_rate: 0.1, commission_min: 250, commission_max: 1000, created_at: stamp(-30), updated_at: stamp(-1) },
+      { id: id(261), full_name: CONFIG.owner, access_email: "owner@example.test", role: "owner", status: "active", permissions: {}, commission_rate: 0.1, commission_min: 250, commission_max: 1000, created_at: stamp(-30), updated_at: stamp(-1) },
+    ],
+    salesCalls: [
+      { id: id(262), lead_id: leads[4].id, salesperson_id: id(260), outcome: "interested", notes: "Owner wants better after-hours coverage.", objection: "Needs to hear call quality", pain_point: "Missed evening calls", called_at: stamp(0, -2), created_at: stamp(0, -2), updated_at: stamp(0, -2) },
+    ],
+    meetings: [
+      { id: id(263), lead_id: leads[4].id, client_id: null, salesperson_id: id(260), title: "AI receptionist discovery", starts_at: stamp(2), ends_at: stamp(2, 1), outcome: "scheduled", attendees: ["Anika Patel"], biggest_pain_point: "After-hours calls", automation_proposed: "AI receptionist and booking", required_integrations: ["Google Calendar"], quoted_setup_fee: 2500, quoted_monthly_fee: 300, next_action: "Map booking rules", created_at: stamp(0), updated_at: stamp(0) },
+    ],
     discoveryRuns: [
       { id: id(30), source: "openscout", engine_version: "openscout-2026-07-25", query: { location: "Arlington, TX", businessType: "tree service", limit: 50, radiusKm: 15 }, status: "completed", scanned_count: 184, result_count: 27, duplicate_count: 9, rejected_count: 4, saved_count: 6, summary: { estimatedAccuracy: 94 }, started_at: stamp(-1, -2), completed_at: stamp(-1, -1), created_at: stamp(-1, -2) },
       { id: id(31), source: "openscout", engine_version: "openscout-2026-07-25", query: { location: "Fort Worth, TX", businessType: "plumbing", limit: 50, radiusKm: 15 }, status: "completed", scanned_count: 121, result_count: 18, duplicate_count: 4, rejected_count: 2, saved_count: 5, summary: { estimatedAccuracy: 92 }, started_at: stamp(-4, -3), completed_at: stamp(-4, -2), created_at: stamp(-4, -3) },
@@ -235,35 +256,49 @@ export function createSeedData() {
     ],
     notifications: [],
     clients: [
-      { id: id(120), lead_id: leads[8].id, status: "active", package_name: "Standard website", agreed_price: 500, amount_received: 500, contact_name: "Sam Ortega", email: "sam@cactuswrench.example", phone: "(940) 555-0108", domain: "cactuswrench.example", production_url: "https://cactuswrench.example", purchase_date: day(-20), payment_status: "paid", project_status: "live", maintenance_status: "active", support_requests: 1, notes: "Prefers text messages.", handoff_checklist: { content: true, domain: true, payment: true, launch: true }, closed_at: stamp(-22), created_at: stamp(-22), updated_at: stamp(-2) },
-      { id: id(121), lead_id: leads[7].id, status: "onboarding", package_name: "Premium website", agreed_price: 700, amount_received: 350, contact_name: "June Park", email: "projects@blueoak.example", phone: "(469) 555-0131", domain: "", production_url: "", purchase_date: day(-2), payment_status: "pending", project_status: "changes", maintenance_status: "inactive", support_requests: 0, notes: "Second half due at launch.", handoff_checklist: {}, closed_at: stamp(-2), created_at: stamp(-2), updated_at: stamp(-1) },
+      { id: id(120), lead_id: leads[8].id, status: "active", package_name: "Managed AI receptionist", agreed_price: 2500, setup_fee: 2500, monthly_fee: 300, amount_received: 2500, contact_name: "Sam Ortega", email: "sam@cactuswrench.example", phone: "(940) 555-0108", purchase_date: day(-20), payment_status: "paid", onboarding_status: "complete", onboarding_progress: 100, support_status: "normal", maintenance_status: "active", primary_team_member_id: id(261), notes: "Prefers text messages.", closed_at: stamp(-22), created_at: stamp(-22), updated_at: stamp(-2) },
+      { id: id(121), lead_id: leads[7].id, status: "onboarding", package_name: "Missed-call and follow-up system", agreed_price: 4000, setup_fee: 4000, monthly_fee: 500, amount_received: 2000, contact_name: "June Park", email: "projects@blueoak.example", phone: "(469) 555-0131", purchase_date: day(-2), payment_status: "pending", onboarding_status: "in_progress", onboarding_progress: 38, support_status: "normal", maintenance_status: "inactive", primary_team_member_id: id(261), notes: "Technical discovery is pending.", closed_at: stamp(-2), created_at: stamp(-2), updated_at: stamp(-1) },
+    ],
+    onboardingRecords: [
+      { id: id(264), client_id: id(120), business: { services: ["Handyman services"], service_area: ["Denton"] }, customer_handling: { common_questions: ["What services do you offer?"] }, technical: { phone_system: "Provider unknown", calendar: "Google Calendar" }, automation_goals: { current_problem: "Missed calls", desired_outcome: "More booked estimates" }, status: "complete", progress: 100, completed_at: stamp(-12), created_at: stamp(-20), updated_at: stamp(-12) },
+      { id: id(265), client_id: id(121), business: {}, customer_handling: {}, technical: {}, automation_goals: {}, status: "in_progress", progress: 38, completed_at: null, created_at: stamp(-2), updated_at: stamp(-1) },
     ],
     clientSites: [
       { id: id(122), client_id: id(120), demo_id: id(44), name: "Cactus Wrench Website", domain: "cactuswrench.example", production_url: "https://cactuswrench.example", status: "live", config: {}, created_at: stamp(-20), updated_at: stamp(-2) },
       { id: id(123), client_id: id(121), demo_id: null, name: "Blue Oak Contractors Website", domain: "", production_url: "", status: "review", config: {}, created_at: stamp(-2), updated_at: stamp(-1) },
     ],
     projects: [
-      { id: id(130), client_id: id(120), site_id: id(122), name: "Cactus Wrench launch", status: "live", deadline: day(-10), progress: 100, requested_edits: [], notes: "Launched cleanly.", created_at: stamp(-20), updated_at: stamp(-10) },
-      { id: id(131), client_id: id(121), site_id: id(123), name: "Blue Oak website build", status: "changes", deadline: day(8), progress: 38, requested_edits: ["Replace project gallery", "Add commercial services"], notes: "Waiting on six photos.", created_at: stamp(-2), updated_at: stamp(-1) },
+      { id: id(130), client_id: id(120), name: "Cactus Wrench AI receptionist", status: "live", automation_type: "voice agent", start_date: day(-20), target_launch: day(-10), progress: 100, testing_status: "passed", deployment_status: "production", current_version: "v12", owner_id: id(261), requirements: {}, notes: "Launched cleanly.", created_at: stamp(-20), updated_at: stamp(-10) },
+      { id: id(131), client_id: id(121), name: "Blue Oak missed-call workflow", status: "building", automation_type: "workflow", start_date: day(-2), target_launch: day(8), progress: 38, testing_status: "not_started", deployment_status: "not_deployed", owner_id: id(261), requirements: {}, notes: "Waiting on CRM access.", created_at: stamp(-2), updated_at: stamp(-1) },
+    ],
+    automations: [
+      { id: id(266), client_id: id(120), project_id: id(130), name: "Cactus Wrench Receptionist", automation_type: "voice agent", provider: "Retell", status: "live", environment: "production", configuration: {}, tools: [], variables: {}, escalation_behavior: {}, development_version: "v13", deployed_version: "v12", usage: {}, last_error: null, last_activity_at: stamp(0, -1), created_at: stamp(-18), updated_at: stamp(0, -1) },
+      { id: id(267), client_id: id(121), project_id: id(131), name: "Blue Oak Lead Router", automation_type: "workflow", provider: "n8n", status: "building", environment: "development", configuration: {}, tools: [], variables: {}, escalation_behavior: {}, development_version: "v1", deployed_version: null, usage: {}, last_error: null, last_activity_at: null, created_at: stamp(-2), updated_at: stamp(-1) },
+    ],
+    knowledgeEntries: [
+      { id: id(268), client_id: id(120), automation_id: id(266), category: "hours", title: "Business hours", content: "Monday-Friday 8-5", source_type: "hours", approved: true, active: true, last_updated_at: stamp(-2), created_at: stamp(-12), updated_at: stamp(-2) },
     ],
     projectTasks: [
       { id: id(132), project_id: id(131), title: "Collect project photos", status: "in_progress", due_at: stamp(2), sort_order: 1, created_at: stamp(-2), updated_at: stamp(-1) },
       { id: id(133), project_id: id(131), title: "Build commercial services section", status: "pending", due_at: stamp(4), sort_order: 2, created_at: stamp(-2), updated_at: stamp(-2) },
     ],
     maintenanceSubscriptions: [
-      { id: id(140), client_id: id(120), site_id: id(122), plan_name: "Website Maintenance", monthly_amount: 50, status: "active", started_on: day(-18), next_charge_on: day(12), last_payment_on: day(-2), hosting_included: true, domain_managed: true, created_at: stamp(-18), updated_at: stamp(-2) },
-      { id: id(141), client_id: id(121), site_id: id(123), plan_name: "Website Maintenance", monthly_amount: 50, status: "inactive", started_on: day(0), next_charge_on: null, last_payment_on: null, hosting_included: true, domain_managed: false, created_at: stamp(-2), updated_at: stamp(-2) },
+      { id: id(140), client_id: id(120), project_id: id(130), plan_name: "Managed AI receptionist", monthly_amount: 300, status: "active", started_on: day(-18), next_charge_on: day(12), last_payment_on: day(-2), included_usage: 500, usage_unit: "minutes", overage_rate: 0.2, billing_day: 12, cancellation_status: "none", created_at: stamp(-18), updated_at: stamp(-2) },
+      { id: id(141), client_id: id(121), project_id: id(131), plan_name: "Workflow management", monthly_amount: 500, status: "inactive", started_on: day(0), next_charge_on: null, last_payment_on: null, included_usage: null, usage_unit: "runs", overage_rate: null, billing_day: null, cancellation_status: "none", created_at: stamp(-2), updated_at: stamp(-2) },
     ],
     maintenanceRequests: [
       { id: id(142), subscription_id: id(140), title: "Update weekend hours", description: "Change Saturday closing time to 4 PM.", status: "completed", priority: "normal", completed_at: stamp(-3), created_at: stamp(-4), updated_at: stamp(-3) },
       { id: id(143), subscription_id: id(140), title: "Add drywall service", description: "Add drywall repair to the service list.", status: "new", priority: "normal", created_at: stamp(-1), updated_at: stamp(-1) },
     ],
     payments: [
-      payment(150, 120, "website_sale", "Cactus Wrench Handyman", 500, 14.5, "paid", -20),
-      payment(151, 120, "maintenance", "Cactus Wrench Handyman", 50, 1.75, "available", -2, 140),
-      payment(152, 121, "website_sale", "Blue Oak Contractors", 350, 10.15, "paid", -2),
-      payment(153, 120, "maintenance", "Cactus Wrench Handyman", 50, 1.75, "paid", -32, 140),
-      payment(154, 121, "website_sale", "Blue Oak Contractors", 400, 11.6, "paid", 0),
+      payment(150, 120, "setup_fee", "Cactus Wrench Handyman", 2500, 72.5, "paid", -20),
+      payment(151, 120, "recurring_subscription", "Cactus Wrench Handyman", 300, 8.7, "available", -2, 140),
+      payment(152, 121, "setup_fee", "Blue Oak Contractors", 2000, 58, "paid", -2),
+      payment(153, 120, "recurring_subscription", "Cactus Wrench Handyman", 300, 8.7, "paid", -32, 140),
+      payment(154, 121, "setup_fee", "Blue Oak Contractors", 2000, 58, "paid", 0),
+    ],
+    commissions: [
+      { id: id(269), salesperson_id: id(260), client_id: id(120), lead_id: leads[8].id, payment_id: id(150), collected_setup_revenue: 2500, commission_rate: 0.1, commission_min: 250, commission_max: 1000, calculated_commission: 250, status: "earned", earned_at: stamp(-20), paid_at: null, reversed_at: null, created_at: stamp(-20), updated_at: stamp(-20) },
     ],
     expenses: [
       expense(155, "hosting", "Cloudflare", "Preview hosting", 5, -3),
@@ -304,8 +339,8 @@ export function createSeedData() {
       note(213, "Launch checklist", "procedure", "Payment recorded\nDomain access confirmed\nMobile QA\nForms tested\nSSL healthy", ["launch"], false, -9),
     ],
     deployments: [
-      { id: id(220), client_id: id(120), site_id: id(122), demo_id: id(44), production_url: "https://cactuswrench.example", domain: "cactuswrench.example", status: "live", ssl_status: "active", dns_status: "active", version: "v12", hosting_health: "healthy", logs: [{ at: stamp(-2), message: "Deployment healthy" }], last_deployed_at: stamp(-2), created_at: stamp(-12), updated_at: stamp(-2) },
-      { id: id(221), client_id: id(121), site_id: id(123), demo_id: null, production_url: "", domain: "blueoakcontractors.example", status: "failed", ssl_status: "pending", dns_status: "pending", version: "v3", hosting_health: "error", logs: [{ at: stamp(-1), message: "DNS records not found for blueoakcontractors.example" }], last_deployed_at: stamp(-1), created_at: stamp(-1), updated_at: stamp(-1) },
+      { id: id(220), client_id: id(120), automation_id: id(266), project_id: id(130), provider: "Retell", environment: "production", version: "v12", status: "production", rollback_version: "v11", deployed_at: stamp(-2), notes: "Limited launch promoted after review.", created_at: stamp(-12), updated_at: stamp(-2) },
+      { id: id(221), client_id: id(121), automation_id: id(267), project_id: id(131), provider: "n8n", environment: "staging", version: "v1", status: "failed", rollback_version: null, deployed_at: stamp(-1), notes: "Webhook connection failed in staging.", hosting_health: "error", created_at: stamp(-1), updated_at: stamp(-1) },
     ],
     settings: [
       { id: id(230), key: "workspace", value: { default_site_price: CONFIG.defaultPrice, maintenance_price: 50, currency: "USD", timezone: "America/Chicago", preview_domain: CONFIG.previewDomain }, created_at: stamp(-30), updated_at: stamp(-1) },
