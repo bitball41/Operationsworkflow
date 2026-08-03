@@ -1,9 +1,15 @@
 # Operations
 
-A private operating system for an AI automation agency: discover businesses,
-work calls and meetings, close custom implementation and management agreements,
-onboard clients, deliver automation projects, track provider-backed deployments,
-and follow revenue, recurring billing, direct costs, and sales commissions.
+A private operating system for an AI voice-agent agency. The agency sells one
+package: unlimited AI receptionist and appointment booking for a **$2,500
+activation fee plus $997 per month**. A salesperson earns **$350** once the
+client's full activation payment is collected; recurring payments do not earn
+commission.
+
+The phone-first `My Day` dashboard is the default salesperson workspace. It
+shows the verified employee's assigned call queue, follow-ups, meetings, recent
+results, statistics and commissions. The complete business dashboard remains
+available from the same navigation.
 
 It is one person's control centre, not a SaaS product. Plain HTML, CSS and
 JavaScript, with no browser framework or frontend build step.
@@ -20,7 +26,10 @@ there is no `/api`, so every key-backed feature reports itself as not connected.
 
 Cloudflare Access is the only sign-in boundary. The application has no accounts,
 password form, sign-up flow, or browser-side Supabase session. After Access
-admits the request, the Worker opens the one configured Operations workspace.
+admits the request, the Worker maps the verified email claim to an active
+`team_members` row in the one configured Operations workspace. Unknown,
+inactive and email-less identities fail closed. The mapping is an employee
+record, not an application account.
 There is no sample data anywhere in the application, so every lead, email,
 number and statistic on screen comes from the database.
 The realistic workspace used to exercise the pages lives in
@@ -86,10 +95,11 @@ lead → call → meeting → proposal → won → client + onboarding + project
 → automation configuration → deployment record → recurring management
 ```
 
-Calls, meetings, pipeline changes, won-lead conversion, setup payments, and
-commissions all use the same deterministic operations layer. A paid setup fee
-can earn the assigned salesperson's configured commission; recurring revenue
-does not do so by default.
+Calls, meetings, pipeline changes, won-lead conversion, activation payments,
+and commissions all use the same deterministic operations layer. The full
+$2,500 activation fee earns the assigned salesperson one fixed $350 commission.
+Partial activation payments do not earn early or duplicate commissions, and
+recurring revenue never earns one.
 
 Automation Studio is a management layer. It stores configuration, prompts,
 provider references, versions, usage metadata, and errors without claiming to
@@ -177,38 +187,32 @@ truncated rather than silently eating the context window.
 With no key on the worker, anything that is not a known command is not answered
 — the assistant says so instead of inventing a reply.
 
-Conversation history is provider-neutral and persistent. Each conversation is
-saved in the workspace-scoped `assistant_conversations` table,
-can be selected after a reload, and can be deleted from the assistant toolbar.
-Large tool payloads are trimmed before they enter the transcript.
+Conversation history is provider-neutral and persistent. The voice-agency
+release migration intentionally deletes all previously saved conversations once
+so obsolete website-sales instructions cannot return. New conversations are
+saved in the workspace-scoped `assistant_conversations` table and can be
+deleted from the assistant toolbar. Large tool payloads are trimmed before they
+enter the transcript.
 
 ## Choosing a model
 
-Model and effort are picked in Settings and on the assistant's own toolbar, and
-both take effect immediately — the reason to switch is usually that the current
-choice is costing too much right now.
+The deployed Worker is the source of truth for provider and model availability.
+Anthropic uses its Messages API and OpenAI uses its Responses API as first-class
+boundaries. Kimi and Qwen use a narrow OpenAI-compatible Chat Completions
+boundary. The browser selects only among providers whose authenticated model
+probe succeeds; it cannot submit a privileged model id or API key.
 
-| Model | Per million tokens | Use it for |
-| --- | --- | --- |
-| Haiku 4.5 | $1 / $5 | Lookups, classification, short answers |
-| Sonnet 5 | $3 / $15 | The default — near-Opus on agentic work at a third of the price |
-| Opus 5 | $5 / $25 | Hardest reasoning and long multi-step work |
-| Opus 4.8 | $5 / $25 | Fallback if Opus 5 refuses a request |
+Anthropic and OpenAI have documented defaults. `ANTHROPIC_MODEL` and
+`OPENAI_MODEL` can override them without changing browser code. Kimi and Qwen
+have no guessed defaults: production must set `KIMI_MODEL`, or `QWEN_MODEL` plus
+the regional `QWEN_BASE_URL`. Provider health stays disconnected when a key is
+missing, authentication fails, or the configured model is unavailable.
 
-**Effort is the larger lever.** It controls how much the model thinks, and moving
-from `high` to `medium` often saves more than dropping a model tier. The default
-here is `medium`, deliberately below the provider's own default, because this
-dashboard mostly asks short operational questions. Haiku has no effort control,
-so none is sent to it.
+Every turn records actual token counts. Dollar cost is recorded only where the
+checked-in catalogue has verified pricing; an unknown price stays untracked
+instead of being presented as zero spend.
 
-`js/data/models.js` is the single source of truth, imported by both the browser
-and the worker — the worker rejects any model id that is not in it, so a typo
-cannot quietly bill against something expensive.
-
-Every turn writes its real token counts and cost to `ai_usage`, which is what
-Settings, Costs and Analytics read. OpenAI models are selectable but unpriced
-here; their spend shows as tokens rather than as a dollar figure that might be
-wrong.
+Provider configuration references: [OpenAI GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort), [Kimi API overview](https://platform.kimi.ai/docs/api/overview), and [Alibaba Cloud Model Studio](https://www.alibabacloud.com/help/en/model-studio/what-is-model-studio).
 
 ## Preserved website artifacts
 
@@ -334,6 +338,8 @@ adds the credential on the way out.
 ```bash
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put KIMI_API_KEY
+npx wrangler secret put QWEN_API_KEY
 npx wrangler secret put WHOP_WEBHOOK_SECRET
 npx wrangler secret put SUPABASE_SECRET_KEY
 npx wrangler secret put GOOGLE_MAPS_API_KEY
@@ -371,16 +377,16 @@ Until it exists, every Outlook route answers 503 and names `OUTLOOK_TOKENS` in
 the missing list — which Integrations shows on screen.
 
 Locally, copy `.dev.vars.example` to `.dev.vars` (git-ignored) and fill in what
-you have. `GET /api/status` reports which keys exist — never their values — and
-Integrations reads it, so a service shows as connected only when the worker can
-actually reach it.
+you have. `GET /api/status` never reports key values. For AI providers it makes
+an authenticated model check and reports connected only when the deployed
+Worker can use the configured model.
 
 | Route | Upstream |
 | --- | --- |
 | `GET /api/workspace` | atomic Operations workspace snapshot |
 | `POST/PATCH/DELETE /api/workspace/records/...` | workspace-scoped database changes |
 | `/api/workspace/assets...` | private storage upload, signing, download and delete |
-| `GET /api/status` | which providers have a key |
+| `GET /api/status` | live provider/model health, never key values |
 | `POST /api/outlook/connect` | begin Microsoft OAuth for the workspace |
 | `GET /api/outlook/callback` | validate OAuth state and store encrypted tokens |
 | `POST /api/outlook/send` | send one message through Microsoft Graph |
@@ -395,22 +401,25 @@ actually reach it.
 | `POST /api/demos/publish` | authenticated multipart demo bundle upload to R2 |
 | `POST /api/ai/anthropic/messages` | Anthropic Messages API |
 | `POST /api/ai/openai/responses` | OpenAI Responses API |
+| `POST /api/ai/compatible/kimi/chat/completions` | Kimi OpenAI-compatible API |
+| `POST /api/ai/compatible/qwen/chat/completions` | Qwen Model Studio compatible API |
 | `POST https://hooks.conno.fun/whop` | signed Whop webhook receiver only |
 | `POST /mcp` | JSON-RPC MCP foundation (`operations_api_status`, `browser_research`) |
 
-Every route refuses cross-origin requests, never echoes a key back, and returns
-503 with the exact secret name to set when one is missing. Worker source,
+Every route refuses cross-origin requests and never echoes a key back. Owner
+actions such as integration connection, deployment, payments, commissions and
+workspace permissions are enforced in the Worker, not only hidden in the UI.
+Worker source,
 migrations, tests and `.dev.vars` are excluded from the static assets in
 `.assetsignore`, so none of them are reachable over HTTP.
 
 ## Supabase
 
-Migrations are in `supabase/migrations/` and are applied to the connected
-project. Apply `20260728221132_cloudflare_access_only_workspace.sql` before
-deploying this code. It creates `operations_workspaces`, preserves the existing
-workspace UUID and records, moves public foreign keys away from `auth.users`,
-removes browser grants and authenticated policies, and adds the atomic snapshot
-RPC used by the Worker.
+Migrations are in `supabase/migrations/` and are applied in timestamp order.
+The Access-only workspace and AI-agency core migrations are prerequisites. The
+forward-only `20260803124525_voice_agent_agency_dashboard.sql` migration sets
+the single-package defaults, fixes activation commissions, and clears obsolete
+assistant history. Applied migration files must not be edited.
 
 Supabase Auth is not used by the application. There is no publishable key in
 the browser and no direct Data API or Storage call from browser code. RLS stays
@@ -420,13 +429,17 @@ revoked. The Worker uses `SUPABASE_SECRET_KEY`; the legacy
 
 Safe activation order:
 
-1. Keep the existing `SUPABASE_SERVICE_ROLE_KEY` in place for the transition,
-   or set the newer `SUPABASE_SECRET_KEY`.
-2. Deploy this Worker. Its temporary snapshot fallback supports the current
-   pre-migration schema.
-3. Apply `20260728221132_cloudflare_access_only_workspace.sql`.
-4. Verify workspace reads, one write, one private asset, and Outlook status.
-5. Remove dormant Supabase Auth users after that verification.
+1. Back up and verify the production migration history.
+2. Apply `20260803124525_voice_agent_agency_dashboard.sql`.
+3. Give every allowed human an `active` `team_members` row whose
+   `access_email` exactly matches the verified Cloudflare Access email claim.
+   Keep unknown and inactive test identities available for denial checks.
+4. Configure only the provider keys, model ids and regional base URLs that are
+   actually available to the Worker.
+5. Deploy the Worker and verify owner, salesperson, unknown, inactive and
+   unauthorized-write paths before enabling employee use.
+6. Verify desktop/mobile rendering, workspace reads, one scoped salesperson
+   write, one owner-only denial, private assets, Outlook, MCP, demos and Whop.
 
 The Whop receipt table is RLS-protected, has no browser grants, and can only be
 written through the service-role webhook RPC. The payments unique index keeps a

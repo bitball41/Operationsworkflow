@@ -10,6 +10,10 @@
  * Secrets read here:
  *   ANTHROPIC_API_KEY     - Anthropic Messages API
  *   OPENAI_API_KEY        - OpenAI Responses API
+ *   KIMI_API_KEY          - Kimi OpenAI-compatible API
+ *   QWEN_API_KEY          - Qwen / Model Studio OpenAI-compatible API
+ *   *_MODEL               - maintainable deployed model selection
+ *   QWEN_BASE_URL         - regional Model Studio compatible-mode endpoint
  *   WHOP_WEBHOOK_SECRET   - verifies signed Whop webhook deliveries
  *   SUPABASE_SECRET_KEY   - server-only workspace and webhook database access
  *   OPERATIONS_WORKSPACE_ID - the single Operations workspace
@@ -26,9 +30,10 @@
  * to set, which is what the rest of the application already knows how to show.
  */
 
-import { ANTHROPIC, OPENAI, PLACES } from "./upstreams.js";
+import { ANTHROPIC, PLACES } from "./upstreams.js";
 import { verifyCloudflareAccess } from "./access.js";
-import { getModel, resolveModel } from "../js/data/models.js";
+import { authorizeWorkspaceMember, memberIsOwner, ownerRequired } from "./authorization.js";
+import { AI_PROVIDER_IDS, aiProviderConfig, aiProviderHeaders, aiProviderStatus } from "./ai-providers.js";
 import {
   handleBrowserResearch,
   handleBusinessEmailLookup,
@@ -60,6 +65,8 @@ import {
 const PROVIDERS = Object.freeze({
   anthropic: { secret: "ANTHROPIC_API_KEY", exposed: false },
   openai: { secret: "OPENAI_API_KEY", exposed: false },
+  kimi: { secret: "KIMI_API_KEY", exposed: false },
+  qwen: { secret: "QWEN_API_KEY", exposed: false },
   whop: { secret: "WHOP_WEBHOOK_SECRET", exposed: false },
   google_maps: { secret: "GOOGLE_MAPS_API_KEY", exposed: true },
 });
@@ -158,7 +165,9 @@ async function relay(response) {
  */
 async function handleStatus(request, env) {
   const providers = {};
-  for (const name of Object.keys(PROVIDERS)) providers[name] = Boolean(secretFor(env, name));
+  const aiProviders = await aiProviderStatus(env);
+  for (const name of AI_PROVIDER_IDS) providers[name] = aiProviders[name]?.connected === true;
+  providers.google_maps = Boolean(secretFor(env, "google_maps"));
   providers.whop = whopWebhookConfigured(env);
   const outlook = await outlookConnectionStatus(request, env);
   providers.outlook = outlook.connected;
@@ -166,7 +175,7 @@ async function handleStatus(request, env) {
   providers.cloudflare = hosting.configured;
   providers.research = Boolean(env?.BROWSER);
   providers.mcp = Boolean(env?.MCP_API_TOKEN);
-  return json({ providers, outlook, hosting, at: new Date().toISOString() });
+  return json({ providers, aiProviders, outlook, hosting, at: new Date().toISOString() });
 }
 
 /**
@@ -218,29 +227,24 @@ async function handlePlacesSearch(request, env) {
  * default on the current models, so no thinking configuration is sent;
  * `budget_tokens` and the sampling parameters are rejected by this family.
  */
-async function handleAnthropic(request, env) {
-  const key = secretFor(env, "anthropic");
-  if (!key) return notConnected("anthropic");
+export async function handleAnthropic(request, env) {
+  const config = aiProviderConfig(env, "anthropic");
+  if (config.missing.length) return notConnected("anthropic");
 
   const payload = await readJson(request);
   if (!Array.isArray(payload.messages) || !payload.messages.length) {
     return json({ error: "invalid_request", message: "messages must be a non-empty array." }, 400);
   }
 
-  const model = payload.model ? getModel(payload.model) : resolveModel(ANTHROPIC.defaultModel, "anthropic");
-  if (!model || model.provider !== "anthropic") {
-    return json({ error: "unknown_model", message: `"${payload.model}" is not an Anthropic model in this project's catalogue.` }, 400);
-  }
-
-  const response = await fetch(ANTHROPIC.messages, {
+  const response = await fetch(`${config.baseUrl}/messages`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": key,
+      "x-api-key": config.key,
       "anthropic-version": ANTHROPIC.version,
     },
     body: JSON.stringify({
-      model: model.id,
+      model: config.model,
       max_tokens: Math.min(Number(payload.max_tokens) || 8000, 16000),
       messages: payload.messages,
       ...(payload.system ? { system: payload.system } : {}),
@@ -248,7 +252,7 @@ async function handleAnthropic(request, env) {
       ...(payload.tool_choice ? { tool_choice: payload.tool_choice } : {}),
       /* Only the current models take an effort level; sending one to a model
          that has no effort control is a 400 from the provider. */
-      ...(model.supportsEffort ? { output_config: { effort: effortOrDefault(payload.effort) } } : {}),
+      ...(config.capabilities.effort ? { output_config: { effort: effortOrDefault(payload.effort) } } : {}),
     }),
   });
   return relay(response);
@@ -261,29 +265,44 @@ function effortOrDefault(value) {
 }
 
 /** OpenAI Responses API, used only when Anthropic is not the selected provider. */
-async function handleOpenAI(request, env) {
-  const key = secretFor(env, "openai");
-  if (!key) return notConnected("openai");
+export async function handleOpenAI(request, env) {
+  const config = aiProviderConfig(env, "openai");
+  if (config.missing.length) return notConnected("openai");
 
   const payload = await readJson(request);
   if (!payload.input && !payload.messages) {
     return json({ error: "invalid_request", message: "input or messages is required." }, 400);
   }
 
-  const model = payload.model ? getModel(payload.model) : resolveModel(OPENAI.defaultModel, "openai");
-  if (!model || model.provider !== "openai") {
-    return json({ error: "unknown_model", message: `"${payload.model}" is not an OpenAI model in this project's catalogue.` }, 400);
-  }
-
-  const response = await fetch(OPENAI.responses, {
+  const response = await fetch(`${config.baseUrl}/responses`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${config.key}` },
     body: JSON.stringify({
-      model: model.id,
+      model: config.model,
       input: payload.input || payload.messages,
       ...(payload.instructions ? { instructions: payload.instructions } : {}),
       ...(Array.isArray(payload.tools) && payload.tools.length ? { tools: payload.tools } : {}),
+      ...(config.capabilities.effort ? { reasoning: { effort: effortOrDefault(payload.effort) } } : {}),
       max_output_tokens: Math.min(Number(payload.max_output_tokens) || 8000, 16000),
+    }),
+  });
+  return relay(response);
+}
+
+export async function handleOpenAICompatible(request, env, provider) {
+  const config = aiProviderConfig(env, provider);
+  if (!config || config.missing.length) return notConnected(provider);
+  const payload = await readJson(request);
+  if (!Array.isArray(payload.messages) || !payload.messages.length) {
+    return json({ error: "invalid_request", message: "messages must be a non-empty array." }, 400);
+  }
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...aiProviderHeaders(config) },
+    body: JSON.stringify({
+      model: config.model,
+      messages: payload.messages,
+      ...(Array.isArray(payload.tools) && payload.tools.length ? { tools: payload.tools } : {}),
     }),
   });
   return relay(response);
@@ -291,7 +310,7 @@ async function handleOpenAI(request, env) {
 
 /* ---------- router ---------- */
 
-async function handleApi(request, env, url) {
+async function handleApi(request, env, url, member) {
   if (!sameOrigin(request, url)) {
     return json({ error: "forbidden", message: "Cross-origin requests are not accepted." }, 403);
   }
@@ -301,31 +320,40 @@ async function handleApi(request, env, url) {
 
   try {
     if (path === "/api/workspace" && request.method === "GET") {
-      return await handleWorkspaceSnapshot(env);
+      return await handleWorkspaceSnapshot(env, member);
     }
     if (path === "/api/workspace/profile" && request.method === "PATCH") {
-      return await handleWorkspaceProfile(request, env);
+      return await handleWorkspaceProfile(request, env, member);
     }
     if (path === "/api/workspace/assets" && isPost) {
-      return await handleWorkspaceAssetUpload(request, env);
+      return await handleWorkspaceAssetUpload(request, env, member);
     }
     if (path === "/api/workspace/assets" && request.method === "DELETE") {
-      return await handleWorkspaceAssetDelete(request, env);
+      return await handleWorkspaceAssetDelete(request, env, member);
     }
     if (path === "/api/workspace/assets/signed-urls" && isPost) {
-      return await handleWorkspaceSignedUrls(request, env);
+      return await handleWorkspaceSignedUrls(request, env, member);
     }
     if (path === "/api/workspace/assets/download" && request.method === "GET") {
-      return await handleWorkspaceAssetDownload(url, env);
+      return await handleWorkspaceAssetDownload(url, env, member);
     }
     const recordRoute = path.match(/^\/api\/workspace\/records\/([A-Za-z]+)(?:\/([0-9a-f-]{36}))?$/i);
     if (recordRoute) {
-      return await handleWorkspaceRecords(request, env, recordRoute[1], recordRoute[2] || "");
+      return await handleWorkspaceRecords(request, env, recordRoute[1], recordRoute[2] || "", member);
     }
     if (path === "/api/status" && request.method === "GET") return await handleStatus(request, env);
-    if (path === "/api/outlook/connect" && isPost) return await handleOutlookConnect(request, env);
-    if (path === "/api/outlook/callback" && request.method === "GET") return await handleOutlookCallback(request, env);
-    if (path === "/api/outlook/disconnect" && isPost) return await handleOutlookDisconnect(request, env);
+    if (path === "/api/outlook/connect" && isPost) {
+      if (!memberIsOwner(member)) return ownerRequired();
+      return await handleOutlookConnect(request, env);
+    }
+    if (path === "/api/outlook/callback" && request.method === "GET") {
+      if (!memberIsOwner(member)) return ownerRequired();
+      return await handleOutlookCallback(request, env);
+    }
+    if (path === "/api/outlook/disconnect" && isPost) {
+      if (!memberIsOwner(member)) return ownerRequired();
+      return await handleOutlookDisconnect(request, env);
+    }
     if (path === "/api/outlook/send" && isPost) {
       return await handleOutlookSend(request, env, await readJson(request, 120_000));
     }
@@ -346,9 +374,14 @@ async function handleApi(request, env, url) {
     if (path === "/api/browser/business-presence" && isPost) {
       return await handleBusinessPresenceLookup(request, env, await readJson(request, 40_000));
     }
-    if (path === "/api/demos/publish" && isPost) return await handleDemoPublish(request, env);
+    if (path === "/api/demos/publish" && isPost) {
+      if (!memberIsOwner(member)) return ownerRequired();
+      return await handleDemoPublish(request, env);
+    }
     if (path === "/api/ai/anthropic/messages" && isPost) return await handleAnthropic(request, env);
     if (path === "/api/ai/openai/responses" && isPost) return await handleOpenAI(request, env);
+    const compatibleRoute = path.match(/^\/api\/ai\/compatible\/(kimi|qwen)\/chat\/completions$/);
+    if (compatibleRoute && isPost) return await handleOpenAICompatible(request, env, compatibleRoute[1]);
     if (path === "/api/whop" || path.startsWith("/api/whop/")) {
       return json({ error: "gone", message: "Whop payments are webhook-only and cannot be manually synced." }, 410);
     }
@@ -384,8 +417,11 @@ export default {
 
     if (url.pathname === "/mcp") return handleMcp(request, env);
 
+    const authorization = await authorizeWorkspaceMember(access.claims, env);
+    if (!authorization.ok) return authorization.response;
+
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
-      return handleApi(request, env, url);
+      return handleApi(request, env, url, authorization.member);
     }
 
     const demo = await servePublicDemo(request, env);

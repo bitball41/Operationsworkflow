@@ -1,5 +1,6 @@
 /** Clients, Projects and Maintenance. */
 import { PROJECT_STAGES } from "../config.js";
+import { CONFIG } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, relativeTime, statusLabel, sum } from "../core/utils.js";
 import { bar, btn, empty, icon, pill, row, rows, section, stats, table, td } from "../components/ui.js";
@@ -39,7 +40,7 @@ export function renderClients() {
         rows: clients.map((client) => `<tr data-action="client-open" data-id="${client.id}">
           ${td("Business", `<div class="cell"><strong>${escapeHtml(clientName(data, client))}</strong><span>${escapeHtml(client.email || client.phone || "No contact details")}</span></div>`)}
           ${td("Primary contact", escapeHtml(client.contact_name || "—"))}
-          ${td("Offer", escapeHtml(client.package_name || "Managed AI automation"))}
+          ${td("Offer", escapeHtml(client.package_name || CONFIG.packageName))}
           ${td("Setup", formatCurrency(client.setup_fee || client.agreed_price))}
           ${td("Monthly", `${formatCurrency(client.monthly_fee || 0)}/mo`)}
           ${td("Onboarding", pill(client.onboarding_status || "not_started"))}

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleWorkspaceRecords, handleWorkspaceSnapshot } from "../worker/workspace.js";
+import { collectionWriteAllowed, handleWorkspaceRecords, handleWorkspaceSnapshot } from "../worker/workspace.js";
 
 const WORKSPACE_ID = "2847b8e2-8a34-4a72-8e44-2cfc1be4255b";
+const OWNER = { id: "10000000-0000-4000-8000-000000000001", role: "owner", status: "active" };
+const SALESPERSON = { id: "10000000-0000-4000-8000-000000000002", role: "salesperson", status: "active" };
 
 function env() {
   return {
@@ -45,11 +47,12 @@ test("the Worker can open the existing workspace before the account-removal migr
       return json({ id: WORKSPACE_ID, full_name: "Connor", preferences: {} });
     }
     return json([]);
-  }, () => handleWorkspaceSnapshot(env()));
+  }, () => handleWorkspaceSnapshot(env(), OWNER));
 
   assert.equal(response.status, 200);
   const snapshot = await response.json();
   assert.equal(snapshot.workspace.id, WORKSPACE_ID);
+  assert.equal(snapshot.workspace.member.role, "owner");
   assert.equal(snapshot.profile.full_name, "Connor");
   assert.ok(Array.isArray(snapshot.leads));
   assert.ok(Array.isArray(snapshot.assistantConversations));
@@ -67,7 +70,7 @@ test("record inserts always use the configured workspace id", async () => {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ records: [{ business_name: "Northstar", user_id: "attacker-controlled" }] }),
-  }), env(), "leads"));
+  }), env(), "leads", "", OWNER));
 
   assert.equal(response.status, 201);
   assert.equal(inserted[0].user_id, WORKSPACE_ID);
@@ -89,8 +92,41 @@ test("the existing production service-role secret remains valid during rollout",
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ records: [{ business_name: "Legacy Key Tree Care" }] }),
-  }), legacyEnv, "leads"));
+  }), legacyEnv, "leads", "", OWNER));
 
   assert.equal(response.status, 201);
   assert.equal(apiKey, legacyEnv.SUPABASE_SERVICE_ROLE_KEY);
+});
+
+test("owner-only collections reject salesperson writes before reaching Supabase", async () => {
+  let called = false;
+  const response = await withFetch(async () => {
+    called = true;
+    return json([]);
+  }, () => handleWorkspaceRecords(new Request("https://operations.conno.fun/api/workspace/records/commissions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ records: [{ status: "paid" }] }),
+  }), env(), "commissions", "", SALESPERSON));
+
+  assert.equal(response.status, 403);
+  assert.equal(called, false);
+  assert.equal(collectionWriteAllowed(SALESPERSON, "integrations"), false);
+  assert.equal(collectionWriteAllowed(SALESPERSON, "deployments"), false);
+  assert.equal(collectionWriteAllowed(OWNER, "commissions"), true);
+});
+
+test("salesperson lead inserts are assigned to the verified employee", async () => {
+  let inserted = null;
+  const response = await withFetch(async (_input, init = {}) => {
+    inserted = JSON.parse(init.body);
+    return json([{ ...inserted[0], id: "33333333-3333-4333-8333-333333333333" }], 201);
+  }, () => handleWorkspaceRecords(new Request("https://operations.conno.fun/api/workspace/records/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ records: [{ business_name: "Assigned Lead", assigned_team_member_id: OWNER.id }] }),
+  }), env(), "leads", "", SALESPERSON));
+
+  assert.equal(response.status, 201);
+  assert.equal(inserted[0].assigned_team_member_id, SALESPERSON.id);
 });

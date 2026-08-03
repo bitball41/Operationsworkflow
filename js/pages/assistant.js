@@ -8,8 +8,9 @@ import { escapeHtml, formatNumber } from "../core/utils.js";
 import { btn, dot, icon, select } from "../components/ui.js";
 import { COMMAND_HINTS } from "../services/ai/commands.js";
 import { contextSections, contextSummary, contextTokenEstimate } from "../services/ai/context.js";
-import { activeModel, providerReady } from "../services/ai/provider.js";
-import { EFFORT_LEVELS, formatPerMTok, modelsForProvider } from "../data/models.js";
+import { activeModel, MODEL_PROVIDERS, providerReady } from "../services/ai/provider.js";
+import { EFFORT_LEVELS } from "../data/models.js";
+import { isOwner } from "../services/permissions.js";
 import {
   AI_PERMISSION_MODES,
   aiPermissionMode,
@@ -19,10 +20,10 @@ import {
 } from "../services/ai/tools.js";
 
 const EXAMPLES = [
-  { label: "Find leads", text: "Find 25 plumbers in Austin with no official website" },
-  { label: "Plan today", text: "What needs my attention today, in priority order?" },
-  { label: "Pick outreach", text: "Which five leads should I contact next, and why?" },
-  { label: "Check replies", text: "Sync the inbox and summarize every reply that needs action" },
+  { label: "Plan my calls", text: "Which assigned leads should I call next, and why?" },
+  { label: "Catch up", text: "Show my overdue follow-ups and the next action for each one." },
+  { label: "Prepare", text: "Help me prepare for my next voice-agent sales meeting." },
+  { label: "Review today", text: "Summarize today's call results, meetings, and earned commissions." },
 ];
 
 function inlineMarkdown(text) {
@@ -184,7 +185,7 @@ function accessControl() {
     "ai_permission_mode",
     AI_PERMISSION_MODES.map((mode) => ({ value: mode.id, label: `${mode.shortLabel} access` })),
     current,
-    { attrs: 'data-action="ai-permission-select" class="select-sm permission-select" aria-label="AI access"' },
+    { attrs: `data-action="ai-permission-select" class="select-sm permission-select" aria-label="AI access"${isOwner() ? "" : " disabled"}` },
   );
 }
 
@@ -285,14 +286,18 @@ function emptyConversation() {
 }
 
 function modelSwitcher() {
-  const { model, effort } = activeModel();
-  const options = modelsForProvider(model?.provider || "anthropic")
-    .map((entry) => ({ value: entry.id, label: `${entry.label} · ${formatPerMTok(entry)}` }));
+  const { model, effort, provider } = activeModel();
+  const providers = getState().services.aiProviders || {};
+  const options = MODEL_PROVIDERS
+    .filter((entry) => providers[entry.id]?.connected)
+    .map((entry) => ({ value: entry.id, label: entry.name }));
+  const owner = isOwner();
 
   return `
-    ${select("model", options, model?.id, { attrs: 'data-action="model-select" class="select-sm model-select" aria-label="AI model"' })}
+    ${select("provider", options, provider, { attrs: `data-action="ai-provider-select" class="select-sm model-select" aria-label="AI provider"${owner ? "" : " disabled"}` })}
+    <span class="configured-model" title="Configured in the deployed Worker">${escapeHtml(model?.label || model?.id || "Worker model")}</span>
     ${model?.supportsEffort
-      ? select("effort", EFFORT_LEVELS.map((level) => ({ value: level.id, label: `${level.label} effort` })), effort, { attrs: 'data-action="effort-select" class="select-sm effort-select" aria-label="Reasoning effort"' })
+      ? select("effort", EFFORT_LEVELS.map((level) => ({ value: level.id, label: `${level.label} effort` })), effort, { attrs: `data-action="effort-select" class="select-sm effort-select" aria-label="Reasoning effort"${owner ? "" : " disabled"}` })
       : ""}
   `;
 }

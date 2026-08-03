@@ -15,6 +15,8 @@ export const WORKER_PROVIDERS = Object.freeze([
   "outlook",
   "anthropic",
   "openai",
+  "kimi",
+  "qwen",
   "whop",
   "google_maps",
   "cloudflare",
@@ -28,12 +30,15 @@ const EMPTY_STATUS = Object.freeze({
     outlook: false,
     anthropic: false,
     openai: false,
+    kimi: false,
+    qwen: false,
     whop: false,
     google_maps: false,
     cloudflare: false,
     research: false,
     mcp: false,
   }),
+  aiProviders: Object.freeze({}),
   /* Why Outlook is unusable, when it is. See handleStatus in worker/index.js. */
   outlook: Object.freeze({ configured: false, connected: false, missing: [], account: "", can_read_mail: false }),
   hosting: Object.freeze({ configured: false, domain: "demos.conno.fun", missing: ["DEMO_SITES"] }),
@@ -96,6 +101,7 @@ export async function fetchServiceStatus() {
     return {
       reachable: true,
       providers,
+      aiProviders: data?.aiProviders && typeof data.aiProviders === "object" ? data.aiProviders : {},
       outlook: { ...EMPTY_STATUS.outlook, ...(data?.outlook || {}) },
       hosting: { ...EMPTY_STATUS.hosting, ...(data?.hosting || {}) },
       at: data?.at || new Date().toISOString(),
@@ -109,6 +115,7 @@ export function emptyServiceStatus() {
   return {
     ...EMPTY_STATUS,
     providers: { ...EMPTY_STATUS.providers },
+    aiProviders: {},
     outlook: { ...EMPTY_STATUS.outlook },
     hosting: { ...EMPTY_STATUS.hosting },
   };
@@ -210,6 +217,11 @@ export async function callAnthropic(payload, { signal } = {}) {
 
 export async function callOpenAI(payload, { signal } = {}) {
   return request("/ai/openai/responses", { method: "POST", body: payload, signal });
+}
+
+export async function callOpenAICompatible(provider, payload, { signal } = {}) {
+  if (!['kimi', 'qwen'].includes(provider)) throw new ApiError("That compatible provider is not available.", { provider });
+  return request(`/ai/compatible/${provider}/chat/completions`, { method: "POST", body: payload, signal });
 }
 
 export async function whopGet(path, params = {}) {

@@ -373,7 +373,7 @@ export async function createFollowUp(leadId, { days, attempt, draftId = null, su
     sequence_number: Math.min(12, sequence),
     due_at: due.toISOString(),
     status: "scheduled",
-    suggested_text: suggestion || `Check in on the website preview for ${lead.business_name}.`,
+    suggested_text: suggestion || `Check in about the AI receptionist workflow for ${lead.business_name}.`,
   });
   await updateRecord("leads", leadId, { follow_up_at: followUp.due_at });
   return followUp;
@@ -591,7 +591,7 @@ export async function ensureClientForWonLead(leadOrId) {
   const client = await createRecord("clients", {
     lead_id: lead.id,
     status: "onboarding",
-    package_name: "Managed AI automation",
+    package_name: CONFIG.packageName,
     contact_name: lead.contact_name || "",
     email: lead.email || null,
     phone: lead.phone || null,
@@ -618,9 +618,9 @@ export async function ensureClientForWonLead(leadOrId) {
   await createRecord("projects", {
     client_id: client.id,
     owner_id: lead.assigned_team_member_id || null,
-    name: `${lead.business_name} · AI automation`,
+    name: `${lead.business_name} · AI receptionist`,
     status: "discovery",
-    automation_type: (lead.opportunity_tags || []).includes("booking") ? "AI receptionist / lead booking" : "Custom automation",
+    automation_type: "Unlimited AI receptionist / appointment booking",
     complexity: "standard",
     start_date: new Date().toISOString().slice(0, 10),
     progress: 0,
@@ -636,18 +636,17 @@ export async function ensureClientForWonLead(leadOrId) {
 export function commissionAmount(values = {}) {
   const revenue = Math.max(0, Number(values.collected_setup_revenue || 0));
   if (!revenue) return 0;
-  const rate = Math.max(0, Number(values.commission_rate ?? 0.10));
-  const floor = Math.max(0, Number(values.commission_min ?? 250));
-  const cap = Math.max(floor, Number(values.commission_max ?? 1000));
-  return Math.round(Math.max(floor, Math.min(cap, revenue * rate)) * 100) / 100;
+  return CONFIG.defaultCommission;
 }
 
 export async function syncCommissionForPayment(payment) {
   if (!payment) return null;
+  let collectedSetup = 0;
+  let client = null;
   if (payment.client_id) {
-    const client = findRecord("clients", payment.client_id);
+    client = findRecord("clients", payment.client_id);
     if (client) {
-      const collectedSetup = sum(data().payments.filter((item) => (
+      collectedSetup = sum(data().payments.filter((item) => (
         String(item.client_id || "") === String(payment.client_id)
         && item.payment_type === "setup_fee"
         && ["paid", "available"].includes(item.status)
@@ -661,12 +660,20 @@ export async function syncCommissionForPayment(payment) {
   }
   const existing = data().commissions.find((item) => String(item.payment_id) === String(payment.id));
   if (payment.status === "refunded") {
-    if (!existing || existing.status === "reversed") return existing || null;
-    return updateRecord("commissions", existing.id, { status: "reversed", reversed_at: new Date().toISOString() });
+    const activationFee = Number(client?.setup_fee || client?.agreed_price || CONFIG.defaultSetupFee);
+    const earned = data().commissions.find((item) => (
+      String(item.client_id || "") === String(payment.client_id || "") && item.status !== "reversed"
+    ));
+    if (!earned || collectedSetup >= activationFee) return earned || null;
+    return updateRecord("commissions", earned.id, { status: "reversed", reversed_at: new Date().toISOString() });
   }
   if (payment.payment_type !== "setup_fee" || !["paid", "available"].includes(payment.status) || !payment.client_id) return null;
-  if (existing) return existing;
-  const client = findRecord("clients", payment.client_id);
+  const activationFee = Number(client?.setup_fee || client?.agreed_price || CONFIG.defaultSetupFee);
+  if (collectedSetup < activationFee) return null;
+  const existingForClient = data().commissions.find((item) => (
+    String(item.client_id || "") === String(payment.client_id) && item.status !== "reversed"
+  ));
+  if (existingForClient) return existingForClient;
   const lead = client?.lead_id ? leadById(client.lead_id) : null;
   const salesperson = data().teamMembers.find((item) => String(item.id) === String(lead?.assigned_team_member_id || client?.primary_team_member_id || ""));
   const commission = await createRecord("commissions", {
@@ -674,10 +681,10 @@ export async function syncCommissionForPayment(payment) {
     client_id: payment.client_id,
     lead_id: lead?.id || null,
     payment_id: payment.id,
-    collected_setup_revenue: Number(payment.amount || 0),
-    commission_rate: Number(salesperson?.commission_rate ?? 0.10),
-    commission_min: Number(salesperson?.commission_min ?? 250),
-    commission_max: Number(salesperson?.commission_max ?? 1000),
+    collected_setup_revenue: collectedSetup,
+    commission_rate: CONFIG.defaultCommission / CONFIG.defaultSetupFee,
+    commission_min: CONFIG.defaultCommission,
+    commission_max: CONFIG.defaultCommission,
     status: "earned",
     earned_at: payment.paid_at || new Date().toISOString(),
   });

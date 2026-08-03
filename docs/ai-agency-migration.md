@@ -4,6 +4,8 @@
 
 Operations Workflow remains the same private, server-backed business OS. Cloudflare Access stays the human sign-in boundary, the Worker remains the only holder of privileged credentials, Supabase remains the system of record, and the plain HTML/CSS/JavaScript architecture stays intact.
 
+The commercial offer is fixed: unlimited AI receptionist and appointment booking for a $2,500 activation fee plus $997 per month. The assigned salesperson earns one $350 commission only after the full activation fee has been collected.
+
 The primary operating path becomes:
 
 `lead -> call -> meeting -> proposal -> collected setup payment -> client -> onboarding -> automation project -> deployment -> monitoring -> recurring management`
@@ -31,9 +33,19 @@ The primary operating path becomes:
 
 ### 3. Permissions and activation
 
-- Map verified Cloudflare Access identity claims to `team_members` and enforce role permissions in Worker routes. Do not reintroduce application passwords or browser-held Supabase sessions.
-- Prove owner and salesperson allowed/denied paths before enabling multi-user access.
+- Implemented in code: map verified Cloudflare Access email claims to active `team_members` and enforce role permissions in Worker routes. No application passwords or browser-held Supabase sessions were introduced.
+- Implemented in code and automated tests: owner and salesperson paths, unknown and inactive identities, missing email claims, owner-only collection writes, and salesperson assignment scoping.
 - Apply migrations and deploy through an isolated Supabase branch or coordinated release. Verify the snapshot, representative writes, RLS/grants, advisors, and provider health before production activation.
+
+## Activation gaps
+
+This repository change does not itself prove production activation. Before deployment:
+
+- Apply the forward migration `20260803124525_voice_agent_agency_dashboard.sql`; it updates defaults, enforces one activation commission per client, and resets saved assistant conversations.
+- Ensure each allowed Access email has one matching active employee row. Unknown and inactive people are deliberately denied.
+- Add only real Worker credentials. Anthropic and OpenAI have maintainable Worker model overrides; Kimi and Qwen require explicit deployed model configuration, and Qwen also requires its regional compatible-mode base URL.
+- Confirm the live provider health check before the UI can say a provider is connected.
+- Voice, calendar and telephony remain unavailable until real provider adapters and credentials are implemented. Stored configuration must not be treated as execution telemetry.
 
 ## Migration and rollback
 

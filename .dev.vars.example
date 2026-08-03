@@ -3,6 +3,8 @@
 #
 #   wrangler secret put ANTHROPIC_API_KEY
 #   wrangler secret put OPENAI_API_KEY
+#   wrangler secret put KIMI_API_KEY
+#   wrangler secret put QWEN_API_KEY
 #   wrangler secret put WHOP_WEBHOOK_SECRET
 #   wrangler secret put SUPABASE_SECRET_KEY
 #   wrangler secret put GOOGLE_MAPS_API_KEY
@@ -15,9 +17,22 @@
 
 # Anthropic — the assistant and automation model provider.
 ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=
 
 # OpenAI — alternate model provider. Optional if Anthropic is set.
 OPENAI_API_KEY=
+OPENAI_MODEL=
+
+# Kimi - OpenAI-compatible Chat Completions boundary. There is deliberately no
+# checked-in model guess: set the exact model enabled for this account.
+KIMI_API_KEY=
+KIMI_MODEL=
+
+# Qwen - Model Studio OpenAI-compatible boundary. Both values must match the
+# deployed region and workspace; the Worker validates the endpoint host.
+QWEN_API_KEY=
+QWEN_MODEL=
+QWEN_BASE_URL=
 
 # Whop — signed webhook delivery only. Set this to the signing secret Whop
 # shows after creating https://hooks.conno.fun/whop with API version v1.

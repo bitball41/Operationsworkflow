@@ -1,9 +1,11 @@
 export const CONFIG = Object.freeze({
-  defaultRoute: "home",
+  defaultRoute: "my-day",
   owner: "Connor",
+  packageName: "Unlimited AI Receptionist & Appointment Booking",
   defaultPrice: 2500,
   defaultSetupFee: 2500,
-  defaultMonthlyFee: 300,
+  defaultMonthlyFee: 997,
+  defaultCommission: 350,
   defaultBatchTarget: 48,
   /* Empty on purpose: no fake domain is baked into preview links. Until a real
      host is set in Settings, preview URLs are built from wherever the app is
@@ -18,7 +20,8 @@ export const NAV_GROUPS = Object.freeze([
   {
     label: "",
     items: [
-      { id: "home", label: "Home", icon: "home" },
+      { id: "my-day", label: "My Day", icon: "phone" },
+      { id: "home", label: "Business Dashboard", icon: "home" },
       { id: "assistant", label: "AI Assistant", icon: "sparkle" },
     ],
   },
@@ -174,14 +177,17 @@ export const REPLY_CLASSIFICATIONS = Object.freeze([
 export const INTEGRATIONS = Object.freeze([
   { provider: "supabase", name: "Workspace database", detail: "Server-side records and private assets behind Cloudflare Access", status: "connected", manage: "settings" },
   { provider: "openscout", name: "OpenScout", detail: "Google Places business discovery and source evidence", status: "connected", manage: "discovery" },
-  { provider: "retell", name: "Retell", detail: "Voice-agent execution provider; connect when an account and server credentials are available", status: "not_connected" },
-  { provider: "vapi", name: "Vapi", detail: "Alternate voice-agent execution provider", status: "not_connected" },
-  { provider: "n8n", name: "n8n", detail: "Primary future workflow orchestration provider", status: "not_connected" },
-  { provider: "twilio", name: "Twilio", detail: "Telephony and messaging where provider-native capabilities are insufficient", status: "not_connected" },
+  { provider: "retell", name: "Retell", detail: "Voice-agent execution is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
+  { provider: "vapi", name: "Vapi", detail: "Voice-agent execution is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
+  { provider: "n8n", name: "n8n", detail: "Workflow execution is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
+  { provider: "twilio", name: "Twilio", detail: "Telephony is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
+  { provider: "calendar_provider", name: "Booking calendar", detail: "Calendar booking is unavailable until a real provider adapter exists", status: "not_connected", available: false },
   { provider: "outlook", name: "Outlook", detail: "Sends outreach through Microsoft Graph", status: "not_connected" },
   { provider: "cloudflare", name: "Cloudflare", detail: "Publishes demos and client sites", status: "not_connected" },
   { provider: "anthropic", name: "Anthropic", detail: "Model provider for the assistant and automation", status: "not_connected" },
-  { provider: "openai", name: "OpenAI", detail: "Alternate model provider", status: "not_connected" },
+  { provider: "openai", name: "OpenAI", detail: "First-class model provider for the assistant and automation", status: "not_connected" },
+  { provider: "kimi", name: "Kimi", detail: "OpenAI-compatible model provider configured and verified by the Worker", status: "not_connected" },
+  { provider: "qwen", name: "Qwen", detail: "OpenAI-compatible Model Studio provider configured and verified by the Worker", status: "not_connected" },
   { provider: "research", name: "Business research", detail: "Browser-based public research tool", status: "not_connected" },
   { provider: "whop", name: "Whop", detail: "Signed payment and refund webhooks", status: "not_connected" },
   { provider: "mcp", name: "MCP tool server", detail: "Exposes the same tools to external agents", status: "not_connected" },
@@ -264,7 +270,7 @@ export const STATUS_LABELS = Object.freeze({
   ready_to_launch: "Ready to launch",
   website_sale: "Website sale",
   maintenance: "Maintenance",
-  setup_fee: "Setup fee",
+  setup_fee: "Activation fee",
   recurring_subscription: "Recurring subscription",
   usage_overage: "Usage overage",
   custom_invoice: "Custom invoice",
@@ -311,11 +317,11 @@ export const OUTREACH_SUBJECT = "A practical way to capture more calls at {{busi
 
 export const OUTREACH_BODY = `Hey,
 
-I work with local service businesses on AI call handling and lead-booking systems. The goal is simple: answer missed and after-hours calls, qualify the caller, book the right next step, and send your team a useful summary.
+I help local service businesses answer every call with an unlimited AI receptionist that can qualify callers and book appointments around the clock.
 
-I noticed {{business}} may be a fit. If call coverage or follow-up is costing you opportunities, I can map the current workflow and show you a focused demo.
+I noticed {{business}} may be a fit. If missed calls, after-hours coverage, or slow booking follow-up are costing opportunities, I can show you a focused demo built around your workflow.
 
-Typical founding-client pricing starts at \${{price}} for implementation, with management priced separately around the actual workflow and usage.
+The package is \${{price}} to activate and $997 per month for the unlimited receptionist and appointment-booking service.
 
 Interested?
 
@@ -325,7 +331,7 @@ export const FOLLOW_UP_BODY = `Hey,
 
 Just checking in about the call-handling and lead-booking workflow for {{business}}.
 
-If missed calls, after-hours coverage, qualification, or appointment booking are a problem, I can map the current process and show where automation would actually help. Implementation starts around \${{price}}, with ongoing management scoped separately.
+If missed calls, after-hours coverage, qualification, or appointment booking are a problem, I can map the current process and show the unlimited AI receptionist in action. The package is \${{price}} to activate plus $997 per month.
 
 Would a short workflow review be useful?
 

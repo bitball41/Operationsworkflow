@@ -306,31 +306,40 @@ test("winning a lead creates the client, onboarding, and project exactly once", 
   assert.equal(getState().data.projects.filter((item) => item.client_id === clients[0].id).length, 1);
 });
 
-test("only collected setup revenue earns a capped commission", async () => {
+test("only a fully collected activation fee earns one fixed commission", async () => {
   const client = getState().data.clients.find((item) => item.lead_id === getState().data.leads.find((lead) => lead.business_name === "Summit Fence Works").id);
   const before = getState().data.commissions.length;
+  await operations.recordPayment({
+    customer_name: "Summit Fence Works",
+    client_id: client.id,
+    amount: 1000,
+    payment_type: "setup_fee",
+    status: "paid",
+  });
+  assert.equal(getState().data.commissions.length, before, "a partial activation payment must not earn commission");
+
   const setup = await operations.recordPayment({
     customer_name: "Summit Fence Works",
     client_id: client.id,
-    amount: 20_000,
+    amount: 1500,
     payment_type: "setup_fee",
     status: "paid",
   });
   assert.equal(getState().data.commissions.length, before + 1);
   const commission = getState().data.commissions.find((item) => item.payment_id === setup.id);
-  assert.equal(operations.commissionAmount(commission), 1000);
-  assert.equal(getState().data.clients.find((item) => item.id === client.id).amount_received, 20_000);
+  assert.equal(operations.commissionAmount(commission), 350);
+  assert.equal(getState().data.clients.find((item) => item.id === client.id).amount_received, 2500);
   assert.equal(getState().data.clients.find((item) => item.id === client.id).payment_status, "paid");
 
   await operations.recordPayment({
     customer_name: "Summit Fence Works",
     client_id: client.id,
-    amount: 500,
+    amount: 997,
     payment_type: "recurring_subscription",
     status: "paid",
   });
   assert.equal(getState().data.commissions.length, before + 1, "recurring revenue must not create commission");
-  assert.equal(getState().data.clients.find((item) => item.id === client.id).amount_received, 20_000, "recurring revenue must not change the setup balance");
+  assert.equal(getState().data.clients.find((item) => item.id === client.id).amount_received, 2500, "recurring revenue must not change the activation balance");
 });
 
 test("a demo can be built, published and drafted end to end", async () => {
@@ -349,9 +358,10 @@ test("a demo can be built, published and drafted end to end", async () => {
 
   const drafted = await runTool("draft_email", { lead_id: lead.id });
   assert.equal(drafted.ok, true);
-  assert.match(drafted.data.body, /AI call handling and lead-booking systems/);
+  assert.match(drafted.data.body, /unlimited AI receptionist/i);
   assert.match(drafted.data.body, new RegExp(lead.business_name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(drafted.data.body, /implementation/);
+  assert.match(drafted.data.body, /\$2,500|\$2500/);
+  assert.match(drafted.data.body, /\$997/);
   assert.equal(drafted.data.status, "ready");
 });
 
