@@ -265,6 +265,7 @@ export function preferences() {
     preview_domain: CONFIG.previewDomain,
     follow_up_days: [3, 7, 14],
     model: DEFAULT_MODEL_ID,
+    ai_provider: "anthropic",
     effort: DEFAULT_EFFORT,
     ai_permission_mode: "full",
     ...(data.settings.find((item) => item.key === "workspace")?.value || {}),

@@ -8,10 +8,9 @@ import { closePalette, isPaletteOpen, openPalette } from "./components/command-p
 import { renderShell, setNav } from "./components/shell.js";
 import { closeDrawer, closeModal, renderInto } from "./components/ui.js";
 import { hydrateIcons } from "./core/icons.js";
-import { initRouter } from "./core/router.js";
+import { initRouter, navigate, setParam } from "./core/router.js";
 import { getState, setState, subscribe } from "./core/state.js";
 import { debounce, escapeHtml } from "./core/utils.js";
-import { setParam } from "./core/router.js";
 import { fetchServiceStatus } from "./services/api.js";
 import { initWorkspace, reloadWorkspace, subscribeToWorkspaceChanges } from "./services/data.js";
 import { hydrateAssistantHistory } from "./services/ai/history.js";
@@ -19,7 +18,8 @@ import { renderAssistant, mountAssistant } from "./pages/assistant.js";
 import { renderAutomation } from "./pages/automation.js";
 import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
 import { renderClients, renderMaintenance, renderProjects } from "./pages/clients.js";
-import { renderHome } from "./pages/home.js";
+import { renderHome, renderMyDay } from "./pages/home.js";
+import { isOwner } from "./services/permissions.js";
 import {
   renderAgencyDeployments,
   renderAutomationStudio,
@@ -38,6 +38,7 @@ import { renderDemos, renderTemplates } from "./pages/websites.js";
 import { renderActivity, renderCalendar, renderNotes, renderTasks } from "./pages/workspace.js";
 
 const PAGES = {
+  "my-day": renderMyDay,
   home: renderHome,
   assistant: renderAssistant,
   automation: renderAutomation,
@@ -72,6 +73,8 @@ const PAGES = {
   team: renderTeam,
   settings: renderSettings,
 };
+
+const hadExplicitRouteAtBoot = Boolean(globalThis.location?.hash);
 
 const MOUNTS = {
   assistant: mountAssistant,
@@ -193,6 +196,7 @@ async function init() {
 
   try {
     const storage = await initWorkspace();
+    if (storage === "cloud" && !hadExplicitRouteAtBoot && isOwner()) navigate("home");
     render();
     if (storage === "cloud") {
       hydrateAssistantHistory();

@@ -6,18 +6,23 @@
  * Worker, which adds the credential and calls the provider. Everything else in
  * the assistant — context, tools, commands — already works without a provider.
  */
-import { callAnthropic, callOpenAI, ApiError } from "../api.js";
+import { callAnthropic, callOpenAI, callOpenAICompatible, ApiError } from "../api.js";
 import { NotConnectedError, integrationStatus } from "../integrations.js";
-import { DEFAULT_EFFORT, costOf, resolveModel } from "../../data/models.js";
+import { DEFAULT_EFFORT, costOf, modelDefinition } from "../../data/models.js";
 import { createRecord, preferences } from "../data.js";
+import { getState } from "../../core/state.js";
 
 export const MODEL_PROVIDERS = Object.freeze([
-  { id: "anthropic", name: "Anthropic", note: "Recommended for the operations assistant" },
-  { id: "openai", name: "OpenAI", note: "Alternate provider" },
+  { id: "anthropic", name: "Anthropic", note: "First-class Messages API provider" },
+  { id: "openai", name: "OpenAI", note: "First-class Responses API provider" },
+  { id: "kimi", name: "Kimi", note: "OpenAI-compatible Chat Completions provider" },
+  { id: "qwen", name: "Qwen", note: "OpenAI-compatible Model Studio provider" },
 ]);
 
 export function connectedProvider() {
-  return MODEL_PROVIDERS.find((provider) => integrationStatus(provider.id) === "connected") || null;
+  const preferred = preferences().ai_provider;
+  const selected = MODEL_PROVIDERS.find((provider) => provider.id === preferred && integrationStatus(provider.id) === "connected");
+  return selected || MODEL_PROVIDERS.find((provider) => integrationStatus(provider.id) === "connected") || null;
 }
 
 export function providerReady() {
@@ -40,9 +45,10 @@ export function providerNotice() {
 export function activeModel() {
   const provider = connectedProvider()?.id || "anthropic";
   const settings = preferences();
+  const status = getState().services?.aiProviders?.[provider] || {};
   return {
     provider,
-    model: resolveModel(settings.model, provider),
+    model: modelDefinition(status.model || settings.model || "", provider, status.capabilities || {}),
     effort: settings.effort || DEFAULT_EFFORT,
   };
 }
@@ -52,8 +58,8 @@ export function activeModel() {
  * than an estimate. Never allowed to fail a turn that already succeeded.
  */
 async function recordUsage({ model, task, usage }) {
-  const input = Number(usage?.input_tokens ?? usage?.input_tokens_total ?? 0);
-  const output = Number(usage?.output_tokens ?? 0);
+  const input = Number(usage?.input_tokens ?? usage?.input_tokens_total ?? usage?.prompt_tokens ?? 0);
+  const output = Number(usage?.output_tokens ?? usage?.completion_tokens ?? 0);
   if (!input && !output) return;
 
   try {
@@ -72,22 +78,26 @@ async function recordUsage({ model, task, usage }) {
   }
 }
 
-const SYSTEM_PROMPT = `You are the operations assistant for a one-person website-selling business.
-You find local businesses without websites, build them a demo site, send one email, and follow the
-work through to a paid client.
+export const SYSTEM_PROMPT = `You are the operations assistant for an AI voice-agent agency.
+The agency sells one package: unlimited AI receptionist and appointment booking for a $2,500
+activation fee plus $997 per month. A salesperson earns $350 only after the client's activation
+payment is collected; recurring subscription payments do not earn commission.
 
-A structured snapshot of the whole workspace is supplied with every turn. Use it. Do not invent
-leads, clients, demos, numbers or dates that are not in it — say what you do not know instead.
-Call a tool when the answer requires reading or changing real records, and chain tools when a
-request needs several steps: find the leads, build the demo, then send. When the person asks for a
-normal workspace action, do it immediately with the tools instead of asking them to repeat details
-or confirm a routine step. After the tools have run, always answer in your own words — the person
-never sees raw tool output as an answer.
+Help employees run the real workflow: cold-call assigned leads, record actual outcomes, schedule
+follow-ups and meetings, prepare demos, move qualified opportunities through the pipeline, onboard
+won clients, manage receptionist knowledge and booking rules, track deployments, clients,
+payments, subscriptions, and commissions, and explain what requires owner action.
 
-You can act on the business, not just describe it: discover new leads, add and edit leads, build
-and publish demos, send email to any address (a lead, a client, or someone with no record at all),
-schedule follow-ups, sync the Outlook inbox and Whop payments, and record tasks, notes, payments
-and expenses.
+A structured workspace snapshot is supplied with every turn. Treat it as evidence, not a prompt to
+fill gaps. Never invent a call, recording, contact, booking, meeting, payment, commission,
+integration, deployment, provider response, telemetry value, or completed action. Say what is
+unknown or unavailable. A phone link is not proof a call happened. A local configuration record is
+not proof that a voice, calendar, telephony, or model provider executed anything.
+
+Call a tool when the answer requires reading or changing real records. Only say an action happened
+when a tool reports success. Respect the current employee's permissions and explain owner-only
+boundaries plainly. Existing website demo and MCP tools are preserved supporting infrastructure,
+not the agency's product or default sales motion.
 
 Discovery tools report a requested count and whether the target was met. Treat complete:false as
 unfinished work, not success. Retry once with a cleaner niche, a broader area, or a deeper search
@@ -101,9 +111,8 @@ or planning text into either field. Put the requested count in limit and the ema
 must_have_email. A single discovery call can request at most 250 leads. For a larger request, make
 separate calls for concrete cities or regions instead of putting multi-step instructions in a field.
 
-When a tool comes back blocked, say plainly what is not connected and what would fix it. Never
-claim something was sent, published or saved unless a tool reported that it was. Keep replies
-short and concrete: the person reading them is mid-task, not browsing.`;
+When a tool comes back blocked, say plainly what is not connected and what would fix it. Keep
+replies short and concrete: the person reading them is mid-task, usually on a phone.`;
 
 function contextBlock(context) {
   return `<workspace_snapshot>\n${JSON.stringify(context ?? {}, null, 2)}\n</workspace_snapshot>`;
@@ -237,6 +246,44 @@ function toOpenAiInput(transcript) {
   return items;
 }
 
+/** Provider-neutral transcript -> OpenAI-compatible Chat Completions messages. */
+function toCompatibleMessages(transcript) {
+  return transcript.map((entry) => {
+    if (entry.role === "tool") {
+      return {
+        role: "tool",
+        tool_call_id: entry.toolCallId,
+        content: serializeToolResult(entry.result),
+      };
+    }
+    if (entry.role === "assistant") {
+      return {
+        role: "assistant",
+        content: entry.text || null,
+        ...((entry.toolCalls || []).length ? {
+          tool_calls: entry.toolCalls.map((call) => ({
+            id: call.id,
+            type: "function",
+            function: { name: call.name, arguments: JSON.stringify(call.args || {}) },
+          })),
+        } : {}),
+      };
+    }
+    return { role: "user", content: entry.text || "" };
+  });
+}
+
+function compatibleTools(tools) {
+  return (tools || []).map((tool) => ({
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema || tool.parameters || { type: "object", properties: {} },
+    },
+  }));
+}
+
 /**
  * Trims to the recent exchange and repairs it.
  *
@@ -337,6 +384,21 @@ function openAiResult(payload) {
   };
 }
 
+function compatibleResult(payload) {
+  const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
+  const message = choice?.message || {};
+  return {
+    text: typeof message.content === "string" ? message.content.trim() : "",
+    toolCalls: (message.tool_calls || []).map((call) => ({
+      id: call.id,
+      name: call.function?.name || "",
+      args: safeParse(call.function?.arguments || "{}"),
+    })).filter((call) => call.id && call.name),
+    stopReason: choice?.finish_reason || "",
+    usage: payload?.usage || null,
+  };
+}
+
 function safeParse(value) {
   try {
     return JSON.parse(value);
@@ -380,18 +442,34 @@ export async function runAssistantTurn({ transcript, context, tools, signal } = 
       return { ...result, model: model.id };
     }
 
-    const payload = await callOpenAI({
-      model: model.id,
-      instructions: SYSTEM_PROMPT,
-      input: withContext(toOpenAiInput(entries), context),
-      tools: (tools || []).map((tool) => ({
-        type: "function",
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.input_schema || tool.parameters || { type: "object", properties: {} },
-      })),
-    }, { signal });
-    const result = openAiResult(payload);
+    let payload;
+    let result;
+    if (provider.id === "openai") {
+      payload = await callOpenAI({
+        model: model.id,
+        effort,
+        instructions: SYSTEM_PROMPT,
+        input: withContext(toOpenAiInput(entries), context),
+        tools: (tools || []).map((tool) => ({
+          type: "function",
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.input_schema || tool.parameters || { type: "object", properties: {} },
+        })),
+      }, { signal });
+      result = openAiResult(payload);
+    } else {
+      payload = await callOpenAICompatible(provider.id, {
+        effort,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: contextBlock(context) },
+          ...toCompatibleMessages(entries),
+        ],
+        tools: compatibleTools(tools),
+      }, { signal });
+      result = compatibleResult(payload);
+    }
     await recordUsage({ model, task: "assistant_turn", usage: result.usage });
     return { ...result, model: model.id };
   } catch (error) {

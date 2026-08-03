@@ -4,6 +4,7 @@ import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, isToday, relativeTime, statusLabel, sum } from "../core/utils.js";
 import { bar, btn, empty, field, input, notice, pill, row, rows, section, select, stats, table, td, textarea } from "../components/ui.js";
 import { commissionAmount, getNextCallLead } from "../services/operations.js";
+import { currentMemberId, isOwner, isSalesperson, ownerOnlyNotice } from "../services/permissions.js";
 import { byId, clientName, filterSelect, searchInput } from "./shared.js";
 
 function memberName(data, id) {
@@ -25,8 +26,12 @@ function opportunityTags(lead) {
 
 export function renderCalling() {
   const { data, routeParams } = getState();
-  const lead = getNextCallLead({ leadId: routeParams.lead || "", assigneeId: routeParams.assignee || "" });
-  const callsToday = data.salesCalls.filter((call) => isToday(call.called_at || call.created_at));
+  const assigneeId = routeParams.assignee || (isSalesperson() ? currentMemberId() : "");
+  const lead = getNextCallLead({ leadId: routeParams.lead || "", assigneeId });
+  const callsToday = data.salesCalls.filter((call) => (
+    isToday(call.called_at || call.created_at)
+    && (!isSalesperson() || String(call.salesperson_id || "") === String(currentMemberId()))
+  ));
   const contacts = callsToday.filter((call) => !["no_answer", "voicemail", "gatekeeper", "wrong_number"].includes(call.outcome));
   const booked = callsToday.filter((call) => call.outcome === "meeting_booked");
   const closes = data.leads.filter((item) => item.status === "won" && isToday(item.stage_entered_at || item.updated_at));
@@ -68,7 +73,7 @@ export function renderCalling() {
             <div><dt>Salesperson</dt><dd>${escapeHtml(memberName(data, lead.assigned_team_member_id))}</dd></div>
             <div><dt>Calls attempted</dt><dd>${formatNumber(lead.calls_attempted || 0)}</dd></div>
             <div><dt>Last contacted</dt><dd>${lead.last_contacted_at ? relativeTime(lead.last_contacted_at) : "Never"}</dd></div>
-            <div><dt>Setup value</dt><dd>${formatCurrency(lead.quoted_setup_fee || lead.deal_value || 0)}</dd></div>
+            <div><dt>Activation value</dt><dd>${formatCurrency(lead.quoted_setup_fee || lead.deal_value || 0)}</dd></div>
             <div><dt>Monthly value</dt><dd>${formatCurrency(lead.quoted_monthly_fee || 0)}</dd></div>
           </dl>
 
@@ -77,7 +82,7 @@ export function renderCalling() {
 
         <div class="calling-workspace__guide">
           <h3>Offer and call guide</h3>
-          <p><strong>Offer:</strong> a managed AI receptionist and lead-booking system shaped around the business's real workflow.</p>
+          <p><strong>Offer:</strong> unlimited AI receptionist and appointment booking for a $2,500 activation fee plus $997 per month.</p>
           <p><strong>Opening:</strong> “I help local service businesses capture calls they miss, qualify the caller, and book the right next step. How are missed or after-hours calls handled today?”</p>
           <p><strong>Qualify:</strong> ask about call volume, appointment or quote flow, current phone/calendar/CRM tools, response time, and when a human must take over.</p>
           <p><strong>Objections:</strong> do not promise savings or performance. Offer a workflow review, clarify that humans stay in control, and record the actual concern.</p>
@@ -86,6 +91,10 @@ export function renderCalling() {
         <form class="calling-workspace__result stack--tight" data-form="sales-call" data-lead-id="${lead.id}">
           <h3>Record outcome</h3>
           ${field("Outcome", select("outcome", CALL_OUTCOMES.map(([value, label]) => ({ value, label })), "", { placeholder: "Choose the real outcome", required: true }))}
+          <div class="call-outcome-grid" aria-label="Quick call outcomes">
+            ${CALL_OUTCOMES.map(([value, label]) => `<button class="call-outcome" type="button" data-action="call-outcome" data-outcome="${value}"${["no_answer", "voicemail", "gatekeeper", "wrong_number"].includes(value) ? ' data-quick-save="true"' : ""}>${escapeHtml(label)}</button>`).join("")}
+          </div>
+          <p class="faint">No answer, voicemail, gatekeeper, and wrong number save immediately. Other outcomes stay selected so you can add the real details.</p>
           ${field("Quick notes", textarea("notes", "", { attrs: 'rows="3"', placeholder: "What happened and what matters next?" }))}
           <div class="field-grid">
             ${field("Objection", input("objection", "", { placeholder: "e.g. worried about call quality" }))}
@@ -181,7 +190,7 @@ export function renderAutomationStudio() {
     <div class="toolbar">
       ${filterSelect("status", ["designing", "building", "testing", "limited_launch", "live", "maintenance", "paused", "archived"].map((value) => ({ value, label: statusLabel(value) })), status, "All statuses")}
       <span class="toolbar__spacer"></span>
-      ${btn("New automation", { action: "automation-record-new", iconName: "plus", variant: "primary", size: "sm" })}
+      ${isOwner() ? btn("New automation", { action: "automation-record-new", iconName: "plus", variant: "primary", size: "sm" }) : pill("warning", "View only")}
     </div>
     ${table({
       columns: ["Automation", "Client", "Type", "Provider", "Environment", "Status", "Version", ""],
@@ -193,7 +202,7 @@ export function renderAutomationStudio() {
         ${td("Environment", pill(automation.environment, statusLabel(automation.environment)))}
         ${td("Status", pill(automation.status))}
         ${td("Version", escapeHtml(automation.deployed_version || automation.development_version || "—"))}
-        ${td("", btn("Configure", { action: "automation-record-open", size: "sm", attrs: `data-id="${automation.id}"` }))}
+        ${td("", isOwner() ? btn("Configure", { action: "automation-record-open", size: "sm", attrs: `data-id="${automation.id}"` }) : pill("warning", "View only"))}
       </tr>`),
       emptyState: empty({ title: "No automations", message: "Create the first management record after a client's project reaches design." }),
     })}
@@ -248,7 +257,7 @@ export function renderSubscriptions() {
     <div class="toolbar">
       ${filterSelect("status", ["active", "inactive", "past_due", "cancelled"].map((value) => ({ value, label: statusLabel(value) })), status, "All statuses")}
       <span class="toolbar__spacer"></span>
-      ${btn("Add subscription", { action: "subscription-new", iconName: "plus", variant: "primary", size: "sm" })}
+      ${isOwner() ? btn("Add subscription", { action: "subscription-new", iconName: "plus", variant: "primary", size: "sm" }) : pill("warning", "View only")}
     </div>
     ${table({
       columns: ["Client", "Plan", "Monthly", "Included usage", "Overage", "Next payment", "Status", ""],
@@ -260,7 +269,7 @@ export function renderSubscriptions() {
         ${td("Overage", subscription.overage_rate == null ? "None" : `${formatCurrency(subscription.overage_rate, 4)} / ${escapeHtml(subscription.usage_unit || "unit")}`)}
         ${td("Next payment", formatDate(subscription.next_charge_on))}
         ${td("Status", pill(subscription.status))}
-        ${td("", btn("Edit", { action: "subscription-open", size: "sm", attrs: `data-id="${subscription.id}"` }))}
+        ${td("", isOwner() ? btn("Edit", { action: "subscription-open", size: "sm", attrs: `data-id="${subscription.id}"` }) : pill("warning", "View only"))}
       </tr>`),
       emptyState: empty({ title: "No subscriptions", message: "Add recurring management billing after a client is active." }),
     })}
@@ -270,30 +279,32 @@ export function renderSubscriptions() {
 export function renderCommissions() {
   const { data, routeParams } = getState();
   const status = routeParams.status || "all";
-  const commissions = data.commissions.filter((item) => status === "all" || item.status === status);
+  const visible = isSalesperson()
+    ? data.commissions.filter((item) => String(item.salesperson_id || "") === String(currentMemberId()))
+    : data.commissions;
+  const commissions = visible.filter((item) => status === "all" || item.status === status);
   const amount = (item) => Number(item.calculated_commission ?? commissionAmount(item));
   return `<div class="stack">
-    ${notice("Setup revenue only", "The default is 10% of collected setup revenue, with a $250 minimum and $1,000 maximum per client. Recurring management revenue does not earn commission by default.", { iconName: "dollar" })}
+    ${notice("$350 activation commission", "A salesperson earns $350 when the client's $2,500 activation payment is collected. The $997 monthly subscription does not earn commission.", { iconName: "dollar" })}
     ${section("Commission ledger", { body: stats([
-      ["Pending", formatCurrency(sum(data.commissions.filter((item) => item.status === "pending"), amount))],
-      ["Earned", formatCurrency(sum(data.commissions.filter((item) => item.status === "earned"), amount))],
-      ["Paid", formatCurrency(sum(data.commissions.filter((item) => item.status === "paid"), amount))],
-      ["Reversed", formatCurrency(sum(data.commissions.filter((item) => item.status === "reversed"), amount))],
+      ["Pending", formatCurrency(sum(visible.filter((item) => item.status === "pending"), amount))],
+      ["Earned", formatCurrency(sum(visible.filter((item) => item.status === "earned"), amount))],
+      ["Paid", formatCurrency(sum(visible.filter((item) => item.status === "paid"), amount))],
+      ["Reversed", formatCurrency(sum(visible.filter((item) => item.status === "reversed"), amount))],
     ]) })}
     <div class="toolbar">${filterSelect("status", ["pending", "earned", "paid", "reversed"].map((value) => ({ value, label: statusLabel(value) })), status, "All statuses")}</div>
     ${table({
-      columns: ["Salesperson", "Client", "Collected setup", "Rate", "Commission", "Earned", "Status", ""],
+      columns: ["Salesperson", "Client", "Activation collected", "Commission", "Earned", "Status", ""],
       rows: commissions.map((commission) => `<tr>
         ${td("Salesperson", escapeHtml(memberName(data, commission.salesperson_id)))}
         ${td("Client", escapeHtml(clientBusiness(data, byId(data.clients, commission.client_id))))}
-        ${td("Collected setup", formatCurrency(commission.collected_setup_revenue))}
-        ${td("Rate", `${(Number(commission.commission_rate || 0) * 100).toFixed(1)}%`)}
+        ${td("Activation collected", formatCurrency(commission.collected_setup_revenue))}
         ${td("Commission", `<strong>${formatCurrency(amount(commission))}</strong>`)}
         ${td("Earned", formatDate(commission.earned_at || commission.created_at, { year: "numeric" }))}
         ${td("Status", pill(commission.status))}
-        ${td("", btn("Update", { action: "commission-open", size: "sm", attrs: `data-id="${commission.id}"` }))}
+        ${td("", isOwner() ? btn("Update", { action: "commission-open", size: "sm", attrs: `data-id="${commission.id}"` }) : pill("warning", "View only"))}
       </tr>`),
-      emptyState: empty({ title: "No commissions", message: "A paid setup-fee payment creates an earned commission automatically." }),
+      emptyState: empty({ title: "No commissions", message: "A collected activation payment creates an earned $350 commission automatically." }),
     })}
   </div>`;
 }
@@ -303,11 +314,11 @@ export function renderTeam() {
   const status = routeParams.status || "active";
   const members = data.teamMembers.filter((member) => status === "all" || member.status === status);
   return `<div class="stack">
-    ${notice("Cloudflare Access remains the sign-in boundary", "Team records support assignment, roles, and commission configuration. Multi-user role enforcement is not activated until Access identities are mapped and Worker allowed/denied paths are tested.", { tone: "warn", iconName: "user" })}
+    ${notice("Cloudflare Access is the only sign-in boundary", isOwner() ? "Verified Access email claims map to active team records, and the Worker enforces owner and salesperson permissions." : ownerOnlyNotice("Team and permission administration"), { tone: isOwner() ? "success" : "warn", iconName: "user" })}
     <div class="toolbar">
       ${filterSelect("status", ["active", "inactive"].map((value) => ({ value, label: statusLabel(value) })), status, "All statuses")}
       <span class="toolbar__spacer"></span>
-      ${btn("Add team member", { action: "team-member-new", iconName: "plus", variant: "primary", size: "sm" })}
+      ${isOwner() ? btn("Add team member", { action: "team-member-new", iconName: "plus", variant: "primary", size: "sm" }) : pill("warning", "View only")}
     </div>
     ${table({
       columns: ["Name", "Role", "Assigned leads", "Clients", "Commission", "Status", ""],
@@ -316,9 +327,9 @@ export function renderTeam() {
         ${td("Role", escapeHtml(statusLabel(member.role)))}
         ${td("Assigned leads", formatNumber(data.leads.filter((lead) => String(lead.assigned_team_member_id) === String(member.id)).length))}
         ${td("Clients", formatNumber(data.clients.filter((client) => String(client.primary_team_member_id) === String(member.id)).length))}
-        ${td("Commission", `${(Number(member.commission_rate || 0.1) * 100).toFixed(0)}% · ${formatCurrency(member.commission_min || 250)}–${formatCurrency(member.commission_max || 1000)}`)}
+        ${td("Commission", formatCurrency(member.commission_min || 350))}
         ${td("Status", pill(member.status))}
-        ${td("", btn("Edit", { action: "team-member-open", size: "sm", attrs: `data-id="${member.id}"` }))}
+        ${td("", isOwner() ? btn("Edit", { action: "team-member-open", size: "sm", attrs: `data-id="${member.id}"` }) : pill("warning", "View only"))}
       </tr>`),
       emptyState: empty({ title: "No team members", message: "Add assignment records without creating application accounts." }),
     })}

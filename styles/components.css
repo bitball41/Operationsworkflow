@@ -5,6 +5,140 @@
   font-size: 1.6rem;
 }
 
+/* ---------- mobile employee day ---------- */
+.employee-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+.employee-dashboard__greeting {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.mobile-action-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+
+.mobile-action-card.is-next {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.mobile-action-card strong,
+.mobile-action-card small {
+  display: block;
+}
+
+.mobile-action-card small {
+  margin-top: 4px;
+  color: var(--text-2);
+}
+
+.mobile-action-card__actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.call-outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.call-outcome {
+  min-height: 46px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.call-outcome:hover,
+.call-outcome:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.configured-model {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-settings {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.owner-settings:disabled {
+  opacity: 0.72;
+}
+
+@media (max-width: 900px) {
+  .employee-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .employee-dashboard__greeting {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .employee-dashboard__greeting > .btn {
+    width: 100%;
+    min-height: 50px;
+  }
+
+  .mobile-action-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mobile-action-card__actions,
+  .mobile-action-card__actions .btn,
+  .mobile-action-card__actions a.btn {
+    width: 100%;
+  }
+
+  .mobile-action-card__actions .btn,
+  .mobile-action-card__actions a.btn,
+  .call-outcome {
+    min-height: 48px;
+  }
+
+  .configured-model {
+    display: none;
+  }
+}
+
 .greeting p {
   color: var(--text-2);
   font-size: 0.9375rem;

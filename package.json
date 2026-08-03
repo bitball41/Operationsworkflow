@@ -4,7 +4,7 @@
   "version": "3.0.0",
   "description": "Private operations system for an AI automation agency. Plain HTML, CSS and JavaScript.",
   "scripts": {
-    "test": "node tests/openscout-engine.test.cjs && node --test tests/render-smoke.test.mjs tests/operations.test.mjs tests/models.test.mjs tests/local-workspace.test.mjs tests/outlook-worker.test.mjs tests/access-worker.test.mjs tests/workspace-worker.test.mjs tests/agent-loop.test.mjs tests/whop.test.mjs tests/whop-webhook.test.mjs tests/inbox.test.mjs tests/foundations.test.mjs",
+    "test": "node tests/openscout-engine.test.cjs && node --test tests/render-smoke.test.mjs tests/operations.test.mjs tests/models.test.mjs tests/local-workspace.test.mjs tests/outlook-worker.test.mjs tests/access-worker.test.mjs tests/workspace-worker.test.mjs tests/ai-providers-worker.test.mjs tests/agent-loop.test.mjs tests/whop.test.mjs tests/whop-webhook.test.mjs tests/inbox.test.mjs tests/foundations.test.mjs",
     "check": "npm test"
   },
   "dependencies": {

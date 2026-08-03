@@ -1,5 +1,5 @@
 /* Modal forms and detail views. One pattern, no nested cards. */
-import { PIPELINE_STAGES, PROJECT_STAGES, REPLY_CLASSIFICATIONS } from "../config.js";
+import { CONFIG, PIPELINE_STAGES, PROJECT_STAGES, REPLY_CLASSIFICATIONS } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, isSameMonth, relativeTime, statusLabel } from "../core/utils.js";
 import {
@@ -76,9 +76,9 @@ export function openLeadForm(lead = null) {
           ${field("Qualification", select("qualification_status", ["unreviewed", "potential", "qualified", "unqualified"].map((value) => ({ value, label: statusLabel(value) })), lead?.qualification_status || "unreviewed"))}
           ${field("Salesperson", select("assigned_team_member_id", memberOptions(data), lead?.assigned_team_member_id || "", { placeholder: "Unassigned" }))}
           ${field("Fit score", input("lead_score", lead?.lead_score ?? 80, { type: "number", attrs: 'min="0" max="100"' }))}
-          ${field("Estimated setup value", input("deal_value", lead?.deal_value ?? 2500, { type: "number", attrs: 'min="0" step="50"' }))}
-          ${field("Quoted setup fee", input("quoted_setup_fee", lead?.quoted_setup_fee ?? "", { type: "number", attrs: 'min="0" step="50"' }))}
-          ${field("Quoted monthly fee", input("quoted_monthly_fee", lead?.quoted_monthly_fee ?? "", { type: "number", attrs: 'min="0" step="25"' }))}
+          ${field("Activation value", input("deal_value", lead?.deal_value ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
+          ${field("Activation fee", input("quoted_setup_fee", lead?.quoted_setup_fee ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
+          ${field("Monthly service", input("quoted_monthly_fee", lead?.quoted_monthly_fee ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="1"' }))}
         </div>
         ${field("Address", input("address", lead?.address || ""))}
         ${field("Opportunity tags", input("opportunity_tags", (lead?.opportunity_tags || []).join(", "), { placeholder: "missed_call, booking, lead_follow_up" }), { hint: "comma separated; inferred tags must be verified during outreach" })}
@@ -113,8 +113,8 @@ export function openMeetingForm(meeting = null, presetLeadId = "") {
         ${field("Ends", input("ends_at", meeting?.ends_at ? localDateTime(meeting.ends_at) : "", { type: "datetime-local" }))}
         ${field("Outcome", select("outcome", ["scheduled", "proposal_needed", "follow_up", "won", "lost", "technical_discovery_required", "cancelled"].map((value) => ({ value, label: statusLabel(value) })), meeting?.outcome || "scheduled"))}
         ${field("Complexity", select("implementation_complexity", ["low", "medium", "high", "custom"].map((value) => ({ value, label: statusLabel(value) })), meeting?.implementation_complexity || "", { placeholder: "Not assessed" }))}
-        ${field("Quoted setup fee", input("quoted_setup_fee", meeting?.quoted_setup_fee ?? "", { type: "number", attrs: 'min="0" step="50"' }))}
-        ${field("Quoted monthly fee", input("quoted_monthly_fee", meeting?.quoted_monthly_fee ?? "", { type: "number", attrs: 'min="0" step="25"' }))}
+        ${field("Activation fee", input("quoted_setup_fee", meeting?.quoted_setup_fee ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
+        ${field("Monthly service", input("quoted_monthly_fee", meeting?.quoted_monthly_fee ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="1"' }))}
       </div>
       <div class="field-grid">
         ${field("Current workflow", textarea("current_workflow", meeting?.current_workflow || "", { attrs: 'rows="3"' }))}
@@ -222,8 +222,8 @@ export function openSubscriptionForm(subscription = null) {
     body: `<form id="subscription-form" data-form="subscription"${subscription ? ` data-id="${subscription.id}"` : ""}>
       ${field("Client", select("client_id", clientOptions(data), subscription?.client_id || "", { placeholder: "Select a client", required: true }))}
       <div class="field-grid">
-        ${field("Plan", input("plan_name", subscription?.plan_name || "Managed AI automation"))}
-        ${field("Monthly amount", input("monthly_amount", subscription?.monthly_amount ?? 300, { type: "number", attrs: 'min="0" step="0.01"' }))}
+        ${field("Plan", input("plan_name", subscription?.plan_name || CONFIG.packageName))}
+        ${field("Monthly amount", input("monthly_amount", subscription?.monthly_amount ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="0.01"' }))}
         ${field("Status", select("status", ["active", "inactive", "past_due", "cancelled"].map((value) => ({ value, label: statusLabel(value) })), subscription?.status || "active"))}
         ${field("Next payment", input("next_charge_on", subscription?.next_charge_on || localDate(new Date(Date.now() + 30 * 86_400_000)), { type: "date" }))}
         ${field("Billing day", input("billing_day", subscription?.billing_day ?? "", { type: "number", attrs: 'min="1" max="28"' }))}
@@ -246,9 +246,7 @@ export function openTeamMemberForm(member = null) {
         ${field("Cloudflare Access email", input("access_email", member?.access_email || "", { type: "email" }), { hint: "identity mapping is activated only after Worker permission tests" })}
         ${field("Role", select("role", ["owner", "admin", "salesperson", "sales_manager", "account_manager", "automation_engineer", "support"].map((value) => ({ value, label: statusLabel(value) })), member?.role || "salesperson"))}
         ${field("Status", select("status", ["active", "inactive"].map((value) => ({ value, label: statusLabel(value) })), member?.status || "active"))}
-        ${field("Setup commission rate", input("commission_rate", Number(member?.commission_rate ?? 0.10) * 100, { type: "number", attrs: 'min="0" max="100" step="0.1"' }), { hint: "percent" })}
-        ${field("Minimum", input("commission_min", member?.commission_min ?? 250, { type: "number", attrs: 'min="0" step="1"' }))}
-        ${field("Maximum", input("commission_max", member?.commission_max ?? 1000, { type: "number", attrs: 'min="0" step="1"' }))}
+        ${field("Activation commission", input("commission_display", formatCurrency(CONFIG.defaultCommission), { attrs: "disabled" }), { hint: "earned when the client's activation payment is collected" })}
       </div>
     </form>`,
     footer: footer("team-member-form", "Save team member"),
@@ -260,7 +258,7 @@ export function openCommissionForm(commission) {
     title: "Update commission",
     body: `<form id="commission-form" data-form="commission" data-id="${commission.id}">
       <dl class="detail-list">
-        <div><dt>Collected setup revenue</dt><dd>${formatCurrency(commission.collected_setup_revenue)}</dd></div>
+        <div><dt>Activation revenue collected</dt><dd>${formatCurrency(commission.collected_setup_revenue)}</dd></div>
         <div><dt>Calculated commission</dt><dd>${formatCurrency(commission.calculated_commission || 0)}</dd></div>
       </dl>
       ${field("Status", select("status", ["pending", "earned", "paid", "reversed"].map((value) => ({ value, label: statusLabel(value) })), commission.status))}
@@ -455,9 +453,9 @@ export function openClientForm(client = null, presetLeadId = "") {
         ${field("Contact", input("contact_name", client?.contact_name || ""))}
         ${field("Email", input("email", client?.email || "", { type: "email" }))}
         ${field("Phone", input("phone", client?.phone || ""))}
-        ${field("Offer", input("package_name", client?.package_name || "Managed AI automation"))}
-        ${field("Setup fee", input("setup_fee", client?.setup_fee ?? client?.agreed_price ?? 2500, { type: "number", attrs: 'min="0" step="50"' }))}
-        ${field("Monthly fee", input("monthly_fee", client?.monthly_fee ?? 300, { type: "number", attrs: 'min="0" step="25"' }))}
+        ${field("Offer", input("package_name", client?.package_name || CONFIG.packageName))}
+        ${field("Activation fee", input("setup_fee", client?.setup_fee ?? client?.agreed_price ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
+        ${field("Monthly service", input("monthly_fee", client?.monthly_fee ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="1"' }))}
         ${field("Received", input("amount_received", client?.amount_received ?? 0, { type: "number", attrs: 'min="0"' }))}
         ${field("Status", select("status", ["onboarding", "active", "paused", "completed"].map((value) => ({ value, label: statusLabel(value) })), client?.status || "onboarding"))}
         ${field("Purchase date", input("purchase_date", client?.purchase_date || localDate(), { type: "date" }))}
@@ -492,7 +490,7 @@ export function openClientDetails(client) {
     body: `
       <dl class="detail-list">
         <div><dt>Status</dt><dd>${pill(client.status)}</dd></div>
-        <div><dt>Setup fee</dt><dd>${formatCurrency(client.setup_fee || client.agreed_price)}</dd></div>
+        <div><dt>Activation fee</dt><dd>${formatCurrency(client.setup_fee || client.agreed_price)}</dd></div>
         <div><dt>Monthly fee</dt><dd>${formatCurrency(client.monthly_fee)}/mo</dd></div>
         <div><dt>Received</dt><dd>${formatCurrency(client.amount_received)}</dd></div>
         <div><dt>Onboarding</dt><dd>${pill(onboarding?.status || client.onboarding_status || "not_started")}</dd></div>
@@ -610,9 +608,9 @@ export function openPricingForm(experiment = null) {
   openModal({
     title: experiment ? "Edit experiment" : "New pricing experiment",
     body: `<form id="pricing-form" data-form="pricing"${experiment ? ` data-id="${experiment.id}"` : ""}>
-      ${field("Name", input("name", experiment?.name || "", { required: true, placeholder: "$700 premium test" }))}
+      ${field("Name", input("name", experiment?.name || "", { required: true, placeholder: "Missed-call opener" }))}
       <div class="field-grid">
-        ${field("Offer", input("offer_amount", experiment?.offer_amount ?? 700, { type: "number", attrs: 'min="0" step="50"' }))}
+        ${field("Activation fee", input("offer_amount", experiment?.offer_amount ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="2500" max="2500" step="50" readonly' }))}
         ${field("Status", select("status", ["draft", "active", "paused", "complete"].map((value) => ({ value, label: statusLabel(value) })), experiment?.status || "draft"))}
         ${field("Emails", input("sent_count", experiment?.sent_count ?? 0, { type: "number", attrs: 'min="0"' }))}
         ${field("Replies", input("reply_count", experiment?.reply_count ?? 0, { type: "number", attrs: 'min="0"' }))}

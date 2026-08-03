@@ -1,10 +1,12 @@
 /* Single delegated event router: clicks, form submits and control changes. */
-import { PIPELINE_STAGES, PROJECT_STAGES } from "./config.js";
+import { CONFIG, PIPELINE_STAGES, PROJECT_STAGES } from "./config.js";
 
 /* Worker secret name per integration, so "Set up" can say exactly what to run. */
 const WORKER_SECRET_NAMES = Object.freeze({
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
+  kimi: "KIMI_API_KEY",
+  qwen: "QWEN_API_KEY",
   whop: "WHOP_WEBHOOK_SECRET",
   google_maps: "GOOGLE_MAPS_API_KEY",
   mcp: "MCP_API_TOKEN",
@@ -103,6 +105,20 @@ import {
   filesForTemplatePreview,
 } from "./services/sites/templates.js";
 import { currentFiles, selectedDemo, siteDetailsForm } from "./pages/studio.js";
+import { isOwner, ownerOnlyNotice } from "./services/permissions.js";
+
+const OWNER_ONLY_ACTIONS = new Set([
+  "integration-setup", "outlook-connect", "outlook-disconnect",
+  "team-member-new", "team-member-open", "team-member-delete",
+  "commission-open", "payment-new", "payment-open", "payment-delete",
+  "subscription-new", "subscription-open", "subscription-delete",
+  "automation-record-new", "automation-record-open", "automation-record-delete",
+  "ai-provider-select", "model-select", "effort-select", "ai-permission-select",
+]);
+
+const OWNER_ONLY_FORMS = new Set([
+  "settings", "team-member", "commission", "payment", "subscription", "automation-record",
+]);
 
 async function run(action, successTitle = "", successMessage = "") {
   try {
@@ -170,6 +186,11 @@ export async function onClick(event) {
   const id = target.dataset.id;
   if (target.tagName !== "SELECT" && target.type !== "checkbox") event.preventDefault();
 
+  if (OWNER_ONLY_ACTIONS.has(action) && !isOwner()) {
+    toast("Owner access required", ownerOnlyNotice());
+    return;
+  }
+
   if (isPaletteOpen() && action !== "close-palette") closePalette();
 
   switch (action) {
@@ -179,6 +200,16 @@ export async function onClick(event) {
       closeModal();
       setNav(false);
       break;
+    case "call-outcome": {
+      const form = target.closest('form[data-form="sales-call"]');
+      const outcome = form?.querySelector('[name="outcome"]');
+      if (!form || !outcome) return;
+      outcome.value = target.dataset.outcome || "";
+      form.querySelectorAll(".call-outcome").forEach((button) => button.classList.toggle("is-selected", button === target));
+      if (target.dataset.quickSave === "true") form.requestSubmit();
+      else form.querySelector('[name="notes"]')?.focus();
+      break;
+    }
     case "route-filter":
       setParam(target.dataset.key, target.dataset.value);
       break;
@@ -205,7 +236,7 @@ export async function onClick(event) {
         provider === "outlook"
           ? `The Cloudflare Worker is missing ${outlookMissing.join(", ") || "its Microsoft configuration"}. See README → API keys.`
           : secret
-            ? `Add the key to the Cloudflare Worker — wrangler secret put ${secret} — then reload. No credential is ever stored in this project.`
+            ? `Add the key to the Cloudflare Worker — wrangler secret put ${secret}.${["kimi", "qwen"].includes(provider) ? ` Then set ${provider.toUpperCase()}_MODEL${provider === "qwen" ? " and QWEN_BASE_URL" : ""} as Worker configuration.` : ""} Reload after deployment. No credential is ever stored in this project.`
             : "Credentials are deliberately not in this project. The interface, records and tool calls for it already exist.",
         "info",
       );
@@ -745,6 +776,10 @@ export async function onChange(event) {
   const target = event.target;
   const action = target.dataset.action;
   if (!action) return;
+  if (OWNER_ONLY_ACTIONS.has(action) && !isOwner()) {
+    toast("Owner access required", ownerOnlyNotice());
+    return;
+  }
 
   if (action === "route-select") {
     setParam(target.dataset.key, target.value);
@@ -783,6 +818,17 @@ export async function onChange(event) {
     });
     return;
   }
+  if (action === "ai-provider-select") {
+    await run(async () => {
+      if (getState().services?.providers?.[target.value] !== true) {
+        throw new Error("That provider has not passed the deployed Worker's model check.");
+      }
+      await savePreferences({ ai_provider: target.value });
+      const { model } = activeModel();
+      toast("AI provider updated", `${target.options[target.selectedIndex]?.text || target.value} · ${model.id}`);
+    });
+    return;
+  }
   if (action === "model-select" || action === "effort-select") {
     const key = action === "model-select" ? "model" : "effort";
     await run(async () => {
@@ -808,6 +854,7 @@ export async function onSubmit(event) {
   if (submit) submit.disabled = true;
 
   try {
+    if (OWNER_ONLY_FORMS.has(type) && !isOwner()) throw new Error(ownerOnlyNotice());
     switch (type) {
       case "discovery":
         await runDiscovery(values);
@@ -844,7 +891,7 @@ export async function onSubmit(event) {
       case "automation-settings":
         await saveAutomationSettings({
           batchTarget: number(values.batchTarget, 48),
-          price: number(values.price, 500),
+          price: number(values.price, CONFIG.defaultSetupFee),
           followUpDays: number(values.followUpDays, 3),
           stepDelayMs: number(values.stepDelayMs, 220),
           maxConsecutiveFailures: number(values.maxConsecutiveFailures, 3),
@@ -943,7 +990,7 @@ export async function onSubmit(event) {
       case "outreach": {
         const leadId = values.lead_id || form.dataset.leadId;
         const status = mode === "draft" ? "draft" : "ready";
-        const { draft } = await createOutreachDraft(leadId, { price: number(values.price, 500), status });
+        const { draft } = await createOutreachDraft(leadId, { price: number(values.price, CONFIG.defaultSetupFee), status });
         const updated = await updateRecord("drafts", draft.id, { subject: values.subject, body: values.body, status });
         if (mode === "send") {
           const result = await sendDraft(updated.id);
@@ -1089,10 +1136,10 @@ export async function onSubmit(event) {
           ...values,
           agreed_price: setupFee,
           setup_fee: setupFee,
-          monthly_fee: number(values.monthly_fee, 300),
+          monthly_fee: number(values.monthly_fee, CONFIG.defaultMonthlyFee),
           amount_received: number(values.amount_received, 0),
           payment_status: number(values.amount_received) >= setupFee ? "paid" : "pending",
-          pricing: { setup_fee: setupFee, monthly_fee: number(values.monthly_fee, 300) },
+          pricing: { setup_fee: setupFee, monthly_fee: number(values.monthly_fee, CONFIG.defaultMonthlyFee) },
         };
         if (id) await updateRecord("clients", id, payload);
         else {
@@ -1204,7 +1251,7 @@ export async function onSubmit(event) {
       case "subscription": {
         const payload = {
           ...values,
-          monthly_amount: number(values.monthly_amount, 300),
+          monthly_amount: number(values.monthly_amount, CONFIG.defaultMonthlyFee),
           included_usage: values.included_usage === null ? null : number(values.included_usage, 0),
           overage_rate: values.overage_rate === null ? null : number(values.overage_rate, 0),
           billing_day: values.billing_day === null ? null : number(values.billing_day, 1),
@@ -1261,7 +1308,7 @@ export async function onSubmit(event) {
       case "pricing": {
         const payload = {
           ...values,
-          offer_amount: number(values.offer_amount, 500),
+          offer_amount: number(values.offer_amount, CONFIG.defaultSetupFee),
           sent_count: number(values.sent_count, 0),
           reply_count: number(values.reply_count, 0),
           close_count: number(values.close_count, 0),
@@ -1275,18 +1322,15 @@ export async function onSubmit(event) {
       }
 
       case "team-member": {
-        const minimum = number(values.commission_min, 250);
-        const maximum = number(values.commission_max, 1000);
-        if (maximum < minimum) throw new Error("Commission maximum cannot be below the minimum.");
         const payload = {
           full_name: values.full_name,
           access_email: values.access_email,
           role: values.role,
           status: values.status,
           permissions: id ? findRecord("teamMembers", id)?.permissions || {} : {},
-          commission_rate: number(values.commission_rate, 10) / 100,
-          commission_min: minimum,
-          commission_max: maximum,
+          commission_rate: CONFIG.defaultCommission / CONFIG.defaultSetupFee,
+          commission_min: CONFIG.defaultCommission,
+          commission_max: CONFIG.defaultCommission,
         };
         if (id) await updateRecord("teamMembers", id, payload);
         else await createRecord("teamMembers", payload);
@@ -1336,8 +1380,8 @@ export async function onSubmit(event) {
         await savePreferences({
           owner_name: values.owner_name,
           business_name: values.business_name,
-          default_site_price: number(values.default_site_price, 500),
-          maintenance_price: number(values.maintenance_price, 50),
+          default_setup_fee: number(values.default_setup_fee, CONFIG.defaultSetupFee),
+          default_monthly_fee: number(values.default_monthly_fee, CONFIG.defaultMonthlyFee),
           default_email: values.default_email,
           signature: values.signature,
           batch_target: number(values.batch_target, 48),
@@ -1350,7 +1394,7 @@ export async function onSubmit(event) {
             .map((part) => number(part.trim()))
             .filter((day) => day > 0),
         });
-        await saveAutomationSettings({ batchTarget: number(values.batch_target, 48), price: number(values.default_site_price, 500) });
+        await saveAutomationSettings({ batchTarget: number(values.batch_target, 48), price: number(values.default_setup_fee, CONFIG.defaultSetupFee) });
         toast("Settings saved");
         break;
       }
@@ -1561,7 +1605,7 @@ async function prepareBatch() {
 
   await run(async () => {
     for (const lead of eligible) {
-      await createOutreachDraft(lead, { price: settings.default_site_price, status: "ready" });
+      await createOutreachDraft(lead, { price: settings.default_setup_fee, status: "ready" });
     }
     await logActivity("email_batch_prepared", "Outreach batch prepared", `${eligible.length} emails ready to send.`);
   }, "Batch prepared", `${eligible.length} emails ready.`);

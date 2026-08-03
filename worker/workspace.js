@@ -99,6 +99,43 @@ const SNAPSHOT_ORDER = Object.freeze({
 
 const adminClients = new WeakMap();
 
+const OWNER_ONLY_WRITE_COLLECTIONS = new Set([
+  "automations",
+  "teamMembers",
+  "maintenanceSubscriptions",
+  "payments",
+  "commissions",
+  "expenses",
+  "aiUsage",
+  "pricingExperiments",
+  "deployments",
+  "settings",
+  "integrations",
+]);
+
+const SALESPERSON_WRITE_COLLECTIONS = new Set([
+  "leads",
+  "discoveryRuns",
+  "discoveryResults",
+  "demos",
+  "demoVersions",
+  "drafts",
+  "emailThreads",
+  "emails",
+  "followUps",
+  "approvals",
+  "assistantConversations",
+  "agentRuns",
+  "agentEvents",
+  "notifications",
+  "salesCalls",
+  "meetings",
+  "activity",
+  "tasks",
+  "calendarEvents",
+  "notes",
+]);
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -107,6 +144,18 @@ function json(body, status = 200) {
       "cache-control": "no-store",
     },
   });
+}
+
+function forbidden(message = "This employee is not allowed to change that workspace data.") {
+  return json({ error: "forbidden", message }, 403);
+}
+
+export function collectionWriteAllowed(member, collection) {
+  if (member?.status !== "active") return false;
+  if (member.role === "owner") return true;
+  if (OWNER_ONLY_WRITE_COLLECTIONS.has(collection)) return false;
+  if (member.role === "salesperson") return SALESPERSON_WRITE_COLLECTIONS.has(collection);
+  return !["teamMembers", "integrations", "deployments", "payments", "commissions", "settings"].includes(collection);
 }
 
 function secretKey(env) {
@@ -219,7 +268,7 @@ async function fallbackSnapshot(client, workspaceId) {
   return { profile, ...Object.fromEntries(entries) };
 }
 
-export async function handleWorkspaceSnapshot(env) {
+export async function handleWorkspaceSnapshot(env, member) {
   const errorResponse = configured(env);
   if (errorResponse) return errorResponse;
   const workspaceId = operationsWorkspaceId(env);
@@ -235,14 +284,88 @@ export async function handleWorkspaceSnapshot(env) {
     && !/operations_workspace_snapshot.*schema cache/i.test(String(error.message || ""))
   ) throw error;
   const snapshot = error ? await fallbackSnapshot(client, workspaceId) : data;
-  return json({ ...(snapshot || {}), workspace: { id: workspaceId, name: "Operations" } });
+  return json({
+    ...(snapshot || {}),
+    workspace: {
+      id: workspaceId,
+      name: "Operations",
+      member: member ? {
+        id: member.id,
+        full_name: member.full_name,
+        access_email: member.access_email,
+        role: member.role,
+        permissions: member.permissions || {},
+      } : null,
+    },
+  });
 }
 
-export async function handleWorkspaceRecords(request, env, collection, id = "") {
+async function rowForMemberScope(client, workspaceId, collection, table, id) {
+  const columns = collection === "leads"
+    ? "id,assigned_team_member_id"
+    : ["salesCalls", "meetings"].includes(collection)
+      ? "id,salesperson_id"
+      : collection === "followUps"
+        ? "id,lead_id"
+        : "id";
+  const { data, error } = await client
+    .from(table)
+    .select(columns)
+    .eq("id", id)
+    .eq("user_id", workspaceId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function leadBelongsToMember(client, workspaceId, leadId, memberId) {
+  if (!UUID.test(String(leadId || ""))) return false;
+  const { data, error } = await client
+    .from("leads")
+    .select("id")
+    .eq("id", leadId)
+    .eq("user_id", workspaceId)
+    .eq("assigned_team_member_id", memberId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function salespersonOwnsRecord(client, workspaceId, collection, table, id, memberId) {
+  const row = await rowForMemberScope(client, workspaceId, collection, table, id);
+  if (!row) return null;
+  if (collection === "leads") return row.assigned_team_member_id === memberId ? row : false;
+  if (["salesCalls", "meetings"].includes(collection)) return row.salesperson_id === memberId ? row : false;
+  if (collection === "followUps") {
+    return await leadBelongsToMember(client, workspaceId, row.lead_id, memberId) ? row : false;
+  }
+  return row;
+}
+
+async function scopeSalespersonInserts(client, workspaceId, collection, records, member) {
+  if (collection === "leads") {
+    return records.map((record) => ({ ...record, assigned_team_member_id: member.id }));
+  }
+  if (["salesCalls", "meetings"].includes(collection)) {
+    for (const record of records) {
+      if (!await leadBelongsToMember(client, workspaceId, record.lead_id, member.id)) return null;
+    }
+    return records.map((record) => ({ ...record, salesperson_id: member.id }));
+  }
+  if (collection === "followUps") {
+    for (const record of records) {
+      if (!await leadBelongsToMember(client, workspaceId, record.lead_id, member.id)) return null;
+    }
+  }
+  return records;
+}
+
+export async function handleWorkspaceRecords(request, env, collection, id = "", member) {
   const errorResponse = configured(env);
   if (errorResponse) return errorResponse;
   const table = collectionTable(collection);
   if (!table) return json({ error: "unknown_collection", message: "That workspace collection is not available." }, 404);
+  if (!collectionWriteAllowed(member, collection)) return forbidden();
 
   const workspaceId = operationsWorkspaceId(env);
   const client = adminClient(env);
@@ -252,9 +375,13 @@ export async function handleWorkspaceRecords(request, env, collection, id = "") 
     if (!values.length || values.length > 500) {
       return json({ error: "invalid_request", message: "records must contain between 1 and 500 items." }, 400);
     }
-    const payload = values.map((record) => cleanInsert(record, workspaceId));
+    let payload = values.map((record) => cleanInsert(record, workspaceId));
     if (payload.some((record) => !record)) {
       return json({ error: "invalid_request", message: "Every record must be an object." }, 400);
+    }
+    if (member.role === "salesperson") {
+      payload = await scopeSalespersonInserts(client, workspaceId, collection, payload, member);
+      if (!payload) return forbidden("Salespeople can only add calls, meetings, and follow-ups for their assigned leads.");
     }
     const { data, error } = await client.from(table).insert(payload).select();
     if (error) throw error;
@@ -262,10 +389,22 @@ export async function handleWorkspaceRecords(request, env, collection, id = "") 
   }
 
   if (!UUID.test(id)) return json({ error: "invalid_id", message: "A valid record id is required." }, 400);
+  if (member.role === "salesperson") {
+    const owned = await salespersonOwnsRecord(client, workspaceId, collection, table, id, member.id);
+    if (owned === null) return json({ error: "not_found", message: "That record was not found in this workspace." }, 404);
+    if (owned === false) return forbidden("Salespeople can only change records assigned to them.");
+  }
   if (request.method === "PATCH") {
     const patch = cleanPatch(await request.json().catch(() => null));
     if (!patch || !Object.keys(patch).length) {
       return json({ error: "invalid_request", message: "A non-empty patch object is required." }, 400);
+    }
+    if (member.role === "salesperson") {
+      if (collection === "leads") patch.assigned_team_member_id = member.id;
+      if (["salesCalls", "meetings"].includes(collection)) patch.salesperson_id = member.id;
+      if (collection === "followUps" && patch.lead_id && !await leadBelongsToMember(client, workspaceId, patch.lead_id, member.id)) {
+        return forbidden("Salespeople can only move follow-ups to their assigned leads.");
+      }
     }
     const { data, error } = await client
       .from(table)
@@ -295,9 +434,10 @@ export async function handleWorkspaceRecords(request, env, collection, id = "") 
   return json({ error: "method_not_allowed", message: "That workspace operation is not allowed." }, 405);
 }
 
-export async function handleWorkspaceProfile(request, env) {
+export async function handleWorkspaceProfile(request, env, member) {
   const errorResponse = configured(env);
   if (errorResponse) return errorResponse;
+  if (member?.role !== "owner") return forbidden("Only the owner can change workspace settings.");
   const patch = cleanPatch(await request.json().catch(() => null));
   if (!patch || !Object.keys(patch).length) {
     return json({ error: "invalid_request", message: "A non-empty profile patch is required." }, 400);

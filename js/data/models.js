@@ -1,77 +1,49 @@
 /**
- * The models you can actually pick, what they cost, and what they are for.
+ * Public model metadata used for display and cost accounting.
  *
- * Shared by the browser and the Cloudflare Worker — the Worker imports this at
- * build time, so the picker and the allow list can never drift apart. Nothing
- * secret is in here; it is public catalogue information.
- *
- * Prices are US dollars per million tokens, from each provider's public pricing.
- * They exist so the Costs page can show real spend instead of a guess, and so
- * the picker can say what a choice costs before you make it.
+ * The Worker remains the source of truth for the model it can actually invoke.
+ * Anthropic and OpenAI have documented defaults; Kimi and Qwen deliberately do
+ * not. Their model ids are deployment configuration because those catalogues
+ * and regional availability change independently of this browser bundle.
  */
+
+export const VERIFIED_MODEL_DEFAULTS = Object.freeze({
+  anthropic: "claude-sonnet-5",
+  openai: "gpt-5.6-sol",
+  kimi: "",
+  qwen: "",
+});
 
 export const MODELS = Object.freeze([
   {
-    id: "claude-haiku-4-5",
-    provider: "anthropic",
-    label: "Haiku 4.5",
-    inputPerMTok: 1,
-    outputPerMTok: 5,
-    /* Haiku is a previous-generation model: it has no effort control and no
-       adaptive thinking, so the worker must not send either. */
-    supportsEffort: false,
-    note: "Cheapest. Good for lookups, classification and short answers.",
-  },
-  {
     id: "claude-sonnet-5",
     provider: "anthropic",
-    label: "Sonnet 5",
+    label: "Claude Sonnet 5",
     inputPerMTok: 3,
     outputPerMTok: 15,
     supportsEffort: true,
-    note: "The sensible default — close to Opus on agentic work at a third of the price.",
+    note: "Verified Anthropic model id. The Worker can override it with ANTHROPIC_MODEL.",
   },
   {
-    id: "claude-opus-5",
-    provider: "anthropic",
-    label: "Opus 5",
-    inputPerMTok: 5,
-    outputPerMTok: 25,
-    supportsEffort: true,
-    note: "Hardest reasoning and long multi-step work. Five times Haiku on input.",
-  },
-  {
-    id: "claude-opus-4-8",
-    provider: "anthropic",
-    label: "Opus 4.8",
-    inputPerMTok: 5,
-    outputPerMTok: 25,
-    supportsEffort: true,
-    note: "Previous-generation Opus. Keep as a fallback if Opus 5 refuses a request.",
-  },
-  {
-    id: "gpt-5",
+    id: "gpt-5.6-sol",
     provider: "openai",
-    label: "GPT-5",
-    /* Not priced here: this catalogue only carries figures taken from published
-       pricing. OpenAI spend shows as tokens, not dollars, rather than as a
-       number that might be wrong. */
-    inputPerMTok: null,
-    outputPerMTok: null,
-    supportsEffort: false,
-    note: "Used only when OpenAI is the connected provider. Cost is not tracked.",
+    label: "GPT-5.6 Sol",
+    inputPerMTok: 5,
+    outputPerMTok: 30,
+    supportsEffort: true,
+    note: "Verified OpenAI Responses model id and standard token price. The Worker can override it with OPENAI_MODEL.",
   },
 ]);
 
-/** Effort controls how much the model thinks, and is the biggest cost lever. */
 export const EFFORT_LEVELS = Object.freeze([
-  { id: "low", label: "Low", note: "Fewest tokens. Scoped, literal answers." },
-  { id: "medium", label: "Medium", note: "Good balance for day-to-day questions." },
-  { id: "high", label: "High", note: "The provider default. Deeper reasoning." },
-  { id: "xhigh", label: "Extra high", note: "For genuinely hard multi-step work." },
+  { id: "low", label: "Low", note: "Faster for short operational answers." },
+  { id: "medium", label: "Medium", note: "Balanced starting point for daily work." },
+  { id: "high", label: "High", note: "Deeper reasoning for multi-step work." },
+  { id: "xhigh", label: "Extra high", note: "Only when the configured model supports it." },
+  { id: "max", label: "Max", note: "Highest supported effort; use deliberately." },
 ]);
 
-export const DEFAULT_MODEL_ID = "claude-sonnet-5";
+export const DEFAULT_MODEL_ID = VERIFIED_MODEL_DEFAULTS.anthropic;
 export const DEFAULT_EFFORT = "medium";
 
 export function getModel(id) {
@@ -82,32 +54,38 @@ export function modelsForProvider(provider) {
   return MODELS.filter((model) => model.provider === provider);
 }
 
-/** The chosen model, falling back to this provider's cheapest sensible option. */
-export function resolveModel(id, provider = "anthropic") {
-  const chosen = getModel(id);
-  if (chosen && chosen.provider === provider) return chosen;
-  return getModel(DEFAULT_MODEL_ID)?.provider === provider
-    ? getModel(DEFAULT_MODEL_ID)
-    : modelsForProvider(provider)[0] || null;
+export function modelDefinition(id, provider, capabilities = {}) {
+  const known = getModel(id);
+  if (known?.provider === provider) return known;
+  return {
+    id: String(id || ""),
+    provider,
+    label: String(id || "Not configured"),
+    inputPerMTok: null,
+    outputPerMTok: null,
+    supportsEffort: capabilities.effort === true,
+    note: id ? "Configured and verified by the deployed Worker." : "No model is configured on the Worker.",
+  };
 }
 
-/** Dollar cost of one call. Returns 0 for models with no published price here. */
+export function resolveModel(id, provider = "anthropic") {
+  const chosen = getModel(id);
+  if (chosen?.provider === provider) return chosen;
+  const fallbackId = VERIFIED_MODEL_DEFAULTS[provider] || "";
+  return getModel(fallbackId) || modelDefinition(id || fallbackId, provider);
+}
+
 export function costOf(modelId, { input = 0, output = 0 } = {}) {
   const model = getModel(modelId);
   if (!model?.inputPerMTok || !model?.outputPerMTok) return 0;
   return (input / 1e6) * model.inputPerMTok + (output / 1e6) * model.outputPerMTok;
 }
 
-/**
- * What a typical assistant turn costs on this model, so the picker can show a
- * number rather than an abstract price. Based on a workspace snapshot plus tool
- * schema in, and a short answer out.
- */
 export function estimatedTurnCost(modelId) {
   return costOf(modelId, { input: 12_000, output: 700 });
 }
 
 export function formatPerMTok(model) {
-  if (!model?.inputPerMTok || !model?.outputPerMTok) return "not tracked";
+  if (!model?.inputPerMTok || !model?.outputPerMTok) return "price not tracked";
   return `$${model.inputPerMTok}/$${model.outputPerMTok} per million tokens`;
 }

@@ -39,11 +39,21 @@ const business = await import("../js/pages/business.js");
 const workspace = await import("../js/pages/workspace.js");
 const system = await import("../js/pages/system.js");
 const agency = await import("../js/pages/agency.js");
+const aiProvider = await import("../js/services/ai/provider.js");
 
 setData(createSeedData(), { silent: true });
-setState({ route: "home", routeParams: {} }, { silent: true });
+setState({
+  route: "home",
+  routeParams: {},
+  user: {
+    id: "2847b8e2-8a34-4a72-8e44-2cfc1be4255b",
+    name: "Operations",
+    member: { id: "10000000-0000-4000-8000-000000000261", full_name: "Connor", role: "owner", status: "active" },
+  },
+}, { silent: true });
 
 const renderers = {
+  "my-day": home.renderMyDay,
   home: home.renderHome,
   assistant: assistant.renderAssistant,
   automation: automation.renderAutomation,
@@ -98,9 +108,32 @@ test("every route has a renderer and every renderer has a route", () => {
 test("navigation includes the AI Assistant and agency automation routes", () => {
   const labels = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.label));
   assert.ok(labels.includes("AI Assistant"));
+  assert.ok(labels.includes("My Day"));
   assert.ok(labels.includes("Automation Studio"));
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
+});
+
+test("salespeople get a phone-first personal day without losing the business dashboard", () => {
+  const previousUser = structuredClone(getState().user);
+  try {
+    setState({
+      route: "my-day",
+      routeParams: {},
+      user: {
+        ...previousUser,
+        member: { id: "10000000-0000-4000-8000-000000000260", full_name: "Jordan Lee", role: "salesperson", status: "active" },
+      },
+    }, { silent: true });
+    const html = renderers["my-day"]();
+    assert.match(html, /Call queue/);
+    assert.match(html, /Start calling/);
+    assert.match(html, /Commission due/);
+    assert.match(html, /href="tel:/);
+    assert.ok(NAV_GROUPS.flatMap((group) => group.items).some((item) => item.id === "home"));
+  } finally {
+    setState({ user: previousUser }, { silent: true });
+  }
 });
 
 test("assistant and studio own the full viewport", () => {
@@ -247,6 +280,45 @@ test("assistant page exposes conversations, access and tools without faking answ
   assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
 });
 
+test("assistant instructions and stored history are reset for the voice agency", () => {
+  assert.match(aiProvider.SYSTEM_PROMPT, /unlimited AI receptionist/i);
+  assert.match(aiProvider.SYSTEM_PROMPT, /\$2,500/);
+  assert.match(aiProvider.SYSTEM_PROMPT, /\$997/);
+  assert.match(aiProvider.SYSTEM_PROMPT, /Never invent a call/i);
+  assert.doesNotMatch(aiProvider.SYSTEM_PROMPT, /sell websites|website-selling/i);
+
+  const migration = readFileSync(new URL("../supabase/migrations/20260803124525_voice_agent_agency_dashboard.sql", import.meta.url), "utf8");
+  assert.match(migration, /delete from public\.assistant_conversations/i);
+});
+
+test("assistant provider selection shows only Worker-verified live models", () => {
+  const previousServices = structuredClone(getState().services);
+  try {
+    setState({
+      services: {
+        ...previousServices,
+        reachable: true,
+        providers: { ...previousServices.providers, anthropic: true, openai: false, kimi: false, qwen: false },
+        aiProviders: {
+          anthropic: {
+            connected: true,
+            configured: true,
+            model: "claude-sonnet-5",
+            capabilities: { tools: true, effort: true },
+          },
+        },
+      },
+    }, { silent: true });
+    const html = renderers.assistant();
+    assert.match(html, /Claude Sonnet 5/);
+    assert.match(html, /value="anthropic"/);
+    assert.doesNotMatch(html, /value="kimi"/);
+    assert.doesNotMatch(html, /value="qwen"/);
+  } finally {
+    setState({ services: previousServices }, { silent: true });
+  }
+});
+
 test("assistant has a dedicated mobile chat structure", () => {
   const page = readFileSync(new URL("../js/pages/assistant.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../styles/components.css", import.meta.url), "utf8");
@@ -343,9 +415,11 @@ test("integrations renders every capability from a reachable Worker", () => {
       },
     }, { silent: true });
     const html = renderers.integrations();
-    for (const label of ["Cloudflare", "Browser research", "MCP tool server"]) {
+    for (const label of ["Cloudflare", "Browser research", "MCP tool server", "Booking calendar", "Twilio"]) {
       assert.match(html, new RegExp(label), `${label} needs an integration card`);
     }
+    assert.match(html, /Calendar booking is unavailable/);
+    assert.match(html, /Telephony is unavailable/);
   } finally {
     setState({ services: previousServices }, { silent: true });
   }

@@ -4,6 +4,7 @@ import { escapeHtml, formatCurrency, formatDate, formatNumber, groupBy, isSameMo
 import { bars, btn, empty, lineChart, notice, pill, section, stats, table, td } from "../components/ui.js";
 import { isConnected } from "../services/integrations.js";
 import { getPayments, revenueSummary } from "../services/operations.js";
+import { isOwner, ownerOnlyNotice } from "../services/permissions.js";
 import { byId, clientName, filterSelect, searchInput } from "./shared.js";
 
 function monthlyRevenue(payments, months = 6) {
@@ -36,7 +37,7 @@ export function renderPayments() {
         body: stats([
           ["Received", formatCurrency(sum(paid, (payment) => payment.amount))],
           ["This month", formatCurrency(sum(getPayments({ range: "month" }), (payment) => payment.amount))],
-          ["Setup fees", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "setup_fee"), (payment) => payment.amount))],
+          ["Activation fees", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "setup_fee"), (payment) => payment.amount))],
           ["Subscriptions", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "recurring_subscription"), (payment) => payment.amount))],
           ["Overages", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "usage_overage"), (payment) => payment.amount))],
           ["Fees", formatCurrency(sum(paid, (payment) => payment.fee_amount), 2)],
@@ -49,11 +50,13 @@ export function renderPayments() {
         { iconName: "wallet", tone: "warn" },
       )}
 
+      ${isOwner() ? "" : notice("Payment administration is owner-only", ownerOnlyNotice("Recording or editing payments"), { iconName: "wallet", tone: "warn" })}
+
       <div class="toolbar">
         ${searchInput("Search customer or transaction", routeParams.q || "")}
         ${filterSelect("type", ["setup_fee", "recurring_subscription", "usage_overage", "custom_invoice", "refund"].map((value) => ({ value, label: statusLabel(value) })), type, "All types")}
         <span class="toolbar__spacer"></span>
-        ${btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary", size: "sm" })}
+        ${isOwner() ? btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary", size: "sm" }) : pill("warning", "View only")}
       </div>
 
       ${table({
@@ -65,9 +68,9 @@ export function renderPayments() {
           ${td("Status", pill(payment.status))}
           ${td("Date", formatDate(payment.paid_at || payment.created_at, { year: "numeric" }))}
           ${td("Fee", formatCurrency(payment.fee_amount, 2))}
-          ${td("", btn("Edit", { action: "payment-open", size: "sm", attrs: `data-id="${payment.id}"` }))}
+          ${td("", isOwner() ? btn("Edit", { action: "payment-open", size: "sm", attrs: `data-id="${payment.id}"` }) : pill("warning", "View only"))}
         </tr>`),
-        emptyState: empty({ title: "No payments recorded", message: "Record a collected setup fee, subscription payment, overage, or custom invoice." }),
+        emptyState: empty({ title: "No payments recorded", message: "Record a collected activation fee or $997 monthly subscription payment." }),
       })}
     </div>
   `;
@@ -209,7 +212,7 @@ export function renderPricing() {
           ${td("Status", pill(experiment.status))}
           ${td("", btn("Edit", { action: "pricing-open", size: "sm", attrs: `data-id="${experiment.id}"` }))}
         </tr>`),
-        emptyState: empty({ title: "No experiments", message: "Test $500 against $700 and compare revenue per email, not just close rate." }),
+        emptyState: empty({ title: "No experiments", message: "Test scripts and positioning while keeping the single $2,500 activation and $997 monthly package unchanged." }),
       })}
     </div>
   `;

@@ -4,7 +4,7 @@
  * Drafting is instant and uses the standard offer. States are explicit:
  * draft -> ready -> sent, with failed kept separate.
  */
-import { REPLY_CLASSIFICATIONS } from "../config.js";
+import { CONFIG, REPLY_CLASSIFICATIONS } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatNumber, isToday, relativeTime, statusLabel } from "../core/utils.js";
 import {
@@ -39,7 +39,7 @@ export function renderOutreach() {
     || candidates[0]
     || null;
   const demo = selectedLead ? demoForLead(data, selectedLead.id) : null;
-  const price = Number(selectedLead?.deal_value) || Number(settings.default_site_price) || 500;
+  const price = Number(selectedLead?.quoted_setup_fee) || Number(settings.default_setup_fee) || CONFIG.defaultSetupFee;
   const copy = draftOutreach({ lead: selectedLead, demo, price, owner: settings.owner_name });
 
   const queue = data.drafts.filter((draft) => {
@@ -77,7 +77,7 @@ export function renderOutreach() {
           <form class="stack--tight" data-form="outreach" data-lead-id="${selectedLead.id}">
             <div class="field-grid">
               ${field("Lead", select("lead_id", candidates.map((lead) => ({ value: lead.id, label: lead.business_name })), selectedLead.id, { attrs: 'data-action="outreach-lead"' }))}
-              ${field("Price", input("price", price, { type: "number", attrs: 'min="0" step="50"' }))}
+              ${field("Activation fee", input("price", price, { type: "number", attrs: 'min="2500" max="2500" step="50" readonly' }))}
               ${field("Demo", demo
                 ? `<div class="row" style="padding:0;border:0">${externalLink(demo.preview_url, demo.preview_url ? "Preview link" : "Not published")}${demo.content?.publish?.hosted ? "" : `<span class="pill">not hosted</span>`}</div>`
                 : btn("Build a demo first", { action: "demo-build", attrs: `data-lead-id="${selectedLead.id}"`, size: "sm" }))}

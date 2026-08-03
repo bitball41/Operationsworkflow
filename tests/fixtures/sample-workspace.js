@@ -48,9 +48,9 @@ function lead(n, business, category, city, status, score, extra = {}) {
     opportunity_tags: ["missed_call", "lead_follow_up"],
     opportunity_summary: "Public listing signals suggest a call-handling workflow may be worth qualifying.",
     lead_score: score,
-    asking_price: extra.price || CONFIG.defaultPrice,
-    deal_value: extra.price || CONFIG.defaultPrice,
-    quoted_setup_fee: extra.price || CONFIG.defaultSetupFee,
+    asking_price: CONFIG.defaultSetupFee,
+    deal_value: CONFIG.defaultSetupFee,
+    quoted_setup_fee: CONFIG.defaultSetupFee,
     quoted_monthly_fee: CONFIG.defaultMonthlyFee,
     assigned_team_member_id: id(260),
     calls_attempted: 0,
@@ -186,12 +186,13 @@ export function createSeedData() {
       full_name: CONFIG.owner,
       role: "owner",
       preferences: {
-        business_name: "Connor Websites",
+        business_name: "Connor Voice Agents",
         owner_name: CONFIG.owner,
         timezone: "America/Chicago",
         currency: "USD",
-        default_site_price: CONFIG.defaultPrice,
-        maintenance_price: 50,
+        package_name: CONFIG.packageName,
+        default_setup_fee: CONFIG.defaultSetupFee,
+        default_monthly_fee: CONFIG.defaultMonthlyFee,
         default_email: "",
         signature: CONFIG.owner,
         follow_up_days: [3, 7, 14],
@@ -201,14 +202,14 @@ export function createSeedData() {
     },
     leads,
     teamMembers: [
-      { id: id(260), full_name: "Jordan Lee", access_email: "jordan@example.test", role: "salesperson", status: "active", permissions: {}, commission_rate: 0.1, commission_min: 250, commission_max: 1000, created_at: stamp(-30), updated_at: stamp(-1) },
-      { id: id(261), full_name: CONFIG.owner, access_email: "owner@example.test", role: "owner", status: "active", permissions: {}, commission_rate: 0.1, commission_min: 250, commission_max: 1000, created_at: stamp(-30), updated_at: stamp(-1) },
+      { id: id(260), full_name: "Jordan Lee", access_email: "jordan@example.test", role: "salesperson", status: "active", permissions: {}, commission_rate: 0.14, commission_min: 350, commission_max: 350, created_at: stamp(-30), updated_at: stamp(-1) },
+      { id: id(261), full_name: CONFIG.owner, access_email: "owner@example.test", role: "owner", status: "active", permissions: {}, commission_rate: 0.14, commission_min: 350, commission_max: 350, created_at: stamp(-30), updated_at: stamp(-1) },
     ],
     salesCalls: [
       { id: id(262), lead_id: leads[4].id, salesperson_id: id(260), outcome: "interested", notes: "Owner wants better after-hours coverage.", objection: "Needs to hear call quality", pain_point: "Missed evening calls", called_at: stamp(0, -2), created_at: stamp(0, -2), updated_at: stamp(0, -2) },
     ],
     meetings: [
-      { id: id(263), lead_id: leads[4].id, client_id: null, salesperson_id: id(260), title: "AI receptionist discovery", starts_at: stamp(2), ends_at: stamp(2, 1), outcome: "scheduled", attendees: ["Anika Patel"], biggest_pain_point: "After-hours calls", automation_proposed: "AI receptionist and booking", required_integrations: ["Google Calendar"], quoted_setup_fee: 2500, quoted_monthly_fee: 300, next_action: "Map booking rules", created_at: stamp(0), updated_at: stamp(0) },
+      { id: id(263), lead_id: leads[4].id, client_id: null, salesperson_id: id(260), title: "AI receptionist discovery", starts_at: stamp(2), ends_at: stamp(2, 1), outcome: "scheduled", attendees: ["Anika Patel"], biggest_pain_point: "After-hours calls", automation_proposed: "Unlimited AI receptionist and appointment booking", required_integrations: ["Google Calendar"], quoted_setup_fee: 2500, quoted_monthly_fee: 997, next_action: "Map booking rules", created_at: stamp(0), updated_at: stamp(0) },
     ],
     discoveryRuns: [
       { id: id(30), source: "openscout", engine_version: "openscout-2026-07-25", query: { location: "Arlington, TX", businessType: "tree service", limit: 50, radiusKm: 15 }, status: "completed", scanned_count: 184, result_count: 27, duplicate_count: 9, rejected_count: 4, saved_count: 6, summary: { estimatedAccuracy: 94 }, started_at: stamp(-1, -2), completed_at: stamp(-1, -1), created_at: stamp(-1, -2) },
@@ -227,18 +228,18 @@ export function createSeedData() {
     ],
     drafts,
     emailThreads: [
-      thread(60, leads[4], "Re: I made a website for Polar Air Comfort", "interested", "Anika Patel", "service@polarair.example", -0.02, true, "Likes it and asked if the blue can match their trucks."),
-      thread(61, leads[6], "Re: I made a website for Mirror Finish", "needs_changes", "Luis Moreno", "book@mirrorfinish.example", -1, false, "Wants ceramic coating first and a darker gallery."),
-      thread(62, leads[3], "Re: I made a website for Ridgeway Roofing", "maybe", "Derek Walsh", "derek@ridgeway.example", -3, false, "Asked to revisit after the current job wraps."),
-      thread(63, leads[5], "Re: I made a website for BrightNest Cleaning", "price_objection", "Maya Chen", "maya@brightnest.example", -2, true, "Likes the site, asked about the price."),
+      thread(60, leads[4], "Re: after-hours calls at Polar Air", "interested", "Anika Patel", "service@polarair.example", -0.02, true, "Wants to hear how the receptionist handles emergency calls."),
+      thread(61, leads[6], "Re: booking calls for Mirror Finish", "needs_changes", "Luis Moreno", "book@mirrorfinish.example", -1, false, "Needs ceramic-coating appointments routed differently."),
+      thread(62, leads[3], "Re: missed calls at Ridgeway Roofing", "maybe", "Derek Walsh", "derek@ridgeway.example", -3, false, "Asked to revisit after the current job wraps."),
+      thread(63, leads[5], "Re: AI receptionist for BrightNest", "price_objection", "Maya Chen", "maya@brightnest.example", -2, true, "Asked what is included in the $997 monthly service."),
     ],
     emails: [
-      email(70, 60, leads[4], "outbound", "I made a website for Polar Air Comfort", "Hey,\n\nI came across Polar Air Comfort and noticed you didn't have a website, so I went ahead and made one for you.", -4),
-      email(71, 60, leads[4], "inbound", "Re: I made a website for Polar Air Comfort", "This looks really good. Can you match the blue on our trucks?", -0.02),
-      email(72, 61, leads[6], "outbound", "I made a website for Mirror Finish", "Here is the preview I put together.", -5),
-      email(73, 61, leads[6], "inbound", "Re: I made a website for Mirror Finish", "I like it. Can the gallery be darker and show ceramic coatings first?", -1),
-      email(74, 63, leads[5], "outbound", "I made a website for BrightNest Cleaning", "Here is a clean website concept for BrightNest.", -5),
-      email(75, 63, leads[5], "inbound", "Re: I made a website for BrightNest Cleaning", "The site is nice but $500 is more than I expected.", -2),
+      email(70, 60, leads[4], "outbound", "after-hours calls at Polar Air", "Could an unlimited AI receptionist help Polar Air answer and book after-hours calls?", -4),
+      email(71, 60, leads[4], "inbound", "Re: after-hours calls at Polar Air", "Can it distinguish emergency calls and book regular service?", -0.02),
+      email(72, 61, leads[6], "outbound", "booking calls for Mirror Finish", "I can show how the receptionist qualifies and books detailing calls.", -5),
+      email(73, 61, leads[6], "inbound", "Re: booking calls for Mirror Finish", "Ceramic coatings need a different appointment length. Can it handle that?", -1),
+      email(74, 63, leads[5], "outbound", "AI receptionist for BrightNest", "The package is $2,500 to activate and $997 monthly for unlimited receptionist and booking service.", -5),
+      email(75, 63, leads[5], "inbound", "Re: AI receptionist for BrightNest", "What is included in the $997 monthly service?", -2),
     ],
     followUps: [
       { id: id(80), lead_id: leads[3].id, draft_id: id(51), sequence_number: 2, due_at: stamp(-1), status: "scheduled", suggested_text: "Quick check-in on the roofing preview — happy to adjust anything.", created_at: stamp(-7), updated_at: stamp(-1) },
@@ -247,6 +248,7 @@ export function createSeedData() {
       { id: id(83), lead_id: leads[2].id, sequence_number: 1, due_at: stamp(2), status: "scheduled", suggested_text: "Send the GreenLine preview if no reply.", created_at: stamp(-1), updated_at: stamp(-1) },
     ],
     approvals: [],
+    assistantConversations: [],
     agentRuns: [
       { id: id(100), agent_type: "orchestrator", title: "Outreach automation", objective: "Prepare and send up to 48 outreach emails", status: "completed", current_step: "Batch finished", progress: 100, estimated_cost: 0, context: { settings: { batchTarget: 12 }, sendConnected: false }, completed_steps: [], upcoming_steps: [], messages: [], started_at: stamp(-1, -3), completed_at: stamp(-1, -2), created_at: stamp(-1, -3), updated_at: stamp(-1, -2) },
     ],
@@ -256,8 +258,8 @@ export function createSeedData() {
     ],
     notifications: [],
     clients: [
-      { id: id(120), lead_id: leads[8].id, status: "active", package_name: "Managed AI receptionist", agreed_price: 2500, setup_fee: 2500, monthly_fee: 300, amount_received: 2500, contact_name: "Sam Ortega", email: "sam@cactuswrench.example", phone: "(940) 555-0108", purchase_date: day(-20), payment_status: "paid", onboarding_status: "complete", onboarding_progress: 100, support_status: "normal", maintenance_status: "active", primary_team_member_id: id(261), notes: "Prefers text messages.", closed_at: stamp(-22), created_at: stamp(-22), updated_at: stamp(-2) },
-      { id: id(121), lead_id: leads[7].id, status: "onboarding", package_name: "Missed-call and follow-up system", agreed_price: 4000, setup_fee: 4000, monthly_fee: 500, amount_received: 2000, contact_name: "June Park", email: "projects@blueoak.example", phone: "(469) 555-0131", purchase_date: day(-2), payment_status: "pending", onboarding_status: "in_progress", onboarding_progress: 38, support_status: "normal", maintenance_status: "inactive", primary_team_member_id: id(261), notes: "Technical discovery is pending.", closed_at: stamp(-2), created_at: stamp(-2), updated_at: stamp(-1) },
+      { id: id(120), lead_id: leads[8].id, status: "active", package_name: CONFIG.packageName, agreed_price: 2500, setup_fee: 2500, monthly_fee: 997, amount_received: 2500, contact_name: "Sam Ortega", email: "sam@cactuswrench.example", phone: "(940) 555-0108", purchase_date: day(-20), payment_status: "paid", onboarding_status: "complete", onboarding_progress: 100, support_status: "normal", maintenance_status: "active", primary_team_member_id: id(260), notes: "Prefers text messages.", closed_at: stamp(-22), created_at: stamp(-22), updated_at: stamp(-2) },
+      { id: id(121), lead_id: leads[7].id, status: "onboarding", package_name: CONFIG.packageName, agreed_price: 2500, setup_fee: 2500, monthly_fee: 997, amount_received: 2500, contact_name: "June Park", email: "projects@blueoak.example", phone: "(469) 555-0131", purchase_date: day(-2), payment_status: "paid", onboarding_status: "in_progress", onboarding_progress: 38, support_status: "normal", maintenance_status: "inactive", primary_team_member_id: id(260), notes: "Technical discovery is pending.", closed_at: stamp(-2), created_at: stamp(-2), updated_at: stamp(-1) },
     ],
     onboardingRecords: [
       { id: id(264), client_id: id(120), business: { services: ["Handyman services"], service_area: ["Denton"] }, customer_handling: { common_questions: ["What services do you offer?"] }, technical: { phone_system: "Provider unknown", calendar: "Google Calendar" }, automation_goals: { current_problem: "Missed calls", desired_outcome: "More booked estimates" }, status: "complete", progress: 100, completed_at: stamp(-12), created_at: stamp(-20), updated_at: stamp(-12) },
@@ -268,11 +270,11 @@ export function createSeedData() {
       { id: id(123), client_id: id(121), demo_id: null, name: "Blue Oak Contractors Website", domain: "", production_url: "", status: "review", config: {}, created_at: stamp(-2), updated_at: stamp(-1) },
     ],
     projects: [
-      { id: id(130), client_id: id(120), name: "Cactus Wrench AI receptionist", status: "live", automation_type: "voice agent", start_date: day(-20), target_launch: day(-10), progress: 100, testing_status: "passed", deployment_status: "production", current_version: "v12", owner_id: id(261), requirements: {}, notes: "Launched cleanly.", created_at: stamp(-20), updated_at: stamp(-10) },
+      { id: id(130), client_id: id(120), name: "Cactus Wrench AI receptionist", status: "testing", automation_type: "voice agent", start_date: day(-20), target_launch: day(10), progress: 78, testing_status: "blocked", deployment_status: "not_deployed", current_version: "v1", owner_id: id(261), requirements: {}, notes: "Voice, calendar, and telephony providers are not connected.", created_at: stamp(-20), updated_at: stamp(-1) },
       { id: id(131), client_id: id(121), name: "Blue Oak missed-call workflow", status: "building", automation_type: "workflow", start_date: day(-2), target_launch: day(8), progress: 38, testing_status: "not_started", deployment_status: "not_deployed", owner_id: id(261), requirements: {}, notes: "Waiting on CRM access.", created_at: stamp(-2), updated_at: stamp(-1) },
     ],
     automations: [
-      { id: id(266), client_id: id(120), project_id: id(130), name: "Cactus Wrench Receptionist", automation_type: "voice agent", provider: "Retell", status: "live", environment: "production", configuration: {}, tools: [], variables: {}, escalation_behavior: {}, development_version: "v13", deployed_version: "v12", usage: {}, last_error: null, last_activity_at: stamp(0, -1), created_at: stamp(-18), updated_at: stamp(0, -1) },
+      { id: id(266), client_id: id(120), project_id: id(130), name: "Cactus Wrench Receptionist", automation_type: "voice agent", provider: "Not connected", status: "testing", environment: "development", configuration: {}, tools: [], variables: {}, escalation_behavior: {}, development_version: "v1", deployed_version: null, usage: {}, last_error: "Voice, calendar, and telephony adapters are unavailable.", last_activity_at: null, created_at: stamp(-18), updated_at: stamp(-1) },
       { id: id(267), client_id: id(121), project_id: id(131), name: "Blue Oak Lead Router", automation_type: "workflow", provider: "n8n", status: "building", environment: "development", configuration: {}, tools: [], variables: {}, escalation_behavior: {}, development_version: "v1", deployed_version: null, usage: {}, last_error: null, last_activity_at: null, created_at: stamp(-2), updated_at: stamp(-1) },
     ],
     knowledgeEntries: [
@@ -283,8 +285,8 @@ export function createSeedData() {
       { id: id(133), project_id: id(131), title: "Build commercial services section", status: "pending", due_at: stamp(4), sort_order: 2, created_at: stamp(-2), updated_at: stamp(-2) },
     ],
     maintenanceSubscriptions: [
-      { id: id(140), client_id: id(120), project_id: id(130), plan_name: "Managed AI receptionist", monthly_amount: 300, status: "active", started_on: day(-18), next_charge_on: day(12), last_payment_on: day(-2), included_usage: 500, usage_unit: "minutes", overage_rate: 0.2, billing_day: 12, cancellation_status: "none", created_at: stamp(-18), updated_at: stamp(-2) },
-      { id: id(141), client_id: id(121), project_id: id(131), plan_name: "Workflow management", monthly_amount: 500, status: "inactive", started_on: day(0), next_charge_on: null, last_payment_on: null, included_usage: null, usage_unit: "runs", overage_rate: null, billing_day: null, cancellation_status: "none", created_at: stamp(-2), updated_at: stamp(-2) },
+      { id: id(140), client_id: id(120), project_id: id(130), plan_name: CONFIG.packageName, monthly_amount: 997, status: "active", started_on: day(-18), next_charge_on: day(12), last_payment_on: day(-2), included_usage: null, usage_unit: "unlimited service", overage_rate: null, billing_day: 12, cancellation_status: "none", created_at: stamp(-18), updated_at: stamp(-2) },
+      { id: id(141), client_id: id(121), project_id: id(131), plan_name: CONFIG.packageName, monthly_amount: 997, status: "inactive", started_on: day(0), next_charge_on: null, last_payment_on: null, included_usage: null, usage_unit: "unlimited service", overage_rate: null, billing_day: null, cancellation_status: "none", created_at: stamp(-2), updated_at: stamp(-2) },
     ],
     maintenanceRequests: [
       { id: id(142), subscription_id: id(140), title: "Update weekend hours", description: "Change Saturday closing time to 4 PM.", status: "completed", priority: "normal", completed_at: stamp(-3), created_at: stamp(-4), updated_at: stamp(-3) },
@@ -292,13 +294,13 @@ export function createSeedData() {
     ],
     payments: [
       payment(150, 120, "setup_fee", "Cactus Wrench Handyman", 2500, 72.5, "paid", -20),
-      payment(151, 120, "recurring_subscription", "Cactus Wrench Handyman", 300, 8.7, "available", -2, 140),
-      payment(152, 121, "setup_fee", "Blue Oak Contractors", 2000, 58, "paid", -2),
-      payment(153, 120, "recurring_subscription", "Cactus Wrench Handyman", 300, 8.7, "paid", -32, 140),
-      payment(154, 121, "setup_fee", "Blue Oak Contractors", 2000, 58, "paid", 0),
+      payment(151, 120, "recurring_subscription", "Cactus Wrench Handyman", 997, 28.91, "available", -2, 140),
+      payment(152, 121, "setup_fee", "Blue Oak Contractors", 2500, 72.5, "paid", -2),
+      payment(153, 120, "recurring_subscription", "Cactus Wrench Handyman", 997, 28.91, "paid", -32, 140),
+      payment(154, 121, "recurring_subscription", "Blue Oak Contractors", 997, 28.91, "paid", 0, 141),
     ],
     commissions: [
-      { id: id(269), salesperson_id: id(260), client_id: id(120), lead_id: leads[8].id, payment_id: id(150), collected_setup_revenue: 2500, commission_rate: 0.1, commission_min: 250, commission_max: 1000, calculated_commission: 250, status: "earned", earned_at: stamp(-20), paid_at: null, reversed_at: null, created_at: stamp(-20), updated_at: stamp(-20) },
+      { id: id(269), salesperson_id: id(260), client_id: id(120), lead_id: leads[8].id, payment_id: id(150), collected_setup_revenue: 2500, commission_rate: 0.14, commission_min: 350, commission_max: 350, calculated_commission: 350, status: "earned", earned_at: stamp(-20), paid_at: null, reversed_at: null, created_at: stamp(-20), updated_at: stamp(-20) },
     ],
     expenses: [
       expense(155, "hosting", "Cloudflare", "Preview hosting", 5, -3),
@@ -309,22 +311,22 @@ export function createSeedData() {
     ],
     aiUsage: [],
     pricingExperiments: [
-      { id: id(160), name: "$700 premium offer", offer_amount: 700, status: "active", sent_count: 18, reply_count: 5, close_count: 2, revenue: 1400, started_at: stamp(-14), ended_at: null, created_at: stamp(-14), updated_at: stamp(-1) },
-      { id: id(161), name: "$500 baseline", offer_amount: 500, status: "complete", sent_count: 42, reply_count: 14, close_count: 5, revenue: 2500, started_at: stamp(-45), ended_at: stamp(-15), created_at: stamp(-45), updated_at: stamp(-15) },
+      { id: id(160), name: "Missed-call opener", offer_amount: 2500, status: "active", sent_count: 18, reply_count: 5, close_count: 2, revenue: 5000, started_at: stamp(-14), ended_at: null, created_at: stamp(-14), updated_at: stamp(-1) },
+      { id: id(161), name: "After-hours opener", offer_amount: 2500, status: "complete", sent_count: 42, reply_count: 14, close_count: 5, revenue: 12500, started_at: stamp(-45), ended_at: stamp(-15), created_at: stamp(-45), updated_at: stamp(-15) },
     ],
     activity: [
-      activity(180, "reply_received", "Reply received", "Polar Air Comfort asked about matching their truck colours.", "system", -0.02, leads[4].id),
+      activity(180, "reply_received", "Reply received", "Polar Air Comfort asked about emergency-call handling.", "system", -0.02, leads[4].id),
       activity(181, "automation_run", "Automation finished", "3 leads processed, 0 sent (email transport not connected).", "system", -1, null),
       activity(182, "demo_viewed", "Demo viewed", "Mirror Finish opened the demo twice.", "system", -1.2, leads[6].id),
-      activity(183, "payment", "Payment received", "$400 deposit recorded for Blue Oak.", "system", -0.2, leads[7].id, id(121)),
+      activity(183, "payment", "Activation payment received", "$2,500 activation payment recorded for Blue Oak.", "system", -0.2, leads[7].id, id(121)),
       activity(184, "lead_discovery", "Lead search finished", "184 businesses scanned, 27 kept.", "system", -1, null),
       activity(185, "email_sent", "Outreach sent", "Ridgeway Roofing outreach sent with demo.", "user", -7, leads[3].id),
       activity(186, "demo_created", "Demo built", "GreenLine Landscaping · Evergreen", "user", -5, leads[2].id),
     ],
     tasks: [
-      task(190, "Reply to Polar Air about truck colours", "urgent", stamp(0, 1), "pending", leads[4].id),
+      task(190, "Reply to Polar Air about emergency-call rules", "urgent", stamp(0, 1), "pending", leads[4].id),
       task(191, "Collect Blue Oak photos", "high", stamp(2), "pending", null, id(121), id(131)),
-      task(192, "Decide on BrightNest pricing reply", "normal", stamp(-1), "pending", leads[5].id),
+      task(192, "Explain the BrightNest package", "normal", stamp(-1), "pending", leads[5].id),
       task(193, "Archive dead prospects", "low", stamp(-3), "completed", null),
     ],
     calendarEvents: [
@@ -339,11 +341,11 @@ export function createSeedData() {
       note(213, "Launch checklist", "procedure", "Payment recorded\nDomain access confirmed\nMobile QA\nForms tested\nSSL healthy", ["launch"], false, -9),
     ],
     deployments: [
-      { id: id(220), client_id: id(120), automation_id: id(266), project_id: id(130), provider: "Retell", environment: "production", version: "v12", status: "production", rollback_version: "v11", deployed_at: stamp(-2), notes: "Limited launch promoted after review.", created_at: stamp(-12), updated_at: stamp(-2) },
+      { id: id(220), client_id: id(120), automation_id: id(266), project_id: id(130), provider: "Unconfigured", environment: "development", version: "v1", status: "not_deployed", rollback_version: null, deployed_at: null, notes: "No real voice, calendar, or telephony provider is connected.", created_at: stamp(-12), updated_at: stamp(-1) },
       { id: id(221), client_id: id(121), automation_id: id(267), project_id: id(131), provider: "n8n", environment: "staging", version: "v1", status: "failed", rollback_version: null, deployed_at: stamp(-1), notes: "Webhook connection failed in staging.", hosting_health: "error", created_at: stamp(-1), updated_at: stamp(-1) },
     ],
     settings: [
-      { id: id(230), key: "workspace", value: { default_site_price: CONFIG.defaultPrice, maintenance_price: 50, currency: "USD", timezone: "America/Chicago", preview_domain: CONFIG.previewDomain }, created_at: stamp(-30), updated_at: stamp(-1) },
+      { id: id(230), key: "workspace", value: { package_name: CONFIG.packageName, default_setup_fee: 2500, default_monthly_fee: 997, commission_amount: 350, currency: "USD", timezone: "America/Chicago", preview_domain: CONFIG.previewDomain }, created_at: stamp(-30), updated_at: stamp(-1) },
     ],
     integrations: [
       integration(240, "openscout", "connected", -0.01),
@@ -358,14 +360,14 @@ export function createSeedData() {
   };
 }
 
-function draft(n, leadRecord, status, price, days) {
+function draft(n, leadRecord, status, _price, days) {
   const link = previewUrl(slugify(`${leadRecord.business_name}-${leadRecord.city}`), CONFIG.previewDomain);
   return {
     id: id(n),
     lead_id: leadRecord.id,
     kind: "initial",
-    subject: `I made a website for ${leadRecord.business_name}`,
-    body: `Hey,\n\nI came across ${leadRecord.business_name} and noticed you didn't have a website, so I went ahead and made one for you.\n\nHere's the preview: ${link}\n\nIf you like it, I can customize anything you want, connect your domain, and get the full site live.\n\nI charge a one-time fee of $${price}.\nIf you don't like it, you don't pay.\n\nInterested?\n\n${CONFIG.owner}`,
+    subject: `missed calls at ${leadRecord.business_name}`,
+    body: `Hey,\n\nI help local service businesses answer every call with an unlimited AI receptionist that qualifies callers and books appointments.\n\nI prepared this supporting demo for ${leadRecord.business_name}: ${link}\n\nThe package is $2,500 to activate and $997 per month for unlimited receptionist and appointment-booking service.\n\nInterested in a short walkthrough?\n\n${CONFIG.owner}`,
     status,
     scheduled_for: null,
     sent_at: status === "sent" ? stamp(days) : null,

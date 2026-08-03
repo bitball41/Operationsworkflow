@@ -5,7 +5,7 @@
  * the composer nor automation needs a model to produce it. Sending is a real
  * integration boundary that refuses to pretend when Outlook is not connected.
  */
-import { FOLLOW_UP_BODY, OUTREACH_BODY, OUTREACH_SUBJECT } from "../../config.js";
+import { CONFIG, FOLLOW_UP_BODY, OUTREACH_BODY, OUTREACH_SUBJECT } from "../../config.js";
 import { fillTemplate } from "../../core/utils.js";
 import { NotConnectedError, isConnected } from "../integrations.js";
 import { ApiError, replyToOutlookMessage, sendOutlookEmail } from "../api.js";
@@ -14,7 +14,7 @@ export function draftOutreach({ lead, demo, price, owner }) {
   const values = {
     business: lead?.business_name || "your business",
     link: demo?.preview_url || "[preview link]",
-    price: Number(price) || 500,
+    price: Number(price) || CONFIG.defaultSetupFee,
     owner: owner || "Connor",
   };
   return {
@@ -27,7 +27,7 @@ export function draftFollowUp({ lead, demo, price, owner, attempt = 2 }) {
   const values = {
     business: lead?.business_name || "your business",
     link: demo?.preview_url || "[preview link]",
-    price: Number(price) || 500,
+    price: Number(price) || CONFIG.defaultSetupFee,
     owner: owner || "Connor",
   };
   return {

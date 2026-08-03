@@ -15,6 +15,8 @@ const WORKER_BACKED = Object.freeze({
   outlook: "outlook",
   anthropic: "anthropic",
   openai: "openai",
+  kimi: "kimi",
+  qwen: "qwen",
   whop: "whop",
   cloudflare: "cloudflare",
   research: "research",
@@ -70,6 +72,7 @@ export function integrationList() {
     let status = record?.status || definition.status;
     if (definition.provider === "supabase") status = getState().storage === "cloud" ? "connected" : "not_connected";
     if (definition.provider === "openscout") status = "connected";
+    if (definition.available === false) status = "not_connected";
     /* A key held by the Worker is the only thing that makes these real. It
        overrides any stored record, in both directions — a key that was removed
        from the Worker must not leave a stale "connected" row behind. */

@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const {
-  MODELS, EFFORT_LEVELS, DEFAULT_MODEL_ID, DEFAULT_EFFORT,
-  getModel, modelsForProvider, resolveModel, costOf, estimatedTurnCost, formatPerMTok,
+  MODELS, EFFORT_LEVELS, VERIFIED_MODEL_DEFAULTS, DEFAULT_MODEL_ID, DEFAULT_EFFORT,
+  getModel, modelDefinition, modelsForProvider, resolveModel, costOf, formatPerMTok,
 } = await import("../js/data/models.js");
 
 test("every model is well formed", () => {
@@ -22,12 +22,13 @@ test("every model is well formed", () => {
   assert.equal(new Set(MODELS.map((m) => m.id)).size, MODELS.length, "ids are unique");
 });
 
-test("the default model exists and is not the most expensive one", () => {
+test("the verified first-class provider defaults resolve", () => {
   const fallback = getModel(DEFAULT_MODEL_ID);
   assert.ok(fallback, "default resolves");
-  const priced = MODELS.filter((m) => m.outputPerMTok);
-  const dearest = Math.max(...priced.map((m) => m.outputPerMTok));
-  assert.ok(fallback.outputPerMTok < dearest, "the default is not the priciest option");
+  assert.equal(VERIFIED_MODEL_DEFAULTS.anthropic, "claude-sonnet-5");
+  assert.equal(VERIFIED_MODEL_DEFAULTS.openai, "gpt-5.6-sol");
+  assert.equal(VERIFIED_MODEL_DEFAULTS.kimi, "", "compatible providers require deployed configuration");
+  assert.equal(VERIFIED_MODEL_DEFAULTS.qwen, "", "regional Qwen configuration is not guessed");
   assert.ok(EFFORT_LEVELS.some((level) => level.id === DEFAULT_EFFORT), "default effort is a real level");
 });
 
@@ -39,26 +40,27 @@ test("cost is computed from real token counts", () => {
   assert.equal(costOf("nonexistent-model", { input: 1_000_000 }), 0, "unknown models cost nothing rather than guessing");
 });
 
-test("a cheaper model really is cheaper for the same turn", () => {
-  assert.ok(estimatedTurnCost("claude-haiku-4-5") < estimatedTurnCost("claude-sonnet-5"));
-  assert.ok(estimatedTurnCost("claude-sonnet-5") < estimatedTurnCost("claude-opus-5"));
-});
-
-test("unpriced models report as untracked instead of as free", () => {
+test("verified OpenAI pricing is tracked and dynamic provider pricing is not guessed", () => {
   const openai = modelsForProvider("openai")[0];
   assert.ok(openai, "there is at least one OpenAI model");
-  assert.equal(formatPerMTok(openai), "not tracked");
-  assert.match(openai.note, /not tracked/i);
+  assert.equal(formatPerMTok(openai), "$5/$30 per million tokens");
+  assert.equal(costOf(openai.id, { input: 1_000_000, output: 1_000_000 }), 35);
+  assert.equal(formatPerMTok(modelDefinition("deployment-kimi-model", "kimi")), "price not tracked");
 });
 
 test("resolveModel never hands one provider another provider's model", () => {
-  assert.equal(resolveModel("claude-opus-5", "anthropic").id, "claude-opus-5");
-  assert.equal(resolveModel("claude-opus-5", "openai").provider, "openai", "an Anthropic id cannot leak to OpenAI");
+  assert.equal(resolveModel("claude-sonnet-5", "anthropic").id, "claude-sonnet-5");
+  assert.equal(resolveModel("claude-sonnet-5", "openai").id, "gpt-5.6-sol", "an Anthropic id cannot leak to OpenAI");
   assert.equal(resolveModel("", "anthropic").id, DEFAULT_MODEL_ID);
   assert.equal(resolveModel("made-up", "anthropic").id, DEFAULT_MODEL_ID);
 });
 
-test("models without an effort control are flagged so the worker omits it", () => {
-  assert.equal(getModel("claude-haiku-4-5").supportsEffort, false);
+test("Worker-configured compatible models stay provider-scoped and omit effort", () => {
+  const kimi = modelDefinition("deployment-kimi-model", "kimi", { tools: true, effort: false });
+  const qwen = modelDefinition("deployment-qwen-model", "qwen", { tools: true, effort: false });
+  assert.equal(kimi.provider, "kimi");
+  assert.equal(qwen.provider, "qwen");
+  assert.equal(kimi.supportsEffort, false);
+  assert.equal(qwen.supportsEffort, false);
   assert.equal(getModel("claude-sonnet-5").supportsEffort, true);
 });
