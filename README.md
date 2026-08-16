@@ -239,6 +239,12 @@ never receive half of a deployment. The public URL is
 `https://demos.conno.fun/<client-number>/`; the Worker verifies that the demo
 belongs to the configured Operations workspace before accepting an upload.
 
+The demo host root, `https://demos.conno.fun/`, is a custom ElevenLabs voice
+demo for Michael. It uses the official `@elevenlabs/client` browser SDK and is
+built locally with `npm run build:demo`; it does not use the ElevenLabs widget,
+an iframe, or a shareable page. Host routing exposes only the root interface and
+its two static assets, while the numbered R2 demo URLs above remain unchanged.
+
 One-time Cloudflare setup:
 
 ```bash

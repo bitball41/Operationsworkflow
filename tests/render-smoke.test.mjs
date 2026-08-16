@@ -39,6 +39,28 @@ const business = await import("../js/pages/business.js");
 const workspace = await import("../js/pages/workspace.js");
 const system = await import("../js/pages/system.js");
 const agency = await import("../js/pages/agency.js");
+
+test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
+  const html = readFileSync(new URL("../voice-demo/index.html", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../voice-demo/src/app.js", import.meta.url), "utf8");
+  const bundle = readFileSync(new URL("../voice-demo/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /from "@elevenlabs\/client"/);
+  assert.match(source, /agent_0601m03x56kfem6aewpz3axj7shz/);
+  assert.match(source, /getInputByteFrequencyData/);
+  assert.match(source, /getOutputByteFrequencyData/);
+  assert.match(source, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(source, /setMicMuted/);
+  assert.match(source, /endSession/);
+  for (const state of ["connecting", "listening", "speaking", "muted", "error"]) {
+    assert.match(source, new RegExp(`${state}: \\{`));
+  }
+  assert.match(html, /id="start-demo"/);
+  assert.match(html, /id="mute-toggle"/);
+  assert.match(html, /id="end-demo"/);
+  assert.doesNotMatch(html, /<iframe|elevenlabs-convai|convai-widget/i);
+  assert.ok(bundle.length > 100_000, "the local ElevenLabs browser SDK bundle should be built");
+});
 const aiProvider = await import("../js/services/ai/provider.js");
 
 setData(createSeedData(), { silent: true });
