@@ -5,6 +5,10 @@
   "compatibility_date": "2026-07-26",
   "workers_dev": false,
   "preview_urls": false,
+  "build": {
+    "command": "npm run build:demo",
+    "watch_dir": ["scripts/build-voice-demo.mjs", "voice-demo/src", "voice-demo/index.html", "voice-demo/style.css"]
+  },
   "assets": {
     "directory": ".",
     "binding": "ASSETS",

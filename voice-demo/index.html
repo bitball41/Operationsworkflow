@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0d0d10">
+    <meta name="description" content="Talk with Michael, Conno Systems' AI voice receptionist.">
+    <title>Meet Michael | Conno Systems</title>
+    <link rel="stylesheet" href="/voice-demo/style.css">
+  </head>
+  <body>
+    <div class="ambient ambient--one" aria-hidden="true"></div>
+    <div class="ambient ambient--two" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Conno Systems voice demo home">
+        <span class="brand__mark" aria-hidden="true">C</span>
+        <span class="brand__name">Conno <span>Systems</span></span>
+      </a>
+      <div class="live-chip"><span aria-hidden="true"></span> Live voice demo</div>
+    </header>
+
+    <main class="demo-layout">
+      <section class="intro" aria-labelledby="demo-title">
+        <p class="eyebrow">AI voice receptionist</p>
+        <h1 id="demo-title">Meet Michael.<br><span>Your calls, handled.</span></h1>
+        <p class="intro__copy">
+          Experience the natural, responsive voice your customers hear when
+          Michael answers. Speak normally, ask questions, and interrupt anytime.
+        </p>
+        <ul class="capabilities" aria-label="Demo capabilities">
+          <li><span aria-hidden="true"></span> Natural conversation</li>
+          <li><span aria-hidden="true"></span> Instant response</li>
+          <li><span aria-hidden="true"></span> Available around the clock</li>
+        </ul>
+      </section>
+
+      <section id="call-panel" class="call-panel" data-state="idle" aria-labelledby="agent-name">
+        <div class="agent-row">
+          <div class="agent-avatar" aria-hidden="true">
+            <span>M</span>
+            <i></i>
+          </div>
+          <div class="agent-identity">
+            <h2 id="agent-name">Michael</h2>
+            <p>AI Voice Receptionist</p>
+          </div>
+          <div class="agent-tag">Demo</div>
+        </div>
+
+        <div class="visualizer" aria-hidden="true">
+          <div class="visualizer__ring visualizer__ring--outer"></div>
+          <div class="visualizer__ring visualizer__ring--inner"></div>
+          <canvas id="audio-visualizer"></canvas>
+          <div class="visualizer__monogram">M</div>
+        </div>
+
+        <div class="session-status" aria-live="polite" aria-atomic="true">
+          <div id="status-badge" class="status-badge"><span aria-hidden="true"></span> Ready</div>
+          <h3 id="status-title">Say hello to Michael</h3>
+          <p id="status-copy">Start the demo, then speak naturally. He’ll take it from there.</p>
+        </div>
+
+        <div id="error-message" class="error-message" role="alert" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.7 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/></svg>
+          <p id="error-copy"></p>
+        </div>
+
+        <div class="actions">
+          <button id="start-demo" class="button button--start" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2m7 9v3m-4 0h8"/></svg>
+            <span>Start Demo</span>
+          </button>
+
+          <div id="session-controls" class="session-controls" hidden>
+            <button id="mute-toggle" class="button button--control" type="button" aria-pressed="false">
+              <svg class="icon-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2m7 9v3m-4 0h8"/></svg>
+              <svg class="icon-mic-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 2 20 20M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.8-1M17 17a7 7 0 0 1-12-5v-2m14 0v2c0 1-.2 2-.6 2.8M12 19v3m-4 0h8"/></svg>
+              <span>Mute</span>
+            </button>
+            <button id="end-demo" class="button button--end" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 15.5a12.2 12.2 0 0 1 15 0l1.1-2.1a2 2 0 0 0-.7-2.6 14.7 14.7 0 0 0-15.8 0 2 2 0 0 0-.7 2.6l1.1 2.1Z"/></svg>
+              <span>End call</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="permission-note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          Your browser will ask for microphone access. Audio is used only for this live conversation.
+        </p>
+
+        <noscript><p class="noscript">JavaScript is required to run the live voice demo.</p></noscript>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>Conno Systems</span>
+      <span class="site-footer__divider" aria-hidden="true"></span>
+      <span>AI that answers when opportunity calls.</span>
+    </footer>
+
+    <script type="module" src="/voice-demo/app.js"></script>
+  </body>
+</html>

@@ -41,6 +41,7 @@ import {
 } from "./browser.js";
 import { demoHostingStatus, handleDemoPublish, servePublicDemo } from "./demos.js";
 import { handleMcp } from "./mcp.js";
+import { serveVoiceAgentDemo } from "./voice-demo.js";
 import { handleWhopWebhook, whopWebhookConfigured } from "./whop.js";
 import {
   handleWorkspaceAssetDelete,
@@ -402,9 +403,11 @@ export default {
       return handleWhopWebhook(request, env);
     }
 
-    /* Demos are public. Restrict this hostname to numbered R2-backed sites so
-       a public Access exemption can never expose the dashboard or its APIs. */
+    /* Demos are public. Restrict this hostname to the dedicated voice demo and
+       numbered R2 sites so it can never expose the dashboard or its APIs. */
     if (isPublicDemoHost(url, env)) {
+      const voiceDemo = await serveVoiceAgentDemo(request, env);
+      if (voiceDemo) return voiceDemo;
       const demo = await servePublicDemo(request, env);
       return demo || new Response("Not found", {
         status: 404,

@@ -367,14 +367,40 @@ test("business presence preserves an email when the website search is inconclusi
   assert.equal(result.email.address, "hello@uncertainelectric.example");
 });
 
-test("the public demo hostname cannot reach the dashboard or Worker APIs", async () => {
+test("the public demo hostname serves the voice demo root without exposing dashboard APIs", async () => {
+  const assetRequests = [];
   const env = {
     DEMO_DOMAIN: "demos.conno.fun",
     DEMO_SITES: { get: async () => null },
-    ASSETS: { fetch: async () => new Response("dashboard", { status: 200 }) },
+    ASSETS: {
+      fetch: async (request) => {
+        assetRequests.push(new URL(request.url).pathname);
+        return new Response("<!doctype html><title>Michael</title>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    },
   };
 
-  for (const path of ["/", "/api/status", "/mcp", "/anything-else"]) {
+  const root = await worker.fetch(new Request("https://demos.conno.fun/"), env);
+  assert.equal(root.status, 200);
+  assert.equal(await root.text(), "<!doctype html><title>Michael</title>");
+  assert.deepEqual(assetRequests, ["/voice-demo/index.html"]);
+  assert.match(root.headers.get("permissions-policy"), /microphone=\(self\)/);
+  assert.match(root.headers.get("content-security-policy"), /api\.elevenlabs\.io/);
+
+  const style = await worker.fetch(new Request("https://demos.conno.fun/voice-demo/style.css"), env);
+  const script = await worker.fetch(new Request("https://demos.conno.fun/voice-demo/app.js"), env);
+  assert.equal(style.headers.get("content-type"), "text/css; charset=utf-8");
+  assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.deepEqual(assetRequests, [
+    "/voice-demo/index.html",
+    "/voice-demo/style.css",
+    "/voice-demo/app.js",
+  ]);
+
+  for (const path of ["/api/status", "/mcp", "/anything-else", "/voice-demo/src/app.js"]) {
     const response = await worker.fetch(new Request(`https://demos.conno.fun${path}`), env);
     assert.equal(response.status, 404, `${path} must not fall through to the dashboard or an API`);
   }
