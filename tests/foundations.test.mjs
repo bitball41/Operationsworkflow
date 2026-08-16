@@ -374,7 +374,14 @@ test("the public demo hostname serves the voice demo root without exposing dashb
     DEMO_SITES: { get: async () => null },
     ASSETS: {
       fetch: async (request) => {
-        assetRequests.push(new URL(request.url).pathname);
+        const pathname = new URL(request.url).pathname;
+        assetRequests.push(pathname);
+        if (pathname === "/voice-demo/index.html") {
+          return new Response(null, {
+            status: 307,
+            headers: { location: "/voice-demo/" },
+          });
+        }
         return new Response("<!doctype html><title>Michael</title>", {
           status: 200,
           headers: { "content-type": "text/html" },
@@ -386,16 +393,21 @@ test("the public demo hostname serves the voice demo root without exposing dashb
   const root = await worker.fetch(new Request("https://demos.conno.fun/"), env);
   assert.equal(root.status, 200);
   assert.equal(await root.text(), "<!doctype html><title>Michael</title>");
-  assert.deepEqual(assetRequests, ["/voice-demo/index.html"]);
+  assert.deepEqual(assetRequests, ["/voice-demo/"]);
   assert.match(root.headers.get("permissions-policy"), /microphone=\(self\)/);
   assert.match(root.headers.get("content-security-policy"), /api\.elevenlabs\.io/);
+
+  const cleanPath = await worker.fetch(new Request("https://demos.conno.fun/voice-demo/"), env);
+  assert.equal(cleanPath.status, 200);
+  assert.equal(await cleanPath.text(), "<!doctype html><title>Michael</title>");
 
   const style = await worker.fetch(new Request("https://demos.conno.fun/voice-demo/style.css"), env);
   const script = await worker.fetch(new Request("https://demos.conno.fun/voice-demo/app.js"), env);
   assert.equal(style.headers.get("content-type"), "text/css; charset=utf-8");
   assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.deepEqual(assetRequests, [
-    "/voice-demo/index.html",
+    "/voice-demo/",
+    "/voice-demo/",
     "/voice-demo/style.css",
     "/voice-demo/app.js",
   ]);
