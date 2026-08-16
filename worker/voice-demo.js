@@ -6,7 +6,11 @@
  * R2-backed customer demos in demos.js.
  */
 const VOICE_DEMO_ASSETS = Object.freeze({
-  "/": { path: "/voice-demo/index.html", type: "text/html; charset=utf-8" },
+  // Fetch the directory URL rather than index.html. Cloudflare Assets
+  // canonicalizes index.html to /voice-demo/, so requesting the physical file
+  // here would leak a redirect back through the public-host router.
+  "/": { path: "/voice-demo/", type: "text/html; charset=utf-8" },
+  "/voice-demo/": { path: "/voice-demo/", type: "text/html; charset=utf-8" },
   "/voice-demo/style.css": { path: "/voice-demo/style.css", type: "text/css; charset=utf-8" },
   "/voice-demo/app.js": { path: "/voice-demo/app.js", type: "text/javascript; charset=utf-8" },
 });
