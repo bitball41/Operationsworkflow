@@ -62,7 +62,7 @@
   gap: 6px;
   background: var(--bg-raised);
   border-right: 1px solid var(--line);
-  box-shadow: 6px 0 0 rgba(42, 23, 34, 0.10);
+  box-shadow: 6px 0 0 rgba(0, 0, 0, 0.38);
   padding: calc(12px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
   z-index: 40;
 }
@@ -247,7 +247,7 @@
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
-  box-shadow: 0 4px 0 rgba(42, 23, 34, 0.08);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.28);
 }
 
 .topbar h1 {

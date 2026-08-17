@@ -62,6 +62,18 @@ test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   assert.doesNotMatch(html, /<iframe|elevenlabs-convai|convai-widget/i);
   assert.ok(bundle.length > 100_000, "the local ElevenLabs browser SDK bundle should be built");
 });
+
+test("Operations owns the dark brand treatment while the public voice demo stays light", () => {
+  const operationsTokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
+  const demoStyles = readFileSync(new URL("../voice-demo/style.css", import.meta.url), "utf8");
+
+  assert.match(operationsTokens, /color-scheme:\s*dark/);
+  assert.match(operationsTokens, /--bg:\s*#050506/);
+  assert.match(operationsTokens, /--accent:\s*#ff4d8d/);
+  assert.match(demoStyles, /color-scheme:\s*light/);
+  assert.match(demoStyles, /\.call-panel\s*\{[\s\S]*background:\s*linear-gradient\(155deg,\s*#fffdfd,\s*var\(--surface\)\)/);
+  assert.doesNotMatch(demoStyles, /\.call-panel\s*\{[\s\S]*rgba\(20,\s*20,\s*26/);
+});
 const aiProvider = await import("../js/services/ai/provider.js");
 
 setData(createSeedData(), { silent: true });

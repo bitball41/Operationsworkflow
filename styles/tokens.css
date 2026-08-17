@@ -1,27 +1,27 @@
-/* Conno.fun brand system, adapted for a dense private operations workspace. */
+/* Conno.fun brand system, adapted as the pitch-black private operations workspace. */
 :root {
-  color-scheme: light;
-  --bg: #ffd6e7;
-  --bg-raised: #fff8fb;
-  --surface: #ffe9f1;
-  --surface-2: #ffd0e1;
-  --surface-3: #ffbed8;
-  --line-soft: rgba(42, 23, 34, 0.16);
-  --line: #2a1722;
-  --line-strong: #2a1722;
-  --text: #2a1722;
-  --text-2: #6b3f55;
-  --text-3: #765166;
+  color-scheme: dark;
+  --bg: #050506;
+  --bg-raised: #0a0a0c;
+  --surface: #101014;
+  --surface-2: #18181d;
+  --surface-3: #23232a;
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --line: #303038;
+  --line-strong: #484851;
+  --text: #fff8fb;
+  --text-2: #c7bbc1;
+  --text-3: #94888f;
   --accent: #ff4d8d;
-  --accent-text: #8c1240;
-  --accent-quiet: rgba(255, 77, 141, 0.18);
-  --accent-line: rgba(226, 58, 118, 0.75);
-  --green: #176a49;
-  --green-quiet: rgba(23, 106, 73, 0.13);
-  --amber: #805000;
-  --amber-quiet: rgba(128, 80, 0, 0.13);
-  --red: #a5223b;
-  --red-quiet: rgba(165, 34, 59, 0.13);
+  --accent-text: #ff8ab5;
+  --accent-quiet: rgba(255, 77, 141, 0.14);
+  --accent-line: rgba(255, 77, 141, 0.7);
+  --green: #58d69b;
+  --green-quiet: rgba(88, 214, 155, 0.12);
+  --amber: #f0b85e;
+  --amber-quiet: rgba(240, 184, 94, 0.12);
+  --red: #ff8c86;
+  --red-quiet: rgba(255, 140, 134, 0.12);
   --radius-sm: 10px;
   --radius: 14px;
   --radius-lg: 18px;
@@ -33,9 +33,9 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
   --focus-ring: 0 0 0 4px var(--accent-quiet);
-  --shadow-sm: 0 5px 0 rgba(42, 23, 34, 0.12);
-  --shadow: 0 8px 0 rgba(42, 23, 34, 0.16);
-  --shadow-lg: 0 12px 0 rgba(42, 23, 34, 0.18);
+  --shadow-sm: 0 5px 0 rgba(0, 0, 0, 0.72);
+  --shadow: 0 9px 0 rgba(0, 0, 0, 0.78);
+  --shadow-lg: 0 14px 0 rgba(0, 0, 0, 0.82);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -44,9 +44,9 @@
 
 @media (prefers-contrast: more) {
   :root {
-    --text-2: #4d2b3d;
-    --text-3: #563245;
-    --line-soft: rgba(42, 23, 34, 0.35);
+    --text-2: #eee6ea;
+    --text-3: #c7bbc1;
+    --line-soft: rgba(255, 255, 255, 0.22);
   }
 }
 
