@@ -30,8 +30,11 @@ admits the request, the Worker maps the verified email claim to an active
 `team_members` row in the one configured Operations workspace. Unknown,
 inactive and email-less identities fail closed. The mapping is an employee
 record, not an application account.
-There is no sample data anywhere in the application, so every lead, email,
-number and statistic on screen comes from the database.
+Production totals come from real records. One clearly labeled, idempotent
+`Cactus Wrench Roofing` example client is included to demonstrate the complete
+client operating flow without pretending it is revenue, a deployed phone line,
+or a completed provider action. Reserved `.example` contact data and zero-dollar
+payment fields keep it visibly separate from real business activity.
 The realistic workspace used to exercise the pages lives in
 `tests/fixtures/sample-workspace.js` and is reachable only from the tests.
 
@@ -101,10 +104,11 @@ $2,500 activation fee earns the assigned salesperson one fixed $350 commission.
 Partial activation payments do not earn early or duplicate commissions, and
 recurring revenue never earns one.
 
-Automation Studio is a management layer. It stores configuration, prompts,
-provider references, versions, usage metadata, and errors without claiming to
-execute Retell, Vapi, n8n, or another provider. Provider adapters are activated
-only when their server-side credentials and contracts exist.
+Automation Studio stores configuration, prompts, provider references, versions,
+usage metadata, and errors. ElevenLabs is the first live management adapter:
+owners can create, edit, sync, and remove agents through the server-only Edge
+Function boundary. Other providers remain management records until an equally
+real adapter exists.
 
 ## Legacy website outreach
 
@@ -188,8 +192,7 @@ With no key on the worker, anything that is not a known command is not answered
 — the assistant says so instead of inventing a reply.
 
 Conversation history is provider-neutral and persistent. The voice-agency
-release migration intentionally deletes all previously saved conversations once
-so obsolete website-sales instructions cannot return. New conversations are
+release preserves existing assistant conversations while new conversations are
 saved in the workspace-scoped `assistant_conversations` table and can be
 deleted from the assistant toolbar. Large tool payloads are trimmed before they
 enter the transcript.
@@ -329,6 +332,8 @@ a result until credentials exist:
 | Model provider | `services/ai/provider.js` → `runAssistantTurn` | worker |
 | Google Maps | `services/openscout/adapter.js` → `resolveMapsKey` | worker |
 | Whop | `https://hooks.conno.fun/whop` → signed Worker webhook → Supabase receipt RPC | Worker secrets |
+| ElevenLabs agents | owner-only `/api/elevenlabs/*` → scoped Supabase Edge Function → ElevenLabs Agents API | Edge Function secrets |
+| ElevenLabs calls | signed post-call webhook → raw receipt → normalized CRM conversation | Edge Function HMAC secret |
 | Outlook (send) | `services/email/outreach.js` → `sendEmail` | worker OAuth + Graph |
 | Outlook (inbox) | `services/email/inbox.js` → `syncInbox` | worker OAuth + Graph |
 | Cloudflare hosting | `services/sites/publish.js` → R2 versioned bundles | R2 binding |
@@ -337,9 +342,9 @@ a result until credentials exist:
 
 ## API keys
 
-Every key lives in the Cloudflare Worker (`worker/index.js`) as a secret. The
-browser never receives one; it calls `/api/...` on the same origin and the worker
-adds the credential on the way out.
+The browser never receives a privileged key. Most providers use Cloudflare
+Worker secrets; ElevenLabs uses Supabase Edge Function secrets so agent actions
+and signed post-call processing stay inside the database's server boundary.
 
 ```bash
 npx wrangler secret put ANTHROPIC_API_KEY
@@ -348,12 +353,28 @@ npx wrangler secret put KIMI_API_KEY
 npx wrangler secret put QWEN_API_KEY
 npx wrangler secret put WHOP_WEBHOOK_SECRET
 npx wrangler secret put SUPABASE_SECRET_KEY
+npx wrangler secret put OPERATIONS_EDGE_SHARED_SECRET
 npx wrangler secret put GOOGLE_MAPS_API_KEY
 npx wrangler secret put MICROSOFT_CLIENT_ID
 npx wrangler secret put MICROSOFT_CLIENT_SECRET
 npx wrangler secret put OUTLOOK_TOKEN_ENCRYPTION_KEY
 npx wrangler secret put MCP_API_TOKEN
 ```
+
+Set the ElevenLabs secrets on the linked Supabase project, never in `.env`
+files committed to the repository:
+
+```bash
+supabase secrets set ELEVENLABS_API_KEY=... ELEVENLABS_WEBHOOK_SECRET=... OPERATIONS_EDGE_SHARED_SECRET=...
+supabase functions deploy elevenlabs-agents --no-verify-jwt
+supabase functions deploy elevenlabs-webhook --no-verify-jwt
+```
+
+Use the same strong, randomly generated `OPERATIONS_EDGE_SHARED_SECRET` in
+Cloudflare and Supabase. `elevenlabs-agents` performs its own server-secret authentication after the
+Access-protected Worker verifies an owner. `elevenlabs-webhook` accepts only a
+fresh, valid ElevenLabs HMAC signature. The public JWT check is intentionally
+disabled for both functions because neither endpoint uses Supabase Auth.
 
 `wrangler.jsonc` pins the non-secret workspace UUID, Cloudflare Access team
 domain, and application audience. It also disables `workers.dev` and preview
@@ -393,6 +414,7 @@ Worker can use the configured model.
 | `POST/PATCH/DELETE /api/workspace/records/...` | workspace-scoped database changes |
 | `/api/workspace/assets...` | private storage upload, signing, download and delete |
 | `GET /api/status` | live provider/model health, never key values |
+| `GET/POST/PATCH/DELETE /api/elevenlabs/*` | owner-only scoped agent health, sync and management |
 | `POST /api/outlook/connect` | begin Microsoft OAuth for the workspace |
 | `GET /api/outlook/callback` | validate OAuth state and store encrypted tokens |
 | `POST /api/outlook/send` | send one message through Microsoft Graph |
@@ -424,8 +446,10 @@ migrations, tests and `.dev.vars` are excluded from the static assets in
 Migrations are in `supabase/migrations/` and are applied in timestamp order.
 The Access-only workspace and AI-agency core migrations are prerequisites. The
 forward-only `20260803124525_voice_agent_agency_dashboard.sql` migration sets
-the single-package defaults, fixes activation commissions, and clears obsolete
-assistant history. Applied migration files must not be edited.
+the single-package defaults and fixes activation commissions without deleting
+assistant history. `20260817032433_elevenlabs_client_os.sql` adds the scoped
+agent/call tables and the idempotent example client OS. Applied migration files
+must not be edited.
 
 Supabase Auth is not used by the application. There is no publishable key in
 the browser and no direct Data API or Storage call from browser code. RLS stays
@@ -437,14 +461,18 @@ Safe activation order:
 
 1. Back up and verify the production migration history.
 2. Apply `20260803124525_voice_agent_agency_dashboard.sql`.
-3. Give every allowed human an `active` `team_members` row whose
+3. Apply `20260817032433_elevenlabs_client_os.sql`, set both ElevenLabs Edge
+   secrets, and deploy `elevenlabs-agents` plus `elevenlabs-webhook`.
+4. Register the post-call webhook URL for transcript events only, using HMAC,
+   and run one unrelated-phone test call before calling an agent deployed.
+5. Give every allowed human an `active` `team_members` row whose
    `access_email` exactly matches the verified Cloudflare Access email claim.
    Keep unknown and inactive test identities available for denial checks.
-4. Configure only the provider keys, model ids and regional base URLs that are
+6. Configure only the provider keys, model ids and regional base URLs that are
    actually available to the Worker.
-5. Deploy the Worker and verify owner, salesperson, unknown, inactive and
+7. Deploy the Worker and verify owner, salesperson, unknown, inactive and
    unauthorized-write paths before enabling employee use.
-6. Verify desktop/mobile rendering, workspace reads, one scoped salesperson
+8. Verify desktop/mobile rendering, workspace reads, one scoped salesperson
    write, one owner-only denial, private assets, Outlook, MCP, demos and Whop.
 
 The Whop receipt table is RLS-protected, has no browser grants, and can only be

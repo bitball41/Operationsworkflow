@@ -33,6 +33,8 @@ import {
   openPricingForm,
   openProjectForm,
   openAutomationRecordForm,
+  openVoiceAgentForm,
+  openVoiceConversation,
   openCommissionForm,
   openStageForm,
   openSubscriptionForm,
@@ -57,7 +59,16 @@ import {
 } from "./services/ai/history.js";
 import { activeModel, providerReady } from "./services/ai/provider.js";
 import { formatPerMTok } from "./data/models.js";
-import { connectOutlook, disconnectOutlook, fetchServiceStatus } from "./services/api.js";
+import {
+  connectOutlook,
+  createElevenLabsAgent,
+  deleteElevenLabsAgent,
+  disconnectOutlook,
+  fetchElevenLabsVoices,
+  fetchServiceStatus,
+  syncElevenLabsAgents,
+  updateElevenLabsAgent,
+} from "./services/api.js";
 import { AUTOMATION_DEFAULTS } from "./config.js";
 import {
   runOnce,
@@ -74,6 +85,7 @@ import {
   rejectDiscoveryCandidates,
   saveDiscoveryCandidates,
   savePreferences,
+  reloadWorkspace,
   updateRecord,
 } from "./services/data.js";
 import { runDiscoverySearch } from "./services/discovery.js";
@@ -113,11 +125,13 @@ const OWNER_ONLY_ACTIONS = new Set([
   "commission-open", "payment-new", "payment-open", "payment-delete",
   "subscription-new", "subscription-open", "subscription-delete",
   "automation-record-new", "automation-record-open", "automation-record-delete",
+  "voice-agent-new", "voice-agent-open", "voice-agent-sync", "voice-agent-delete",
   "ai-provider-select", "model-select", "effort-select", "ai-permission-select",
 ]);
 
 const OWNER_ONLY_FORMS = new Set([
   "settings", "team-member", "commission", "payment", "subscription", "automation-record",
+  "voice-agent",
 ]);
 
 async function run(action, successTitle = "", successMessage = "") {
@@ -640,6 +654,51 @@ export async function onClick(event) {
     case "automation-record-open": {
       const automation = findRecord("automations", id);
       if (automation) openAutomationRecordForm(automation);
+      break;
+    }
+    case "voice-agent-new": {
+      const voices = await run(fetchElevenLabsVoices);
+      if (voices) openVoiceAgentForm(null, voices);
+      break;
+    }
+    case "voice-agent-open": {
+      const agent = findRecord("voiceAgents", id);
+      if (!agent) break;
+      const voices = await run(fetchElevenLabsVoices);
+      if (voices) openVoiceAgentForm(agent, voices);
+      break;
+    }
+    case "voice-agent-sync":
+      await run(async () => {
+        const result = await syncElevenLabsAgents();
+        await reloadWorkspace();
+        toast("ElevenLabs synced", `${result.synced || 0} provider agent${result.synced === 1 ? "" : "s"} checked.`);
+      });
+      break;
+    case "voice-agent-delete": {
+      const agent = findRecord("voiceAgents", id);
+      if (!agent) break;
+      if (target.dataset.confirmed !== "true") {
+        confirmAction({
+          title: `Delete ${agent.name} from ElevenLabs?`,
+          message: "This deletes the provider agent and archives its local record. Conversation history is preserved.",
+          confirmLabel: "Delete provider agent",
+          action: "voice-agent-delete",
+          attrs: `data-id="${agent.id}" data-confirmed="true"`,
+        });
+        break;
+      }
+      await run(async () => {
+        await deleteElevenLabsAgent(agent.id);
+        await reloadWorkspace();
+        closeModal();
+        toast("Agent deleted", "The ElevenLabs agent is gone; its local record is archived.");
+      });
+      break;
+    }
+    case "voice-conversation-open": {
+      const conversation = findRecord("voiceConversations", id);
+      if (conversation) openVoiceConversation(conversation);
       break;
     }
     case "maintenance-new":
@@ -1230,6 +1289,41 @@ export async function onSubmit(event) {
         else await createRecord("automations", payload);
         closeModal();
         toast("Automation saved");
+        break;
+      }
+
+      case "voice-agent": {
+        if (!values.name || !values.client_id || !values.system_prompt) {
+          throw new Error("Agent name, client, and system prompt are required.");
+        }
+        const client = findRecord("clients", values.client_id);
+        const payload = {
+          name: values.name,
+          client_id: values.client_id,
+          automation_id: values.automation_id,
+          environment: values.environment,
+          voice_id: values.voice_id,
+          language: values.language || "en",
+          llm: values.llm || "gpt-5.6-luna",
+          first_message: values.first_message,
+          system_prompt: values.system_prompt,
+          description: values.description,
+          tags: lines(values.tags),
+          is_example: client?.is_example === true,
+          ...(id ? { status: values.status } : {}),
+        };
+        if (id) await updateElevenLabsAgent(id, payload);
+        else await createElevenLabsAgent(payload);
+        await reloadWorkspace();
+        await logActivity(
+          id ? "voice_agent_updated" : "voice_agent_created",
+          id ? "ElevenLabs agent updated" : "ElevenLabs agent created",
+          values.name,
+          { client_id: values.client_id, metadata: { provider: "elevenlabs", example: client?.is_example === true } },
+          "system",
+        );
+        closeModal();
+        toast(id ? "Agent updated in ElevenLabs" : "Agent created in ElevenLabs", values.name);
         break;
       }
 

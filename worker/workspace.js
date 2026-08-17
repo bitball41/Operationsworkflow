@@ -38,6 +38,8 @@ export const WORKSPACE_COLLECTIONS = Object.freeze({
   projects: "projects",
   projectTasks: "project_tasks",
   automations: "automations",
+  voiceAgents: "voice_agents",
+  voiceConversations: "voice_conversations",
   knowledgeEntries: "knowledge_entries",
   maintenanceSubscriptions: "maintenance_subscriptions",
   maintenanceRequests: "maintenance_requests",
@@ -80,6 +82,8 @@ const SNAPSHOT_ORDER = Object.freeze({
   projects: ["updated_at", false, 750],
   projectTasks: ["sort_order", true, 750],
   automations: ["updated_at", false, 750],
+  voiceAgents: ["updated_at", false, 250],
+  voiceConversations: ["started_at", false, 500],
   knowledgeEntries: ["updated_at", false, 750],
   maintenanceSubscriptions: ["updated_at", false, 750],
   maintenanceRequests: ["created_at", false, 750],
@@ -152,6 +156,7 @@ function forbidden(message = "This employee is not allowed to change that worksp
 
 export function collectionWriteAllowed(member, collection) {
   if (member?.status !== "active") return false;
+  if (["voiceAgents", "voiceConversations"].includes(collection)) return false;
   if (member.role === "owner") return true;
   if (OWNER_ONLY_WRITE_COLLECTIONS.has(collection)) return false;
   if (member.role === "salesperson") return SALESPERSON_WRITE_COLLECTIONS.has(collection);

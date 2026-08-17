@@ -1,9 +1,11 @@
 /**
- * Cloudflare Worker: the one place API keys live.
+ * Cloudflare Worker: the browser's only privileged API boundary.
  *
- * Every key is a Worker secret (`wrangler secret put NAME`). The browser never
- * receives one — it calls `/api/...` on the same origin and this Worker adds the
- * credential on the way out. The only exception is the Google Maps *browser*
+ * Worker-owned keys are Cloudflare secrets (`wrangler secret put NAME`).
+ * ElevenLabs credentials are Supabase Edge Function secrets; this Worker
+ * authenticates the owner, injects workspace scope, and forwards only safe
+ * agent fields to that Edge boundary. The browser never receives a privileged
+ * credential. The only exception is the Google Maps *browser*
  * key, which is public by design because the Maps JavaScript SDK loads in the
  * page; see `/api/maps/key` below.
  *
@@ -16,6 +18,7 @@
  *   QWEN_BASE_URL         - regional Model Studio compatible-mode endpoint
  *   WHOP_WEBHOOK_SECRET   - verifies signed Whop webhook deliveries
  *   SUPABASE_SECRET_KEY   - server-only workspace and webhook database access
+ *   OPERATIONS_EDGE_SHARED_SECRET - authenticates Worker-to-Edge requests
  *   OPERATIONS_WORKSPACE_ID - the single Operations workspace
  *   GOOGLE_MAPS_API_KEY   - Google Maps / Places (browser key, referrer-locked)
  *   MICROSOFT_CLIENT_ID   - Microsoft Entra application id
@@ -40,6 +43,7 @@ import {
   handleBusinessPresenceLookup,
 } from "./browser.js";
 import { demoHostingStatus, handleDemoPublish, servePublicDemo } from "./demos.js";
+import { elevenLabsConnectionStatus, handleElevenLabs } from "./elevenlabs.js";
 import { handleMcp } from "./mcp.js";
 import { serveVoiceAgentDemo } from "./voice-demo.js";
 import { handleWhopWebhook, whopWebhookConfigured } from "./whop.js";
@@ -170,13 +174,15 @@ async function handleStatus(request, env) {
   for (const name of AI_PROVIDER_IDS) providers[name] = aiProviders[name]?.connected === true;
   providers.google_maps = Boolean(secretFor(env, "google_maps"));
   providers.whop = whopWebhookConfigured(env);
+  const elevenlabs = await elevenLabsConnectionStatus(env);
+  providers.elevenlabs = elevenlabs.connected;
   const outlook = await outlookConnectionStatus(request, env);
   providers.outlook = outlook.connected;
   const hosting = demoHostingStatus(env);
   providers.cloudflare = hosting.configured;
   providers.research = Boolean(env?.BROWSER);
   providers.mcp = Boolean(env?.MCP_API_TOKEN);
-  return json({ providers, aiProviders, outlook, hosting, at: new Date().toISOString() });
+  return json({ providers, aiProviders, outlook, hosting, elevenlabs, at: new Date().toISOString() });
 }
 
 /**
@@ -343,6 +349,11 @@ async function handleApi(request, env, url, member) {
       return await handleWorkspaceRecords(request, env, recordRoute[1], recordRoute[2] || "", member);
     }
     if (path === "/api/status" && request.method === "GET") return await handleStatus(request, env);
+    const elevenLabsRoute = path.match(/^\/api\/elevenlabs(\/.*)?$/);
+    if (elevenLabsRoute) {
+      if (!memberIsOwner(member)) return ownerRequired();
+      return await handleElevenLabs(request, env, elevenLabsRoute[1] || "/health", member);
+    }
     if (path === "/api/outlook/connect" && isPost) {
       if (!memberIsOwner(member)) return ownerRequired();
       return await handleOutlookConnect(request, env);

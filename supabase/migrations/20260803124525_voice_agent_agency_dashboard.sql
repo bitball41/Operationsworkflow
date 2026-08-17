@@ -78,7 +78,7 @@ create or replace function public.enforce_voice_agency_commission()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   activation_fee numeric(12,2);
@@ -130,6 +130,8 @@ begin
 end;
 $$;
 
+revoke all on function public.enforce_voice_agency_commission() from public, anon, authenticated;
+
 drop trigger if exists enforce_voice_agency_commission_before_insert on public.commissions;
 create trigger enforce_voice_agency_commission_before_insert
 before insert on public.commissions
@@ -139,7 +141,7 @@ create or replace function public.reverse_voice_agency_commission_after_refund()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   activation_fee numeric(12,2);
@@ -174,6 +176,8 @@ begin
 end;
 $$;
 
+revoke all on function public.reverse_voice_agency_commission_after_refund() from public, anon, authenticated;
+
 drop trigger if exists reverse_voice_agency_commission_after_payment_change on public.payments;
 create trigger reverse_voice_agency_commission_after_payment_change
 after insert or update of amount, status, payment_type, client_id on public.payments
@@ -186,8 +190,7 @@ set commission_rate = 0.14,
     updated_at = now()
 where status in ('pending', 'earned');
 
--- Explicitly reset all saved assistant history so obsolete website-sales
--- instructions and conversations cannot reappear after this release.
-delete from public.assistant_conversations;
+-- Preserve assistant history. Current prompts and tools are enforced in the
+-- application; historical conversations remain user-owned workspace data.
 
 commit;

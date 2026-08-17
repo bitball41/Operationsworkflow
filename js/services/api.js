@@ -13,6 +13,7 @@ export const API_BASE = "/api";
 /** Providers the Worker can hold a key for, in the order Integrations shows them. */
 export const WORKER_PROVIDERS = Object.freeze([
   "outlook",
+  "elevenlabs",
   "anthropic",
   "openai",
   "kimi",
@@ -28,6 +29,7 @@ const EMPTY_STATUS = Object.freeze({
   reachable: false,
   providers: Object.freeze({
     outlook: false,
+    elevenlabs: false,
     anthropic: false,
     openai: false,
     kimi: false,
@@ -41,6 +43,7 @@ const EMPTY_STATUS = Object.freeze({
   aiProviders: Object.freeze({}),
   /* Why Outlook is unusable, when it is. See handleStatus in worker/index.js. */
   outlook: Object.freeze({ configured: false, connected: false, missing: [], account: "", can_read_mail: false }),
+  elevenlabs: Object.freeze({ configured: false, connected: false, webhook_configured: false }),
   hosting: Object.freeze({ configured: false, domain: "demos.conno.fun", missing: ["DEMO_SITES"] }),
 });
 
@@ -103,6 +106,7 @@ export async function fetchServiceStatus() {
       providers,
       aiProviders: data?.aiProviders && typeof data.aiProviders === "object" ? data.aiProviders : {},
       outlook: { ...EMPTY_STATUS.outlook, ...(data?.outlook || {}) },
+      elevenlabs: { ...EMPTY_STATUS.elevenlabs, ...(data?.elevenlabs || {}) },
       hosting: { ...EMPTY_STATUS.hosting, ...(data?.hosting || {}) },
       at: data?.at || new Date().toISOString(),
     };
@@ -117,6 +121,7 @@ export function emptyServiceStatus() {
     providers: { ...EMPTY_STATUS.providers },
     aiProviders: {},
     outlook: { ...EMPTY_STATUS.outlook },
+    elevenlabs: { ...EMPTY_STATUS.elevenlabs },
     hosting: { ...EMPTY_STATUS.hosting },
   };
 }
@@ -147,6 +152,29 @@ export async function deleteWorkspaceRecord(collection, id) {
   return request(`/workspace/records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+/* ---------- ElevenLabs (server-to-server through the Worker) ---------- */
+
+export async function fetchElevenLabsVoices() {
+  const data = await request("/elevenlabs/voices");
+  return Array.isArray(data?.voices) ? data.voices : [];
+}
+
+export async function syncElevenLabsAgents() {
+  return request("/elevenlabs/sync", { method: "POST", body: {} });
+}
+
+export async function createElevenLabsAgent(payload) {
+  return request("/elevenlabs/agents", { method: "POST", body: payload });
+}
+
+export async function updateElevenLabsAgent(id, payload) {
+  return request(`/elevenlabs/agents/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
+}
+
+export async function deleteElevenLabsAgent(id) {
+  return request(`/elevenlabs/agents/${encodeURIComponent(id)}`, { method: "DELETE", body: {} });
 }
 
 export async function updateWorkspaceProfile(patch) {

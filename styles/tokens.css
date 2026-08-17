@@ -1,82 +1,55 @@
-/* Design tokens. One calm neutral dark theme, one restrained accent,
-   semantic colour only for success / warning / problem.
-
-   Every text token clears WCAG AA (4.5:1) against every surface it is allowed
-   to sit on — including --surface-3, the lightest background in the system —
-   and control borders clear 3:1 so inputs and buttons stay findable. */
+/* Conno.fun brand system, adapted for a dense private operations workspace. */
 :root {
-  color-scheme: dark;
-
-  --bg: #0d0d10;
-  --bg-raised: #14141a;
-  --surface: #191920;
-  --surface-2: #212129;
-  --surface-3: #2b2b35;
-
-  /* --line-soft separates rows, --line outlines cards, --line-strong is for
-     anything the eye has to find: inputs, selects, buttons, chips. */
-  --line-soft: #32323c;
-  --line: #43434f;
-  --line-strong: #666673;
-
-  /* Contrast on --surface-3 (the worst case): 13.2 / 8.6 / 4.9 */
-  --text: #f7f8fa;
-  --text-2: #c9cbd4;
-  --text-3: #9799a4;
-
-  --accent: #6b8ff7;
-  --accent-text: #a9c0ff;
-  --accent-quiet: rgba(107, 143, 247, 0.16);
-  --accent-line: rgba(140, 168, 250, 0.55);
-
-  --green: #6ecf9c;
-  --green-quiet: rgba(110, 207, 156, 0.15);
-  --amber: #e8b45c;
-  --amber-quiet: rgba(232, 180, 92, 0.15);
-  --red: #ef8d84;
-  --red-quiet: rgba(239, 141, 132, 0.15);
-
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-
-  --sidebar-w: 238px;
-  --topbar-h: 56px;
+  color-scheme: light;
+  --bg: #ffd6e7;
+  --bg-raised: #fff8fb;
+  --surface: #ffe9f1;
+  --surface-2: #ffd0e1;
+  --surface-3: #ffbed8;
+  --line-soft: rgba(42, 23, 34, 0.16);
+  --line: #2a1722;
+  --line-strong: #2a1722;
+  --text: #2a1722;
+  --text-2: #6b3f55;
+  --text-3: #765166;
+  --accent: #ff4d8d;
+  --accent-text: #8c1240;
+  --accent-quiet: rgba(255, 77, 141, 0.18);
+  --accent-line: rgba(226, 58, 118, 0.75);
+  --green: #176a49;
+  --green-quiet: rgba(23, 106, 73, 0.13);
+  --amber: #805000;
+  --amber-quiet: rgba(128, 80, 0, 0.13);
+  --red: #a5223b;
+  --red-quiet: rgba(165, 34, 59, 0.13);
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 18px;
+  --sidebar-w: 248px;
+  --topbar-h: 60px;
   --gutter: 28px;
   --stack: 28px;
-
-  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --font: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
-  --focus-ring: 0 0 0 3px var(--accent-quiet);
-  --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.16);
-  --shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
-  --shadow-lg: 0 28px 72px rgba(0, 0, 0, 0.52);
-
+  --focus-ring: 0 0 0 4px var(--accent-quiet);
+  --shadow-sm: 0 5px 0 rgba(42, 23, 34, 0.12);
+  --shadow: 0 8px 0 rgba(42, 23, 34, 0.16);
+  --shadow-lg: 0 12px 0 rgba(42, 23, 34, 0.18);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 }
 
-/* Respect an explicit request for more contrast: push every text token to the
-   top of the scale and make each boundary unambiguous. */
 @media (prefers-contrast: more) {
   :root {
-    --text: #ffffff;
-    --text-2: #e2e4ea;
-    --text-3: #b9bbc6;
-    --accent-text: #c6d5ff;
-    --line-soft: #45454f;
-    --line: #5c5c68;
-    --line-strong: #8a8a97;
+    --text-2: #4d2b3d;
+    --text-3: #563245;
+    --line-soft: rgba(42, 23, 34, 0.35);
   }
 }
 
 @media (max-width: 900px) {
-  :root {
-    --gutter: 18px;
-    --stack: 22px;
-  }
+  :root { --gutter: 18px; --stack: 22px; }
 }

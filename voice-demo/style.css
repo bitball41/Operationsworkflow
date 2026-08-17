@@ -1,29 +1,29 @@
 :root {
-  color-scheme: dark;
-  --bg: #0d0d10;
-  --bg-raised: #14141a;
-  --surface: #191920;
-  --surface-2: #212129;
-  --surface-3: #2b2b35;
-  --line-soft: #32323c;
-  --line: #43434f;
-  --line-strong: #666673;
-  --text: #f7f8fa;
-  --text-2: #c9cbd4;
-  --text-3: #9799a4;
-  --accent: #6b8ff7;
-  --accent-text: #a9c0ff;
-  --accent-quiet: rgba(107, 143, 247, 0.16);
-  --green: #6ecf9c;
-  --green-quiet: rgba(110, 207, 156, 0.14);
-  --amber: #e8b45c;
-  --amber-quiet: rgba(232, 180, 92, 0.14);
-  --red: #ef8d84;
-  --red-quiet: rgba(239, 141, 132, 0.14);
-  --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+  --bg: #ffd6e7;
+  --bg-raised: #ffeaf2;
+  --surface: #fff7fa;
+  --surface-2: #ffe3ee;
+  --surface-3: #ffc4dc;
+  --line-soft: rgba(42, 23, 34, 0.22);
+  --line: rgba(42, 23, 34, 0.48);
+  --line-strong: #2a1722;
+  --text: #2a1722;
+  --text-2: #563445;
+  --text-3: #765266;
+  --accent: #ff4d8d;
+  --accent-text: #a90d4a;
+  --accent-quiet: rgba(255, 77, 141, 0.16);
+  --green: #187a56;
+  --green-quiet: rgba(24, 122, 86, 0.14);
+  --amber: #9b5c00;
+  --amber-quiet: rgba(155, 92, 0, 0.14);
+  --red: #bb3043;
+  --red-quiet: rgba(187, 48, 67, 0.14);
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --font: "Montserrat", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -49,7 +49,7 @@ body {
   margin: 0;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at 50% -20%, rgba(107, 143, 247, 0.08), transparent 38rem),
+    radial-gradient(circle at 50% -20%, rgba(255, 255, 255, 0.58), transparent 38rem),
     var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -157,7 +157,7 @@ svg {
   color: var(--text);
   font-size: 0.84rem;
   font-weight: 700;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 3px 3px 0 var(--line-strong);
 }
 
 .brand__name {
@@ -365,7 +365,7 @@ svg {
 .visualizer__ring--inner {
   inset: 19%;
   border-color: var(--line);
-  background: radial-gradient(circle, rgba(107, 143, 247, 0.075), transparent 65%);
+  background: radial-gradient(circle, rgba(255, 77, 141, 0.12), transparent 65%);
 }
 
 .visualizer__monogram {
@@ -492,14 +492,15 @@ svg {
 
 .button--start {
   width: 100%;
-  border-color: var(--text);
-  background: var(--text);
-  color: #101014;
+  border: 2px solid var(--text);
+  background: var(--accent);
+  color: var(--text);
+  box-shadow: 4px 4px 0 var(--text);
 }
 
 .button--start:hover:not(:disabled) {
-  background: #fff;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+  background: #ff7aac;
+  box-shadow: 2px 2px 0 var(--text);
 }
 
 .session-controls {
@@ -596,7 +597,7 @@ svg {
 
 .call-panel[data-state="connecting"] .status-badge,
 .call-panel[data-state="listening"] .status-badge {
-  border-color: rgba(107, 143, 247, 0.38);
+  border-color: rgba(255, 77, 141, 0.38);
   background: var(--accent-quiet);
   color: var(--accent-text);
 }
@@ -640,13 +641,13 @@ svg {
 }
 
 .call-panel[data-state="connecting"] .visualizer__ring--outer {
-  border-color: rgba(107, 143, 247, 0.34);
+  border-color: rgba(255, 77, 141, 0.34);
   animation: connect-ring 1.8s var(--ease) infinite;
 }
 
 .call-panel[data-state="listening"] .visualizer__ring--inner {
-  border-color: rgba(107, 143, 247, 0.48);
-  background: radial-gradient(circle, rgba(107, 143, 247, 0.12), transparent 66%);
+  border-color: rgba(255, 77, 141, 0.48);
+  background: radial-gradient(circle, rgba(255, 77, 141, 0.12), transparent 66%);
 }
 
 .call-panel[data-state="speaking"] .visualizer__ring--inner {
@@ -793,10 +794,10 @@ svg {
 
 @media (prefers-contrast: more) {
   :root {
-    --text: #fff;
-    --text-2: #e2e4ea;
-    --text-3: #b9bbc6;
-    --line: #5c5c68;
-    --line-strong: #8a8a97;
+    --text: #160b11;
+    --text-2: #321a26;
+    --text-3: #4e293b;
+    --line: #2a1722;
+    --line-strong: #160b11;
   }
 }

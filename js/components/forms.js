@@ -215,6 +215,77 @@ export function openAutomationRecordForm(automation = null) {
   });
 }
 
+export function openVoiceAgentForm(agent = null, voices = []) {
+  const { data } = getState();
+  const client = agent?.client_id ? data.clients.find((item) => item.id === agent.client_id) : null;
+  const automations = data.automations
+    .filter((item) => !agent?.client_id || item.client_id === agent.client_id || item.id === agent.automation_id)
+    .map((item) => ({ value: item.id, label: item.name }));
+  const voiceOptions = voices.map((voice) => ({
+    value: voice.voice_id,
+    label: `${voice.name}${voice.category ? ` \u00b7 ${voice.category}` : ""}`,
+  }));
+  if (agent?.voice_id && !voiceOptions.some((voice) => voice.value === agent.voice_id)) {
+    voiceOptions.unshift({ value: agent.voice_id, label: `Current voice \u00b7 ${agent.voice_id}` });
+  }
+  const defaultPrompt = client?.is_example
+    ? "Answer naturally for Cactus Wrench Roofing. Capture the caller's name, callback number, property address, roofing problem, and urgency. Offer only verified live inspection times. Never claim a booking or transfer succeeded unless the tool result confirms it. Transfer urgent calls only to the configured private owner number; never transfer back to the forwarded business number."
+    : "Answer naturally for the client. Collect the caller's name, callback number, service address, reason for calling, and urgency. Use only verified availability and never claim a booking or transfer succeeded unless the tool result confirms it.";
+  openModal({
+    title: agent ? "Configure ElevenLabs agent" : "Create ElevenLabs agent",
+    subtitle: "The credential stays in Supabase. This form sends only safe configuration through the server bridge.",
+    wide: true,
+    body: `<form id="voice-agent-form" data-form="voice-agent"${agent ? ` data-id="${agent.id}"` : ""}>
+      <div class="field-grid">
+        ${field("Agent name", input("name", agent?.name || (client?.is_example ? "Cactus Wrench Receptionist" : ""), { required: true }))}
+        ${field("Client", select("client_id", clientOptions(data), agent?.client_id || "", { placeholder: "Select a client", attrs: "required" }))}
+        ${field("Linked automation", select("automation_id", automations, agent?.automation_id || "", { placeholder: "Optional management record" }))}
+        ${field("Environment", select("environment", ["development", "staging", "production"].map((value) => ({ value, label: statusLabel(value) })), agent?.environment || "development"))}
+        ${field("Voice", select("voice_id", voiceOptions, agent?.voice_id || "", { placeholder: "Use ElevenLabs default" }))}
+        ${field("Language", select("language", [{ value: "en", label: "English" }, { value: "es", label: "Spanish" }, { value: "fr", label: "French" }], agent?.language || "en"))}
+        ${field("LLM", input("llm", agent?.llm || "gpt-5.6-luna", { required: true }), { hint: "ElevenLabs model id" })}
+        ${agent ? field("Local status", select("status", ["active", "paused", "archived"].map((value) => ({ value, label: statusLabel(value) })), agent.status || "active")) : ""}
+      </div>
+      ${field("First message", textarea("first_message", agent?.first_message || "Thanks for calling. How can I help today?", { attrs: 'rows="3"', required: true }))}
+      ${field("System prompt", textarea("system_prompt", agent?.system_prompt || defaultPrompt, { attrs: 'rows="12"', required: true }), { hint: "Do not include API keys, private credentials, or unverified promises" })}
+      ${field("Description", textarea("description", agent?.description || "", { attrs: 'rows="3"' }))}
+      ${field("Tags", input("tags", (agent?.tags || []).filter((tag) => tag !== "operationsworkflow").join(", "), { placeholder: "roofing, receptionist" }), { hint: "comma separated" })}
+    </form>`,
+    footer: footer("voice-agent-form", agent ? "Save in ElevenLabs" : "Create in ElevenLabs", agent
+      ? btn("Delete provider agent", { action: "voice-agent-delete", variant: "danger", attrs: `data-id="${agent.id}"` })
+      : ""),
+  });
+}
+
+export function openVoiceConversation(conversation) {
+  const { data } = getState();
+  const agent = data.voiceAgents.find((item) => item.id === conversation.voice_agent_id);
+  const client = data.clients.find((item) => item.id === conversation.client_id);
+  const transcript = Array.isArray(conversation.transcript) ? conversation.transcript : [];
+  openModal({
+    title: conversation.caller_name || conversation.caller_phone || "Voice conversation",
+    subtitle: `${client ? clientOptions({ clients: [client], leads: data.leads })[0]?.label : "Unlinked client"} \u00b7 ${agent?.name || "Unlinked agent"}`,
+    wide: true,
+    body: `
+      <dl class="detail-list">
+        <div><dt>Status</dt><dd>${pill(conversation.status)}</dd></div>
+        <div><dt>Direction</dt><dd>${escapeHtml(statusLabel(conversation.direction))}</dd></div>
+        <div><dt>Duration</dt><dd>${conversation.duration_seconds == null ? "Not reported" : `${Math.round(Number(conversation.duration_seconds))} seconds`}</dd></div>
+        <div><dt>Outcome</dt><dd>${escapeHtml(conversation.call_successful || "Not scored")}</dd></div>
+        <div><dt>Property</dt><dd>${escapeHtml(conversation.caller_address || "Not captured")}</dd></div>
+        <div><dt>Urgency</dt><dd>${escapeHtml(conversation.urgency || "Not captured")}</dd></div>
+      </dl>
+      <section class="conversation-summary"><h3>Post-call summary</h3><p>${escapeHtml(conversation.summary || "ElevenLabs did not return a summary for this conversation.")}</p></section>
+      <section class="conversation-transcript"><h3>Transcript</h3>${transcript.length ? transcript.map((turn) => {
+        const role = turn?.role === "agent" ? "Agent" : turn?.role === "user" ? "Caller" : statusLabel(turn?.role || "event");
+        return `<div class="transcript-turn transcript-turn--${turn?.role === "agent" ? "agent" : "caller"}"><strong>${escapeHtml(role)}</strong><p>${escapeHtml(turn?.message || turn?.text || "")}</p></div>`;
+      }).join("") : '<p class="faint">No transcript turns were included.</p>'}</section>
+      <p class="faint">Provider conversation: ${escapeHtml(conversation.provider_conversation_id)}</p>
+    `,
+    footer: btn("Close", { action: "close-modal", variant: "primary" }),
+  });
+}
+
 export function openSubscriptionForm(subscription = null) {
   const { data } = getState();
   openModal({

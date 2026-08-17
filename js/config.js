@@ -55,6 +55,7 @@ export const NAV_GROUPS = Object.freeze([
   {
     label: "Automation",
     items: [
+      { id: "voice-agents", label: "Voice Agents", icon: "phone" },
       { id: "automation-studio", label: "Automation Studio", icon: "tool" },
       { id: "integrations", label: "Integrations", icon: "plug" },
       { id: "deployments", label: "Deployments", icon: "globe" },
@@ -177,8 +178,7 @@ export const REPLY_CLASSIFICATIONS = Object.freeze([
 export const INTEGRATIONS = Object.freeze([
   { provider: "supabase", name: "Workspace database", detail: "Server-side records and private assets behind Cloudflare Access", status: "connected", manage: "settings" },
   { provider: "openscout", name: "OpenScout", detail: "Google Places business discovery and source evidence", status: "connected", manage: "discovery" },
-  { provider: "retell", name: "Retell", detail: "Voice-agent execution is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
-  { provider: "vapi", name: "Vapi", detail: "Voice-agent execution is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
+  { provider: "elevenlabs", name: "ElevenLabs", detail: "Creates, configures, syncs, and receives post-call transcripts through server-only functions", status: "not_connected", manage: "voice-agents" },
   { provider: "n8n", name: "n8n", detail: "Workflow execution is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
   { provider: "twilio", name: "Twilio", detail: "Telephony is unavailable until a real Worker adapter exists", status: "not_connected", available: false },
   { provider: "calendar_provider", name: "Booking calendar", detail: "Calendar booking is unavailable until a real provider adapter exists", status: "not_connected", available: false },

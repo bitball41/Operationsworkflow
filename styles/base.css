@@ -20,7 +20,8 @@ textarea {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: radial-gradient(ellipse at top, var(--bg) 0%, #ffbcd6 100%);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
@@ -161,7 +162,7 @@ pre {
   min-height: 38px;
   padding: 0 14px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line-strong);
+  border: 2px solid var(--line-strong);
   background: var(--surface-2);
   color: var(--text);
   font-size: 0.9rem;
@@ -194,15 +195,15 @@ pre {
 }
 
 .btn--primary {
-  background: var(--text);
+  background: var(--accent);
   border-color: var(--text);
-  color: #101014;
-  font-weight: 600;
+  color: #fff;
+  font-weight: 800;
 }
 
 .btn--primary:hover {
-  background: #fff;
-  border-color: #fff;
+  background: #e23a76;
+  border-color: var(--text);
 }
 
 .btn--quiet {
@@ -363,7 +364,7 @@ textarea {
   min-height: 38px;
   padding: 8px 11px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line-strong);
+  border: 2px solid var(--line-strong);
   background: var(--bg-raised);
   color: var(--text);
   font: inherit;
@@ -543,7 +544,7 @@ textarea[disabled] {
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 18px;
   box-shadow: var(--shadow-sm);
