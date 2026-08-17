@@ -39,6 +39,7 @@ const business = await import("../js/pages/business.js");
 const workspace = await import("../js/pages/workspace.js");
 const system = await import("../js/pages/system.js");
 const agency = await import("../js/pages/agency.js");
+const voiceAgents = await import("../js/pages/voice-agents.js");
 
 test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   const html = readFileSync(new URL("../voice-demo/index.html", import.meta.url), "utf8");
@@ -94,6 +95,7 @@ const renderers = {
   clients: clients.renderClients,
   onboarding: agency.renderOnboarding,
   projects: clients.renderProjects,
+  "voice-agents": voiceAgents.renderVoiceAgents,
   "automation-studio": agency.renderAutomationStudio,
   maintenance: clients.renderMaintenance,
   payments: business.renderPayments,
@@ -302,7 +304,7 @@ test("assistant page exposes conversations, access and tools without faking answ
   assert.ok(!/I think|Here is what I found/.test(html), "no fabricated assistant reply");
 });
 
-test("assistant instructions and stored history are reset for the voice agency", () => {
+test("assistant instructions are voice-agency specific without deleting stored history", () => {
   assert.match(aiProvider.SYSTEM_PROMPT, /unlimited AI receptionist/i);
   assert.match(aiProvider.SYSTEM_PROMPT, /\$2,500/);
   assert.match(aiProvider.SYSTEM_PROMPT, /\$997/);
@@ -310,7 +312,8 @@ test("assistant instructions and stored history are reset for the voice agency",
   assert.doesNotMatch(aiProvider.SYSTEM_PROMPT, /sell websites|website-selling/i);
 
   const migration = readFileSync(new URL("../supabase/migrations/20260803124525_voice_agent_agency_dashboard.sql", import.meta.url), "utf8");
-  assert.match(migration, /delete from public\.assistant_conversations/i);
+  assert.doesNotMatch(migration, /delete from public\.assistant_conversations/i);
+  assert.match(migration, /Preserve assistant history/i);
 });
 
 test("assistant provider selection shows only Worker-verified live models", () => {

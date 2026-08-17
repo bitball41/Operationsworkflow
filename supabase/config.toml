@@ -1,0 +1,13 @@
+project_id = "Operationsworkflow"
+
+[functions.elevenlabs-agents]
+enabled = true
+verify_jwt = false
+import_map = "./functions/elevenlabs-agents/deno.json"
+entrypoint = "./functions/elevenlabs-agents/index.ts"
+
+[functions.elevenlabs-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/elevenlabs-webhook/deno.json"
+entrypoint = "./functions/elevenlabs-webhook/index.ts"

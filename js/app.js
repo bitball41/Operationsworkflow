@@ -36,6 +36,7 @@ import { renderStudio, mountStudio } from "./pages/studio.js";
 import { renderIntegrations, renderSettings } from "./pages/system.js";
 import { renderDemos, renderTemplates } from "./pages/websites.js";
 import { renderActivity, renderCalendar, renderNotes, renderTasks } from "./pages/workspace.js";
+import { renderVoiceAgents } from "./pages/voice-agents.js";
 
 const PAGES = {
   "my-day": renderMyDay,
@@ -57,6 +58,7 @@ const PAGES = {
   clients: renderClients,
   onboarding: renderOnboarding,
   projects: renderProjects,
+  "voice-agents": renderVoiceAgents,
   "automation-studio": renderAutomationStudio,
   maintenance: renderMaintenance,
   payments: renderPayments,
