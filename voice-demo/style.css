@@ -264,17 +264,17 @@ svg {
   justify-self: end;
   overflow: hidden;
   padding: 22px;
-  border: 1px solid var(--line);
+  border: 2px solid var(--line-strong);
   border-radius: var(--radius-lg);
-  background: linear-gradient(155deg, rgba(33, 33, 41, 0.94), rgba(20, 20, 26, 0.98));
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(155deg, #fffdfd, var(--surface));
+  box-shadow: 10px 11px 0 rgba(42, 23, 34, 0.16);
 }
 
 .call-panel::before {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(140deg, rgba(255, 255, 255, 0.035), transparent 36%);
+  background: linear-gradient(140deg, rgba(255, 77, 141, 0.08), transparent 38%);
   content: "";
   pointer-events: none;
 }
@@ -378,7 +378,7 @@ svg {
   border: 1px solid var(--line-strong);
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 0 0 10px rgba(13, 13, 16, 0.58), 0 16px 36px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 0 0 10px rgba(255, 77, 141, 0.1), 0 16px 36px rgba(42, 23, 34, 0.16);
   font-size: 1.2rem;
   font-weight: 650;
 }
@@ -434,7 +434,7 @@ svg {
   border: 1px solid rgba(239, 141, 132, 0.35);
   border-radius: var(--radius-sm);
   background: var(--red-quiet);
-  color: #f8bbb5;
+  color: var(--red);
   font-size: 0.78rem;
 }
 
@@ -526,7 +526,7 @@ svg {
 .button--control[aria-pressed="true"] {
   border-color: rgba(232, 180, 92, 0.5);
   background: var(--amber-quiet);
-  color: #f5ca80;
+  color: var(--amber);
 }
 
 .icon-mic-off,
@@ -541,7 +541,7 @@ svg {
 .button--end {
   border-color: rgba(239, 141, 132, 0.4);
   background: var(--red-quiet);
-  color: #f4aaa3;
+  color: var(--red);
 }
 
 .button--end:hover:not(:disabled) {
@@ -611,7 +611,7 @@ svg {
 .call-panel[data-state="speaking"] .status-badge {
   border-color: rgba(110, 207, 156, 0.38);
   background: var(--green-quiet);
-  color: #9be1bc;
+  color: var(--green);
 }
 
 .call-panel[data-state="speaking"] .status-badge span {
@@ -622,7 +622,7 @@ svg {
 .call-panel[data-state="muted"] .status-badge {
   border-color: rgba(232, 180, 92, 0.38);
   background: var(--amber-quiet);
-  color: #f5ca80;
+  color: var(--amber);
 }
 
 .call-panel[data-state="muted"] .status-badge span {
@@ -633,7 +633,7 @@ svg {
 .call-panel[data-state="error"] .status-badge {
   border-color: rgba(239, 141, 132, 0.38);
   background: var(--red-quiet);
-  color: #f4aaa3;
+  color: var(--red);
 }
 
 .call-panel[data-state="error"] .status-badge span {

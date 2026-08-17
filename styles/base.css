@@ -20,7 +20,9 @@ textarea {
 
 body {
   margin: 0;
-  background: radial-gradient(ellipse at top, var(--bg) 0%, #ffbcd6 100%);
+  background:
+    radial-gradient(circle at 82% -12%, rgba(255, 77, 141, 0.09), transparent 31rem),
+    var(--bg);
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
@@ -196,14 +198,14 @@ pre {
 
 .btn--primary {
   background: var(--accent);
-  border-color: var(--text);
+  border-color: var(--accent);
   color: #fff;
   font-weight: 800;
 }
 
 .btn--primary:hover {
-  background: #e23a76;
-  border-color: var(--text);
+  background: #ff6ca3;
+  border-color: #ff6ca3;
 }
 
 .btn--quiet {
