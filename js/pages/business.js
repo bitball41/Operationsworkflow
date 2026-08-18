@@ -22,6 +22,99 @@ function monthlyRevenue(payments, months = 6) {
   return buckets;
 }
 
+/** Cash in, recurring service, and real costs without separate finance tabs. */
+export function renderMoneyCenter() {
+  const { data, routeParams } = getState();
+  const query = (routeParams.q || "").toLowerCase();
+  const paid = getPayments();
+  const activeSubscriptions = data.maintenanceSubscriptions.filter((item) => item.status === "active");
+  const outstanding = data.payments.filter((item) => ["pending", "overdue", "failed"].includes(item.status));
+  const rowsToShow = data.payments.filter((payment) => (
+    !query || `${payment.customer_name} ${payment.external_transaction_id || ""}`.toLowerCase().includes(query)
+  ));
+  const { gross, profit, costs } = revenueSummary();
+
+  return `<div class="stack crm-center">
+    <section class="crm-center__head">
+      <div><span class="eyebrow">Close &rarr; activation &rarr; monthly service</span><h2>Money</h2><p>Collected revenue, balances, recurring service, and costs in one view.</p></div>
+      <div class="crm-center__pulse">
+        <span><b>${formatCurrency(gross)}</b> collected</span>
+        <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
+        <span><b>${formatCurrency(profit)}</b> recorded profit</span>
+      </div>
+    </section>
+
+    ${section("Cash position", { body: stats([
+      ["This month", formatCurrency(sum(getPayments({ range: "month" }), (payment) => payment.amount))],
+      ["Outstanding", formatCurrency(sum(outstanding, (payment) => payment.amount)), `${outstanding.length} payment${outstanding.length === 1 ? "" : "s"}`],
+      ["Activation fees", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "setup_fee"), (payment) => payment.amount))],
+      ["Monthly payments", formatCurrency(sum(paid.filter((payment) => payment.payment_type === "recurring_subscription"), (payment) => payment.amount))],
+      ["Recorded costs", formatCurrency(costs, 2)],
+    ]) })}
+
+    ${isConnected("whop") ? notice("Payment updates are automatic", "Signed Whop events update payment and client records; manual entry is only a fallback.", { tone: "success", iconName: "check-circle" }) : notice(
+      "Whop is not connected",
+      "Payment records can still be entered manually, but automatic receipt and refund updates remain unavailable until the signed webhook is configured.",
+      { iconName: "wallet", tone: "warn" },
+    )}
+    ${isOwner() ? "" : notice("Money administration is owner-only", ownerOnlyNotice("Recording or editing payments and service"), { iconName: "wallet", tone: "warn" })}
+
+    ${outstanding.length ? section("Needs collection", {
+      count: outstanding.length,
+      body: table({
+        columns: ["Customer", "Type", "Balance", "Due", "Status", ""],
+        rows: outstanding.map((payment) => `<tr>
+          ${td("Customer", `<strong>${escapeHtml(payment.customer_name || clientName(data, byId(data.clients, payment.client_id)))}</strong>`)}
+          ${td("Type", escapeHtml(statusLabel(payment.payment_type)))}
+          ${td("Balance", `<strong>${formatCurrency(payment.amount)}</strong>`)}
+          ${td("Due", formatDate(payment.due_date || payment.created_at, { year: "numeric" }))}
+          ${td("Status", pill(payment.status))}
+          ${td("", isOwner() ? btn("Update", { action: "payment-open", size: "sm", attrs: `data-id="${payment.id}"` }) : "")}
+        </tr>`),
+      }),
+    }) : ""}
+
+    ${section("Payments", {
+      actions: `${searchInput("Search customer or transaction", routeParams.q || "")}${isOwner() ? btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary", size: "sm" }) : ""}`,
+      body: table({
+        columns: ["Customer", "Type", "Amount", "Status", "Date", "Source", ""],
+        rows: rowsToShow.map((payment) => `<tr>
+          ${td("Customer", `<strong>${escapeHtml(payment.customer_name || clientName(data, byId(data.clients, payment.client_id)))}</strong>`)}
+          ${td("Type", escapeHtml(statusLabel(payment.payment_type)))}
+          ${td("Amount", `<strong>${formatCurrency(payment.amount)}</strong>`)}
+          ${td("Status", pill(payment.status))}
+          ${td("Date", formatDate(payment.paid_at || payment.created_at, { year: "numeric" }))}
+          ${td("Source", escapeHtml(payment.source || "manual"))}
+          ${td("", isOwner() ? btn("Edit", { action: "payment-open", size: "sm", attrs: `data-id="${payment.id}"` }) : "")}
+        </tr>`),
+        emptyState: empty({ title: "No payments recorded", message: "Activation and recurring payments appear together here." }),
+      }),
+    })}
+
+    ${section("Ongoing service", {
+      actions: isOwner() ? btn("Add monthly service", { action: "subscription-new", iconName: "plus", variant: "primary", size: "sm" }) : "",
+      body: table({
+        columns: ["Client", "Service", "Monthly", "Next payment", "Status", ""],
+        rows: data.maintenanceSubscriptions.map((subscription) => `<tr>
+          ${td("Client", `<strong>${escapeHtml(clientName(data, byId(data.clients, subscription.client_id)))}</strong>`)}
+          ${td("Service", escapeHtml(subscription.plan_name || "Managed AI receptionist"))}
+          ${td("Monthly", `<strong>${formatCurrency(subscription.monthly_amount)}/mo</strong>`)}
+          ${td("Next payment", formatDate(subscription.next_charge_on))}
+          ${td("Status", pill(subscription.status))}
+          ${td("", isOwner() ? btn("Edit", { action: "subscription-open", size: "sm", attrs: `data-id="${subscription.id}"` }) : "")}
+        </tr>`),
+        emptyState: empty({ title: "No monthly service records", message: "Activate the $997 monthly service when a client goes live." }),
+      }),
+    })}
+
+    <div class="btn-row crm-center__utilities">
+      ${btn("Review costs", { action: "navigate", attrs: 'data-route-target="costs"', size: "sm" })}
+      ${btn("Sales analytics", { action: "navigate", attrs: 'data-route-target="analytics"', size: "sm" })}
+      ${btn("Commissions", { action: "navigate", attrs: 'data-route-target="commissions"', size: "sm" })}
+    </div>
+  </div>`;
+}
+
 export function renderPayments() {
   const { data, routeParams } = getState();
   const query = (routeParams.q || "").toLowerCase();

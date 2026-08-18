@@ -2,52 +2,93 @@
 import { PROJECT_STAGES } from "../config.js";
 import { CONFIG } from "../config.js";
 import { getState } from "../core/state.js";
-import { escapeHtml, formatCurrency, formatDate, formatNumber, relativeTime, statusLabel, sum } from "../core/utils.js";
-import { bar, btn, empty, icon, pill, row, rows, section, stats, table, td } from "../components/ui.js";
+import { escapeHtml, formatCurrency, formatDate, formatDateTime, formatNumber, relativeTime, statusLabel, sum } from "../core/utils.js";
+import { bar, btn, empty, icon, notice, pill, row, rows, section, stats, table, td } from "../components/ui.js";
+import { clientLifecycleRows } from "../services/operations.js";
+import { isOwner } from "../services/permissions.js";
 import { byId, clientName, filterSelect, searchInput } from "./shared.js";
 
 export function renderClients() {
-  const { data, routeParams } = getState();
+  const { data, routeParams, services } = getState();
   const query = (routeParams.q || "").toLowerCase();
-  const status = routeParams.status || "all";
-  const clients = data.clients
-    .filter((client) => (status === "all" || client.status === status))
-    .filter((client) => !query || `${clientName(data, client)} ${client.contact_name} ${client.email} ${client.package_name}`.toLowerCase().includes(query));
+  const stage = routeParams.stage || "all";
+  const allLifecycles = clientLifecycleRows(data);
+  const lifecycles = allLifecycles
+    .filter((item) => stage === "all" || (stage === "attention" ? item.tone !== "green" : item.currentStage === stage))
+    .filter((item) => !query || `${clientName(data, item.client)} ${item.client.contact_name} ${item.client.email} ${item.client.package_name}`.toLowerCase().includes(query));
   const activeSubscriptions = data.maintenanceSubscriptions.filter((item) => item.status === "active");
-  const openSupport = data.maintenanceRequests.filter((request) => request.status !== "completed");
+  const provider = services.elevenlabs || { connected: false, webhook_configured: false };
+  const conversations = data.voiceConversations.filter((item) => !item.is_example).slice(0, 10);
 
   return `
-    <div class="stack">
-      ${section("", {
-        body: stats([
-          ["Clients", formatNumber(data.clients.length)],
-          ["Active", formatNumber(data.clients.filter((client) => client.status === "active").length)],
-          ["Setup contracted", formatCurrency(sum(data.clients, (client) => client.setup_fee || client.agreed_price))],
-          ["Management MRR", formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))],
-          ["Open support", formatNumber(openSupport.length)],
-        ]),
-      })}
+    <div class="stack crm-center">
+      <section class="crm-center__head">
+        <div><span class="eyebrow">Payment &rarr; onboarding &rarr; agent &rarr; deployment &rarr; service</span><h2>Clients</h2><p>Every client, their real delivery state, and the next action in one place.</p></div>
+        <div class="crm-center__pulse">
+          <span><b>${data.clients.length}</b> clients</span>
+          <span><b>${allLifecycles.filter((item) => item.tone !== "green").length}</b> need action</span>
+          <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
+        </div>
+      </section>
+
+      ${provider.connected
+        ? notice("ElevenLabs is connected", provider.webhook_configured ? "Agent actions and signed post-call records are managed server-side." : "Agent actions work; the signed post-call webhook still needs its secret.", { tone: provider.webhook_configured ? "success" : "warn", iconName: provider.webhook_configured ? "check-circle" : "alert", actions: isOwner() ? btn("Sync agents", { action: "voice-agent-sync", size: "sm" }) : "" })
+        : notice("ElevenLabs needs server-side setup", "Agent actions stay unavailable until the Edge Function connection passes. No browser credential fallback is allowed.", { tone: "warn", iconName: "lock" })}
 
       <div class="toolbar">
         ${searchInput("Search clients", routeParams.q || "")}
-        ${filterSelect("status", ["onboarding", "active", "awaiting_content", "ready_to_launch", "completed", "paused"].map((value) => ({ value, label: statusLabel(value) })), status, "All statuses")}
+        ${filterSelect("stage", ["attention", "payment", "onboarding", "agent", "deployment", "service"].map((value) => ({ value, label: value === "attention" ? "Needs action" : statusLabel(value) })), stage, "All clients")}
         <span class="toolbar__spacer"></span>
         ${btn("New client", { action: "client-new", iconName: "plus", variant: "primary", size: "sm" })}
       </div>
 
-      ${table({
-        columns: ["Business", "Primary contact", "Offer", "Setup", "Monthly", "Onboarding", "Delivery", ""],
-        rows: clients.map((client) => `<tr data-action="client-open" data-id="${client.id}">
-          ${td("Business", `<div class="cell"><strong>${escapeHtml(clientName(data, client))}</strong><span>${escapeHtml(client.email || client.phone || "No contact details")}</span></div>`)}
-          ${td("Primary contact", escapeHtml(client.contact_name || "—"))}
-          ${td("Offer", escapeHtml(client.package_name || CONFIG.packageName))}
-          ${td("Setup", formatCurrency(client.setup_fee || client.agreed_price))}
-          ${td("Monthly", `${formatCurrency(client.monthly_fee || 0)}/mo`)}
-          ${td("Onboarding", pill(client.onboarding_status || "not_started"))}
-          ${td("Delivery", pill(client.status))}
-          ${td("", icon("chevron"))}
-        </tr>`),
-        emptyState: empty({ title: "No clients yet", message: "Convert a won lead into a client to start fulfilment." }),
+      <div class="client-lifecycle-list">
+        ${lifecycles.length ? lifecycles.map((item) => {
+          const { client, agent, onboarding, project, subscription, action } = item;
+          return `<article class="client-lifecycle-card${item.tone === "red" ? " client-lifecycle-card--alert" : ""}">
+            <header class="client-lifecycle-card__head">
+              <div><span class="eyebrow">${escapeHtml(item.currentLabel)}</span><h3>${escapeHtml(clientName(data, client))}</h3><p>${escapeHtml(client.contact_name || "No primary contact")} &middot; ${escapeHtml(client.email || client.phone || "No contact details")}</p></div>
+              <div class="client-lifecycle-card__value"><strong>${formatCurrency(client.setup_fee || client.agreed_price)}</strong><span>+ ${formatCurrency(client.monthly_fee || CONFIG.defaultMonthlyFee)}/mo</span></div>
+            </header>
+            <div class="lifecycle-track" aria-label="Client lifecycle">
+              ${item.stages.map((step) => `<span class="lifecycle-step${step.complete ? " is-done" : step.id === item.currentStage ? " is-current" : ""}" title="${escapeHtml(step.complete ? `${step.label} complete` : step.label)}">${icon(step.complete ? "check" : "circle")}<b>${escapeHtml(step.label)}</b></span>`).join("")}
+            </div>
+            <div class="client-lifecycle-card__body">
+              <div class="next-action"><span>Next action</span><strong>${escapeHtml(item.nextAction)}</strong><small>${item.progress}% through activation and service setup</small></div>
+              <dl class="client-facts">
+                <div><dt>Payment</dt><dd>${item.paymentComplete ? pill("paid") : `${formatCurrency(item.setupBalance)} due`}</dd></div>
+                <div><dt>Onboarding</dt><dd>${pill(onboarding?.status || client.onboarding_status || "not_started")} ${onboarding ? `${Number(onboarding.progress || 0)}%` : ""}</dd></div>
+                <div><dt>Agent</dt><dd>${agent ? pill(agent.last_error ? "error" : agent.status || "active") : "Not created"}</dd></div>
+                <div><dt>Deployment</dt><dd>${pill(project?.deployment_status || "not_deployed")}</dd></div>
+                <div><dt>Service</dt><dd>${pill(subscription?.status || (item.serviceActive ? "active" : "inactive"))}</dd></div>
+                <div><dt>Calls</dt><dd>${formatNumber(item.conversations.length)}</dd></div>
+              </dl>
+            </div>
+            <footer class="client-lifecycle-card__foot">
+              <div class="btn-row">
+                ${btn(action.label, { action: action.action, attrs: action.attrs, variant: item.tone === "green" ? "" : "primary", size: "sm" })}
+                ${agent && action.action !== "voice-agent-open" ? btn("Configure agent", { action: "voice-agent-open", attrs: `data-id="${agent.id}"`, size: "sm" }) : ""}
+                ${btn("Client details", { action: "client-open", attrs: `data-id="${client.id}"`, size: "sm", variant: "quiet" })}
+              </div>
+              <span class="faint">${client.updated_at ? `Updated ${relativeTime(client.updated_at)}` : "Lifecycle is derived from linked records"}</span>
+            </footer>
+          </article>`;
+        }).join("") : empty({ title: "No clients match", message: data.clients.length ? "Change the lifecycle filter or search." : "Winning a lead creates the client, onboarding, and delivery records automatically." })}
+      </div>
+
+      ${section("Recent client calls", {
+        subtitle: "Signed ElevenLabs post-call records appear automatically",
+        body: table({
+          columns: ["Client", "Caller", "Summary", "When", ""],
+          rows: conversations.map((conversation) => `<tr data-action="voice-conversation-open" data-id="${conversation.id}">
+            ${td("Client", escapeHtml(clientName(data, byId(data.clients, conversation.client_id))))}
+            ${td("Caller", escapeHtml(conversation.caller_name || conversation.caller_phone || "Unknown caller"))}
+            ${td("Summary", `<div class="cell"><strong>${escapeHtml(conversation.problem || conversation.summary || "No summary returned")}</strong><span>${escapeHtml(conversation.appointment_status || conversation.call_successful || statusLabel(conversation.status))}</span></div>`)}
+            ${td("When", formatDateTime(conversation.started_at || conversation.created_at))}
+            ${td("", icon("chevron"))}
+          </tr>`),
+          emptyState: empty({ title: "No real client calls yet", message: "Completed signed post-call records appear here after the first connected agent call." }),
+        }),
       })}
     </div>
   `;

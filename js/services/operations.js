@@ -869,6 +869,151 @@ export function getClients({ status = "" } = {}) {
   return data().clients.filter((client) => !status || client.status === status);
 }
 
+const CLIENT_LIFECYCLE_STAGES = Object.freeze([
+  ["lead", "Lead"],
+  ["demo", "Demo / call"],
+  ["closed", "Closed"],
+  ["payment", "Payment"],
+  ["onboarding", "Onboarding"],
+  ["agent", "Agent setup"],
+  ["deployment", "Deployment"],
+  ["service", "Ongoing service"],
+]);
+
+/**
+ * A client lifecycle is calculated from records that already exist. Nobody has
+ * to maintain a second status board: payment receipts, onboarding, provider
+ * agents, deployments, and subscriptions move this view automatically.
+ */
+export function clientLifecycle(client, workspace = data()) {
+  if (!client) return null;
+  const same = (left, right) => String(left || "") === String(right || "");
+  const records = (key) => Array.isArray(workspace[key]) ? workspace[key] : [];
+  const lead = records("leads").find((item) => same(item.id, client.lead_id)) || null;
+  const salesCalls = records("salesCalls").filter((item) => same(item.lead_id, lead?.id));
+  const meetings = records("meetings").filter((item) => same(item.lead_id, lead?.id) || same(item.client_id, client.id));
+  const demos = records("demos").filter((item) => same(item.lead_id, lead?.id));
+  const onboarding = records("onboardingRecords").find((item) => same(item.client_id, client.id)) || null;
+  const project = records("projects").find((item) => same(item.client_id, client.id)) || null;
+  const automation = records("automations").find((item) => same(item.client_id, client.id)) || null;
+  const agent = records("voiceAgents").find((item) => (
+    same(item.client_id, client.id) && item.provider_deleted_at == null && item.status !== "archived"
+  )) || null;
+  const deployment = records("deployments").find((item) => same(item.client_id, client.id)) || null;
+  const subscription = records("maintenanceSubscriptions").find((item) => same(item.client_id, client.id)) || null;
+  const paidSetup = sum(records("payments").filter((item) => (
+    same(item.client_id, client.id)
+    && item.payment_type === "setup_fee"
+    && ["paid", "available"].includes(item.status)
+  )), (item) => item.amount);
+  const setupFee = Math.max(0, Number(client.setup_fee || client.agreed_price || 0));
+  const amountReceived = Math.max(Number(client.amount_received || 0), paidSetup);
+  const paymentComplete = setupFee <= 0 || amountReceived >= setupFee || client.payment_status === "paid";
+  const onboardingComplete = onboarding?.status === "complete" || client.onboarding_status === "complete";
+  const agentReady = Boolean(agent?.provider_agent_id && !agent.last_error && agent.status !== "error");
+  const deploymentComplete = deployment?.status === "production"
+    || automation?.status === "live"
+    || project?.deployment_status === "production";
+  const serviceActive = subscription?.status === "active"
+    || (deploymentComplete && ["active", "maintenance", "completed"].includes(client.status));
+
+  const evidence = {
+    lead: Boolean(lead),
+    demo: Boolean(salesCalls.length || meetings.length || demos.length),
+    closed: true,
+    payment: paymentComplete,
+    onboarding: onboardingComplete,
+    agent: agentReady,
+    deployment: deploymentComplete,
+    service: serviceActive,
+  };
+  const stages = CLIENT_LIFECYCLE_STAGES.map(([id, label]) => ({ id, label, complete: evidence[id] }));
+
+  let currentStage = "service";
+  let nextAction = "Review client health and the latest call records";
+  let action = { label: "Open client", action: "client-open", attrs: `data-id="${client.id}"` };
+  let tone = "green";
+
+  if (!paymentComplete) {
+    const balance = Math.max(0, setupFee - amountReceived);
+    currentStage = "payment";
+    nextAction = balance ? `Collect ${balance.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })} activation balance` : "Confirm the activation payment";
+    action = { label: "Record payment", action: "payment-new", attrs: `data-client-id="${client.id}"` };
+    tone = "amber";
+  } else if (!onboardingComplete) {
+    currentStage = "onboarding";
+    nextAction = onboarding?.status === "blocked"
+      ? "Unblock onboarding with the client"
+      : `${onboarding ? "Finish" : "Start"} the client rulebook and call flow`;
+    action = {
+      label: onboarding ? "Continue onboarding" : "Start onboarding",
+      action: "onboarding-open",
+      attrs: `data-client-id="${client.id}"${onboarding ? ` data-id="${onboarding.id}"` : ""}`,
+    };
+    tone = onboarding?.status === "blocked" ? "red" : "amber";
+  } else if (!agentReady) {
+    currentStage = "agent";
+    nextAction = agent?.last_error ? "Resolve the ElevenLabs agent error" : agent ? "Finish and verify the ElevenLabs agent" : "Create the ElevenLabs agent";
+    action = agent
+      ? { label: "Configure agent", action: "voice-agent-open", attrs: `data-id="${agent.id}"` }
+      : { label: "Create agent", action: "voice-agent-new", attrs: `data-client-id="${client.id}"` };
+    tone = agent?.last_error ? "red" : "amber";
+  } else if (!deploymentComplete) {
+    currentStage = "deployment";
+    nextAction = "Finish testing, phone routing, and the real end-to-end call";
+    action = project
+      ? { label: "Open delivery", action: "project-open", attrs: `data-id="${project.id}"` }
+      : { label: "Open client", action: "client-open", attrs: `data-id="${client.id}"` };
+    tone = deployment?.status === "failed" || automation?.last_error ? "red" : "amber";
+  } else if (!serviceActive) {
+    currentStage = "service";
+    nextAction = "Activate the ongoing monthly service";
+    action = subscription
+      ? { label: "Review service", action: "subscription-open", attrs: `data-id="${subscription.id}"` }
+      : { label: "Start service", action: "subscription-new", attrs: `data-client-id="${client.id}"` };
+    tone = subscription?.status === "past_due" ? "red" : "amber";
+  }
+
+  const deliveryComplete = [paymentComplete, onboardingComplete, agentReady, deploymentComplete, serviceActive].filter(Boolean).length;
+  return {
+    client,
+    lead,
+    onboarding,
+    project,
+    automation,
+    agent,
+    deployment,
+    subscription,
+    stages,
+    currentStage,
+    currentLabel: CLIENT_LIFECYCLE_STAGES.find(([id]) => id === currentStage)?.[1] || "Client",
+    nextAction,
+    action,
+    tone,
+    progress: Math.round((deliveryComplete / 5) * 100),
+    setupFee,
+    amountReceived,
+    setupBalance: Math.max(0, setupFee - amountReceived),
+    paymentComplete,
+    onboardingComplete,
+    agentReady,
+    deploymentComplete,
+    serviceActive,
+    conversations: records("voiceConversations").filter((item) => same(item.client_id, client.id)),
+  };
+}
+
+export function clientLifecycleRows(workspace = data()) {
+  return (Array.isArray(workspace.clients) ? workspace.clients : [])
+    .map((client) => clientLifecycle(client, workspace))
+    .filter(Boolean)
+    .sort((left, right) => (
+      Number(left.serviceActive) - Number(right.serviceActive)
+      || Number(right.tone === "red") - Number(left.tone === "red")
+      || String(left.lead?.business_name || "").localeCompare(String(right.lead?.business_name || ""))
+    ));
+}
+
 export function getPayments({ range = "all" } = {}) {
   const paid = data().payments
     .filter((payment) => ["paid", "available"].includes(payment.status))

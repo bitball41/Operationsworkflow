@@ -2,10 +2,39 @@ import { FULL_BLEED_ROUTES, NAV_GROUPS, PAGE_TITLES } from "../config.js";
 import { hydrateIcons, icon } from "../core/icons.js";
 import { getState } from "../core/state.js";
 import { escapeHtml } from "../core/utils.js";
+import { attentionItems, clientLifecycleRows } from "../services/operations.js";
+
+const PRIMARY_ROUTE = Object.freeze({
+  "my-day": "home",
+  activity: "home",
+  tasks: "home",
+  calendar: "home",
+  notes: "home",
+  discovery: "pipeline",
+  leads: "pipeline",
+  calling: "pipeline",
+  meetings: "pipeline",
+  outreach: "pipeline",
+  inbox: "pipeline",
+  "follow-ups": "pipeline",
+  onboarding: "clients",
+  projects: "clients",
+  "voice-agents": "clients",
+  "automation-studio": "clients",
+  deployments: "clients",
+  maintenance: "clients",
+  subscriptions: "payments",
+  commissions: "payments",
+  analytics: "payments",
+  costs: "payments",
+});
 
 /* Only counts that mean "you have something to do" are shown. */
 function navCount(itemId, state) {
   const { data, automation } = state;
+  if (itemId === "home") return attentionItems().length;
+  if (itemId === "clients") return clientLifecycleRows(data).filter((item) => !item.serviceActive || item.tone === "red").length;
+  if (itemId === "payments") return data.payments.filter((item) => ["overdue", "failed"].includes(item.status)).length;
   if (itemId === "discovery") return data.discoveryResults.filter((item) => item.decision === "pending").length;
   if (itemId === "inbox") return data.emailThreads.filter((item) => item.is_unread).length;
   if (itemId === "follow-ups") {
@@ -31,8 +60,9 @@ export function renderShell() {
       ${group.label ? `<span class="nav__label">${escapeHtml(group.label)}</span>` : ""}
       ${group.items.map((item) => {
         const count = navCount(item.id, state);
-        const alert = item.id === "follow-ups" || item.id === "inbox";
-        return `<a class="nav__item${route === item.id ? " is-active" : ""}" href="#/${item.id}" title="${escapeHtml(item.label)}">
+        const alert = item.id === "home" || item.id === "payments";
+        const activeRoute = PRIMARY_ROUTE[route] || route;
+        return `<a class="nav__item${activeRoute === item.id ? " is-active" : ""}" href="#/${item.id}" title="${escapeHtml(item.label)}">
           ${icon(item.icon)}<span>${escapeHtml(item.label)}</span>
           ${count ? `<span class="nav__count${alert ? " nav__count--alert" : ""}">${count}</span>` : ""}
         </a>`;
@@ -45,6 +75,7 @@ export function renderShell() {
       ${icon(state.storage === "cloud" ? "globe" : "file")}
       <span>${state.storage === "cloud" ? "Synced" : "Local data"}</span>
     </div>
+    <a class="sidebar__status" href="#/settings">${icon("settings")}<span>Settings</span></a>
     ${state.connection.ok ? "" : `<a class="sidebar__status" href="#/settings" style="color:var(--amber)">${icon("alert")}<span>${escapeHtml(state.connection.message)}</span></a>`}
   `;
 

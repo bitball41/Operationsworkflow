@@ -658,7 +658,7 @@ export async function onClick(event) {
     }
     case "voice-agent-new": {
       const voices = await run(fetchElevenLabsVoices);
-      if (voices) openVoiceAgentForm(null, voices);
+      if (voices) openVoiceAgentForm(null, voices, target.dataset.clientId || "");
       break;
     }
     case "voice-agent-open": {
@@ -722,7 +722,7 @@ export async function onClick(event) {
     }
     case "subscription-new":
       closeModal();
-      openSubscriptionForm();
+      openSubscriptionForm(null, target.dataset.clientId || "");
       break;
     case "subscription-open": {
       const subscription = findRecord("maintenanceSubscriptions", id);
@@ -732,7 +732,7 @@ export async function onClick(event) {
 
     /* --- money --- */
     case "payment-new":
-      openPaymentForm();
+      openPaymentForm(null, target.dataset.clientId || "");
       break;
     case "payment-open": {
       const payment = findRecord("payments", id);

@@ -1,10 +1,10 @@
 /** Agency command center: money, sales, delivery health, and the next work. */
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, greeting, isToday, relativeTime } from "../core/utils.js";
-import { btn, empty, icon, pill, row, rows, section, stats } from "../components/ui.js";
-import { agencySummary, attentionItems, commissionAmount } from "../services/operations.js";
+import { btn, empty, icon, pill, row, rows, section, stats, table, td } from "../components/ui.js";
+import { agencySummary, attentionItems, clientLifecycleRows, commissionAmount } from "../services/operations.js";
 import { currentMember } from "../services/permissions.js";
-import { timeline } from "./shared.js";
+import { clientName, timeline } from "./shared.js";
 
 const CLOSED_LEADS = new Set(["won", "lost"]);
 const CLOSED_FOLLOW_UPS = new Set(["sent", "replied", "completed", "dead", "skipped", "cancelled"]);
@@ -161,6 +161,7 @@ function attentionSection() {
 export function renderHome() {
   const { data } = getState();
   const summary = agencySummary();
+  const clients = clientLifecycleRows(data);
   const name = currentMember()?.full_name || data.profile?.full_name || "Connor";
   const callsToday = data.salesCalls.filter((call) => isToday(call.called_at || call.created_at));
   const contactsToday = callsToday.filter((call) => !["no_answer", "voicemail", "gatekeeper", "wrong_number"].includes(call.outcome));
@@ -206,6 +207,22 @@ export function renderHome() {
       </div>
 
       ${attentionSection()}
+
+      ${section("Every client · next action", {
+        subtitle: "Derived automatically from payment, onboarding, agent, deployment, and service records",
+        actions: btn("Open client workspace", { action: "navigate", attrs: 'data-route-target="clients"', size: "sm", variant: "primary" }),
+        body: table({
+          columns: ["Client", "Happening now", "Next action", "Progress", ""],
+          rows: clients.map((item) => `<tr>
+            ${td("Client", `<div class="cell"><strong>${escapeHtml(clientName(data, item.client))}</strong><span>${escapeHtml(item.client.contact_name || item.client.email || "No contact recorded")}</span></div>`)}
+            ${td("Happening now", pill(item.currentStage, item.currentLabel))}
+            ${td("Next action", `<strong>${escapeHtml(item.nextAction)}</strong>`)}
+            ${td("Progress", `${item.progress}%`)}
+            ${td("", btn(item.action.label, { action: item.action.action, attrs: item.action.attrs, size: "sm", variant: item.tone === "green" ? "" : "primary" }))}
+          </tr>`),
+          emptyState: empty({ title: "No clients yet", message: "A won lead automatically becomes a client with onboarding and delivery records." }),
+        }),
+      })}
 
       ${section("Recent activity", {
         actions: btn("View all", { action: "navigate", attrs: 'data-route-target="activity"', size: "sm" }),

@@ -141,6 +141,38 @@ test("attention items surface replies, overdue follow-ups and failed deployments
   assert.ok(items[0].weight <= items[items.length - 1].weight, "most urgent first");
 });
 
+test("client lifecycle derives the next action from linked records", () => {
+  const workspace = createSeedData();
+  const client = workspace.clients.find((item) => item.contact_name === "June Park");
+  const onboarding = workspace.onboardingRecords.find((item) => item.client_id === client.id);
+  const project = workspace.projects.find((item) => item.client_id === client.id);
+  const subscription = workspace.maintenanceSubscriptions.find((item) => item.client_id === client.id);
+
+  const before = operations.clientLifecycle(client, workspace);
+  assert.equal(before.currentStage, "onboarding");
+  assert.equal(before.action.action, "onboarding-open");
+  assert.match(before.action.attrs, new RegExp(client.id));
+
+  onboarding.status = "complete";
+  workspace.voiceAgents ||= [];
+  workspace.voiceAgents.push({
+    id: "derived-agent",
+    client_id: client.id,
+    provider_agent_id: "agent_server_managed",
+    status: "active",
+    provider_deleted_at: null,
+    last_error: null,
+  });
+  project.deployment_status = "production";
+  subscription.status = "active";
+
+  const after = operations.clientLifecycle(client, workspace);
+  assert.equal(after.currentStage, "service");
+  assert.equal(after.progress, 100);
+  assert.equal(after.tone, "green");
+  assert.equal(after.nextAction, "Review client health and the latest call records");
+});
+
 test("today's numbers and revenue read from records", () => {
   const today = operations.todayStats();
   assert.equal(typeof today.sent, "number");

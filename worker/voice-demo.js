@@ -20,9 +20,9 @@ const SECURITY_HEADERS = Object.freeze({
   "content-security-policy": [
     "default-src 'none'",
     "script-src 'self' blob:",
-    "style-src 'self'",
+    "style-src 'self' https://conno.fun https://fonts.googleapis.com",
     "img-src 'self' data:",
-    "font-src 'self'",
+    "font-src 'self' https://fonts.gstatic.com",
     "media-src 'self' blob:",
     "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://livekit.rtc.elevenlabs.io wss://livekit.rtc.elevenlabs.io",
     "worker-src 'self' blob:",

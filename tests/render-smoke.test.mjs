@@ -59,6 +59,8 @@ test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   assert.match(html, /id="start-demo"/);
   assert.match(html, /id="mute-toggle"/);
   assert.match(html, /id="end-demo"/);
+  assert.match(html, /https:\/\/conno\.fun\/brand\.css/);
+  assert.doesNotMatch(html, /brand__mark/);
   assert.doesNotMatch(html, /<iframe|elevenlabs-convai|convai-widget/i);
   assert.ok(bundle.length > 100_000, "the local ElevenLabs browser SDK bundle should be built");
 });
@@ -94,7 +96,7 @@ const renderers = {
   automation: automation.renderAutomation,
   discovery: sales.renderDiscovery,
   leads: sales.renderLeads,
-  pipeline: sales.renderPipeline,
+  pipeline: sales.renderSalesCenter,
   calling: agency.renderCalling,
   meetings: agency.renderMeetings,
   outreach: outreach.renderOutreach,
@@ -110,7 +112,7 @@ const renderers = {
   "voice-agents": voiceAgents.renderVoiceAgents,
   "automation-studio": agency.renderAutomationStudio,
   maintenance: clients.renderMaintenance,
-  payments: business.renderPayments,
+  payments: business.renderMoneyCenter,
   subscriptions: agency.renderSubscriptions,
   commissions: agency.renderCommissions,
   analytics: business.renderAnalytics,
@@ -141,13 +143,13 @@ test("every route has a renderer and every renderer has a route", () => {
   assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("navigation includes the AI Assistant and agency automation routes", () => {
-  const labels = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.label));
-  assert.ok(labels.includes("AI Assistant"));
-  assert.ok(labels.includes("My Day"));
-  assert.ok(labels.includes("Automation Studio"));
+test("navigation stays focused while contextual tools remain routable", () => {
+  const items = NAV_GROUPS.flatMap((group) => group.items);
+  assert.deepEqual(items.map((item) => item.label), ["Dashboard", "Sales", "Clients", "Money"]);
+  assert.equal(new Set(items.map((item) => item.id)).size, 4);
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
+  assert.ok(ROUTES.includes("voice-agents"));
 });
 
 test("salespeople get a phone-first personal day without losing the business dashboard", () => {
@@ -208,9 +210,22 @@ test("home shows agency health, attention, and today's sales work", () => {
   assert.match(html, /Needs attention/);
   assert.match(html, /Agency pulse/);
   assert.match(html, /Calls today/);
+  assert.match(html, /Every client · next action/);
   assert.match(html, /MRR/);
   /* Metrics stay grouped into three operating questions, not an unstructured wall. */
   assert.ok((html.match(/class="stat"/g) || []).length <= 14);
+});
+
+test("clients unite lifecycle, next action, onboarding, and voice-agent setup", () => {
+  setState({ route: "clients", routeParams: {} }, { silent: true });
+  const html = renderers.clients();
+  assert.match(html, /Client lifecycle/);
+  assert.match(html, /Next action/);
+  assert.match(html, /Onboarding/);
+  assert.match(html, /ElevenLabs agent/);
+  assert.match(html, /Recent client calls/);
+  assert.match(html, /Edge Function connection/);
+  assert.match(html, /No browser credential fallback/);
 });
 
 test("lead discovery leads with three inputs and hides the rest", () => {

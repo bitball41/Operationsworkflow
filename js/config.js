@@ -13,82 +13,29 @@ export const CONFIG = Object.freeze({
   previewDomain: "",
 });
 
-/* Sidebar is the only navigation system. Keep it focused on pages that perform
-   real work; closely related records live together instead of multiplying
-   placeholder routes. */
+/* Four primary screens replace the old wall of feature tabs. Specialist routes
+   remain available as contextual drill-downs and for old bookmarks, but they
+   no longer compete with the client workflow in the main navigation. */
 export const NAV_GROUPS = Object.freeze([
   {
     label: "",
     items: [
-      { id: "my-day", label: "My Day", icon: "phone" },
-      { id: "home", label: "Business Dashboard", icon: "home" },
-      { id: "assistant", label: "AI Assistant", icon: "sparkle" },
-    ],
-  },
-  {
-    label: "Overview",
-    items: [
-      { id: "activity", label: "Activity", icon: "activity" },
-      { id: "tasks", label: "Tasks", icon: "check-square" },
-      { id: "calendar", label: "Calendar", icon: "calendar" },
-    ],
-  },
-  {
-    label: "Sales",
-    items: [
-      { id: "discovery", label: "Lead Discovery", icon: "radar" },
-      { id: "leads", label: "Leads", icon: "building" },
-      { id: "pipeline", label: "Pipeline", icon: "columns" },
-      { id: "calling", label: "Calling", icon: "phone" },
-      { id: "meetings", label: "Meetings", icon: "calendar" },
-      { id: "follow-ups", label: "Follow-Ups", icon: "timer" },
-    ],
-  },
-  {
-    label: "Clients",
-    items: [
+      { id: "home", label: "Dashboard", icon: "home" },
+      { id: "pipeline", label: "Sales", icon: "columns" },
       { id: "clients", label: "Clients", icon: "briefcase" },
-      { id: "onboarding", label: "Onboarding", icon: "check-square" },
-      { id: "projects", label: "Projects", icon: "layers" },
-    ],
-  },
-  {
-    label: "Automation",
-    items: [
-      { id: "voice-agents", label: "Voice Agents", icon: "phone" },
-      { id: "automation-studio", label: "Automation Studio", icon: "tool" },
-      { id: "integrations", label: "Integrations", icon: "plug" },
-      { id: "deployments", label: "Deployments", icon: "globe" },
-    ],
-  },
-  {
-    label: "Business",
-    items: [
-      { id: "payments", label: "Payments", icon: "wallet" },
-      { id: "subscriptions", label: "Subscriptions", icon: "refresh" },
-      { id: "commissions", label: "Commissions", icon: "dollar" },
-      { id: "analytics", label: "Analytics", icon: "chart" },
-      { id: "costs", label: "Costs", icon: "dollar" },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
-      { id: "notes", label: "Notes", icon: "note" },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { id: "team", label: "Team", icon: "user" },
-      { id: "settings", label: "Settings", icon: "settings" },
+      { id: "payments", label: "Money", icon: "wallet" },
     ],
   },
 ]);
 
 /* Legacy website routes remain renderable for existing bookmarks and records,
    but are intentionally absent from the agency navigation. */
-export const LEGACY_ROUTES = Object.freeze(["automation", "outreach", "inbox", "studio", "templates", "demos", "maintenance", "pricing"]);
+export const LEGACY_ROUTES = Object.freeze([
+  "my-day", "assistant", "automation", "discovery", "leads", "calling", "meetings", "outreach", "inbox",
+  "follow-ups", "studio", "templates", "demos", "deployments", "onboarding", "projects", "voice-agents",
+  "automation-studio", "maintenance", "subscriptions", "commissions", "analytics", "costs", "pricing", "tasks",
+  "calendar", "notes", "activity", "integrations", "team", "settings",
+]);
 
 export const ROUTES = Object.freeze([
   ...NAV_GROUPS.flatMap((group) => group.items.map((item) => item.id)),
@@ -98,14 +45,37 @@ export const ROUTES = Object.freeze([
 export const PAGE_TITLES = Object.freeze(Object.fromEntries(
   [
     ...NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item.label])),
+    ["my-day", "My Day"],
+    ["assistant", "AI Assistant"],
     ["automation", "Legacy website automation"],
+    ["discovery", "Lead Discovery"],
+    ["leads", "Leads"],
+    ["calling", "Calling"],
+    ["meetings", "Meetings"],
     ["outreach", "Outreach"],
     ["inbox", "Inbox"],
+    ["follow-ups", "Follow-Ups"],
     ["studio", "Website Studio"],
     ["templates", "Templates"],
     ["demos", "Demos"],
+    ["deployments", "Deployments"],
+    ["onboarding", "Onboarding"],
+    ["projects", "Projects"],
+    ["voice-agents", "Voice Agents"],
+    ["automation-studio", "Automation Studio"],
     ["maintenance", "Legacy maintenance"],
+    ["subscriptions", "Subscriptions"],
+    ["commissions", "Commissions"],
+    ["analytics", "Analytics"],
+    ["costs", "Costs"],
     ["pricing", "Legacy pricing experiments"],
+    ["tasks", "Tasks"],
+    ["calendar", "Calendar"],
+    ["notes", "Notes"],
+    ["activity", "Activity"],
+    ["integrations", "Integrations"],
+    ["team", "Team"],
+    ["settings", "Settings"],
   ],
 ));
 
