@@ -61,6 +61,7 @@ test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   assert.match(html, /id="end-demo"/);
   assert.match(html, /https:\/\/conno\.fun\/brand\.css/);
   assert.doesNotMatch(html, /brand__mark/);
+  assert.doesNotMatch(html, /conno-wordmark|Conno\s*<span>Systems/i);
   assert.doesNotMatch(html, /<iframe|elevenlabs-convai|convai-widget/i);
   assert.ok(bundle.length > 100_000, "the local ElevenLabs browser SDK bundle should be built");
 });
@@ -97,7 +98,7 @@ const renderers = {
   discovery: sales.renderDiscovery,
   leads: sales.renderLeads,
   pipeline: sales.renderSalesCenter,
-  calling: agency.renderCalling,
+  calling: agency.renderSalesActivity,
   meetings: agency.renderMeetings,
   outreach: outreach.renderOutreach,
   inbox: outreach.renderInbox,
@@ -143,10 +144,12 @@ test("every route has a renderer and every renderer has a route", () => {
   assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("navigation stays focused while contextual tools remain routable", () => {
+test("navigation follows the client lifecycle while contextual tools remain routable", () => {
   const items = NAV_GROUPS.flatMap((group) => group.items);
-  assert.deepEqual(items.map((item) => item.label), ["Dashboard", "Sales", "Clients", "Money"]);
-  assert.equal(new Set(items.map((item) => item.id)).size, 4);
+  assert.deepEqual(items.map((item) => item.label), [
+    "Dashboard", "Leads", "Calls & Demos", "Pipeline", "Clients", "Payments", "Onboarding", "Deployments", "Service",
+  ]);
+  assert.equal(new Set(items.map((item) => item.id)).size, 9);
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
   assert.ok(ROUTES.includes("voice-agents"));

@@ -23,10 +23,10 @@ import { isOwner } from "./services/permissions.js";
 import {
   renderAgencyDeployments,
   renderAutomationStudio,
-  renderCalling,
   renderCommissions,
   renderMeetings,
   renderOnboarding,
+  renderSalesActivity,
   renderSubscriptions,
   renderTeam,
 } from "./pages/agency.js";
@@ -46,7 +46,7 @@ const PAGES = {
   discovery: renderDiscovery,
   leads: renderLeads,
   pipeline: renderSalesCenter,
-  calling: renderCalling,
+  calling: renderSalesActivity,
   meetings: renderMeetings,
   outreach: renderOutreach,
   inbox: renderInbox,

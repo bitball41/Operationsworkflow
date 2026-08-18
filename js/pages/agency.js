@@ -5,7 +5,7 @@ import { escapeHtml, formatCurrency, formatDate, formatNumber, isToday, relative
 import { bar, btn, empty, field, input, notice, pill, row, rows, section, select, stats, table, td, textarea } from "../components/ui.js";
 import { commissionAmount, getNextCallLead } from "../services/operations.js";
 import { currentMemberId, isOwner, isSalesperson, ownerOnlyNotice } from "../services/permissions.js";
-import { byId, clientName, filterSelect, searchInput } from "./shared.js";
+import { byId, clientName, filterSelect, searchInput, viewTabs } from "./shared.js";
 
 function memberName(data, id) {
   return byId(data.teamMembers, id)?.full_name || "Unassigned";
@@ -22,6 +22,28 @@ function clientBusiness(data, client) {
 function opportunityTags(lead) {
   const labels = new Map(AUTOMATION_OPPORTUNITIES);
   return (lead?.opportunity_tags || []).map((tag) => labels.get(tag) || statusLabel(tag));
+}
+
+/** One top-level workspace for the calls and demos that move leads forward. */
+export function renderSalesActivity() {
+  const { data, routeParams } = getState();
+  const view = routeParams.view === "demos" ? "demos" : "calls";
+  const upcoming = data.meetings.filter((meeting) => (
+    new Date(meeting.starts_at).getTime() >= Date.now()
+    && !["cancelled", "lost"].includes(meeting.outcome)
+  ));
+
+  return `<div class="stack crm-center">
+    <section class="crm-center__head">
+      <div><span class="eyebrow">Lead &rarr; conversation &rarr; next step</span><h2>Calls &amp; Demos</h2><p>Work the next call, run the demo, and record what happens.</p></div>
+      <div class="crm-center__pulse">
+        <span><b>${upcoming.length}</b> upcoming</span>
+        <span><b>${data.meetings.filter((meeting) => meeting.outcome === "proposal_needed").length}</b> need proposals</span>
+      </div>
+    </section>
+    ${viewTabs("view", [["calls", "Call queue"], ["demos", "Demos & meetings"]], view)}
+    ${view === "demos" ? renderMeetings() : renderCalling()}
+  </div>`;
 }
 
 export function renderCalling() {
