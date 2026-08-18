@@ -29,7 +29,39 @@ import {
   td,
 } from "../components/ui.js";
 import { canUseDirectWebsiteVerification, workerHoldsMapsKey } from "../services/openscout/adapter.js";
+import { renderCalling } from "./agency.js";
 import { filterSelect, locationOf, searchInput, viewTabs } from "./shared.js";
+
+/** One sales screen: do the next call, move the pipeline, review leads, or find more. */
+export function renderSalesCenter() {
+  const { data, routeParams } = getState();
+  const view = ["work", "pipeline", "leads", "discover"].includes(routeParams.view) ? routeParams.view : "work";
+  const openLeads = data.leads.filter((lead) => !["won", "lost"].includes(lead.status));
+  const dueFollowUps = data.followUps.filter((item) => (
+    !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
+    && item.due_at && new Date(item.due_at) <= new Date()
+  ));
+  const upcomingMeetings = data.meetings.filter((meeting) => (
+    new Date(meeting.starts_at).getTime() >= Date.now() && !["cancelled", "lost"].includes(meeting.outcome)
+  ));
+  const body = view === "pipeline" ? renderPipeline()
+    : view === "leads" ? renderLeads()
+      : view === "discover" ? renderDiscovery()
+        : renderCalling();
+
+  return `<div class="stack crm-center">
+    <section class="crm-center__head">
+      <div><span class="eyebrow">Lead &rarr; demo &rarr; close</span><h2>Sales</h2><p>One queue for the work that moves a real business forward.</p></div>
+      <div class="crm-center__pulse">
+        <span><b>${openLeads.length}</b> open leads</span>
+        <span><b>${dueFollowUps.length}</b> due follow-ups</span>
+        <span><b>${upcomingMeetings.length}</b> upcoming meetings</span>
+      </div>
+    </section>
+    ${viewTabs("view", [["work", "Call next"], ["pipeline", "Pipeline"], ["leads", "Lead list"], ["discover", "Find leads"]], view)}
+    ${body}
+  </div>`;
+}
 
 /* ---------- discovery ---------- */
 

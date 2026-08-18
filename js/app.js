@@ -16,7 +16,7 @@ import { initWorkspace, reloadWorkspace, subscribeToWorkspaceChanges } from "./s
 import { hydrateAssistantHistory } from "./services/ai/history.js";
 import { renderAssistant, mountAssistant } from "./pages/assistant.js";
 import { renderAutomation } from "./pages/automation.js";
-import { renderAnalytics, renderCosts, renderPayments, renderPricing } from "./pages/business.js";
+import { renderAnalytics, renderCosts, renderMoneyCenter, renderPricing } from "./pages/business.js";
 import { renderClients, renderMaintenance, renderProjects } from "./pages/clients.js";
 import { renderHome, renderMyDay } from "./pages/home.js";
 import { isOwner } from "./services/permissions.js";
@@ -31,7 +31,7 @@ import {
   renderTeam,
 } from "./pages/agency.js";
 import { renderFollowUps, renderInbox, renderOutreach } from "./pages/outreach.js";
-import { renderDiscovery, renderLeads, renderPipeline } from "./pages/sales.js";
+import { renderDiscovery, renderLeads, renderPipeline, renderSalesCenter } from "./pages/sales.js";
 import { renderStudio, mountStudio } from "./pages/studio.js";
 import { renderIntegrations, renderSettings } from "./pages/system.js";
 import { renderDemos, renderTemplates } from "./pages/websites.js";
@@ -45,7 +45,7 @@ const PAGES = {
   automation: renderAutomation,
   discovery: renderDiscovery,
   leads: renderLeads,
-  pipeline: renderPipeline,
+  pipeline: renderSalesCenter,
   calling: renderCalling,
   meetings: renderMeetings,
   outreach: renderOutreach,
@@ -61,7 +61,7 @@ const PAGES = {
   "voice-agents": renderVoiceAgents,
   "automation-studio": renderAutomationStudio,
   maintenance: renderMaintenance,
-  payments: renderPayments,
+  payments: renderMoneyCenter,
   subscriptions: renderSubscriptions,
   commissions: renderCommissions,
   analytics: renderAnalytics,

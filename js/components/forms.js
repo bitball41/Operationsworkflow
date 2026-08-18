@@ -215,11 +215,12 @@ export function openAutomationRecordForm(automation = null) {
   });
 }
 
-export function openVoiceAgentForm(agent = null, voices = []) {
+export function openVoiceAgentForm(agent = null, voices = [], presetClientId = "") {
   const { data } = getState();
-  const client = agent?.client_id ? data.clients.find((item) => item.id === agent.client_id) : null;
+  const selectedClientId = agent?.client_id || presetClientId;
+  const client = selectedClientId ? data.clients.find((item) => String(item.id) === String(selectedClientId)) : null;
   const automations = data.automations
-    .filter((item) => !agent?.client_id || item.client_id === agent.client_id || item.id === agent.automation_id)
+    .filter((item) => !selectedClientId || String(item.client_id) === String(selectedClientId) || item.id === agent?.automation_id)
     .map((item) => ({ value: item.id, label: item.name }));
   const voiceOptions = voices.map((voice) => ({
     value: voice.voice_id,
@@ -238,7 +239,7 @@ export function openVoiceAgentForm(agent = null, voices = []) {
     body: `<form id="voice-agent-form" data-form="voice-agent"${agent ? ` data-id="${agent.id}"` : ""}>
       <div class="field-grid">
         ${field("Agent name", input("name", agent?.name || (client?.is_example ? "Cactus Wrench Receptionist" : ""), { required: true }))}
-        ${field("Client", select("client_id", clientOptions(data), agent?.client_id || "", { placeholder: "Select a client", attrs: "required" }))}
+        ${field("Client", select("client_id", clientOptions(data), selectedClientId || "", { placeholder: "Select a client", attrs: "required" }))}
         ${field("Linked automation", select("automation_id", automations, agent?.automation_id || "", { placeholder: "Optional management record" }))}
         ${field("Environment", select("environment", ["development", "staging", "production"].map((value) => ({ value, label: statusLabel(value) })), agent?.environment || "development"))}
         ${field("Voice", select("voice_id", voiceOptions, agent?.voice_id || "", { placeholder: "Use ElevenLabs default" }))}
@@ -286,12 +287,12 @@ export function openVoiceConversation(conversation) {
   });
 }
 
-export function openSubscriptionForm(subscription = null) {
+export function openSubscriptionForm(subscription = null, presetClientId = "") {
   const { data } = getState();
   openModal({
     title: subscription ? "Edit subscription" : "Add subscription",
     body: `<form id="subscription-form" data-form="subscription"${subscription ? ` data-id="${subscription.id}"` : ""}>
-      ${field("Client", select("client_id", clientOptions(data), subscription?.client_id || "", { placeholder: "Select a client", required: true }))}
+      ${field("Client", select("client_id", clientOptions(data), subscription?.client_id || presetClientId || "", { placeholder: "Select a client", required: true }))}
       <div class="field-grid">
         ${field("Plan", input("plan_name", subscription?.plan_name || CONFIG.packageName))}
         ${field("Monthly amount", input("monthly_amount", subscription?.monthly_amount ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="0.01"' }))}
@@ -630,13 +631,18 @@ export function openMaintenanceForm(subscription = null) {
 
 /* ---------- money ---------- */
 
-export function openPaymentForm(payment = null) {
+export function openPaymentForm(payment = null, presetClientId = "") {
   const { data } = getState();
+  const selectedClientId = payment?.client_id || presetClientId;
+  const selectedClient = data.clients.find((item) => String(item.id) === String(selectedClientId));
+  const selectedCustomer = selectedClient
+    ? data.leads.find((lead) => String(lead.id) === String(selectedClient.lead_id))?.business_name || selectedClient.contact_name || "Client"
+    : "";
   openModal({
     title: payment ? "Edit payment" : "Record payment",
     body: `<form id="payment-form" data-form="payment"${payment ? ` data-id="${payment.id}"` : ""}>
-      ${field("Customer", input("customer_name", payment?.customer_name || "", { required: true }))}
-      ${field("Client", select("client_id", clientOptions(data), payment?.client_id, { placeholder: "Not linked" }))}
+      ${field("Customer", input("customer_name", payment?.customer_name || selectedCustomer, { required: true }))}
+      ${field("Client", select("client_id", clientOptions(data), selectedClientId, { placeholder: "Not linked" }))}
       ${field("Project", select("project_id", data.projects.map((project) => ({ value: project.id, label: project.name })), payment?.project_id, { placeholder: "Not linked" }))}
       <div class="field-grid">
         ${field("Type", select("payment_type", ["setup_fee", "recurring_subscription", "usage_overage", "custom_invoice", "refund"].map((value) => ({ value, label: statusLabel(value) })), payment?.payment_type || "setup_fee"))}
