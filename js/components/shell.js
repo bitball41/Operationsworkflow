@@ -10,19 +10,14 @@ const PRIMARY_ROUTE = Object.freeze({
   tasks: "home",
   calendar: "home",
   notes: "home",
-  discovery: "pipeline",
-  leads: "pipeline",
-  calling: "pipeline",
-  meetings: "pipeline",
+  discovery: "leads",
+  meetings: "calling",
   outreach: "pipeline",
   inbox: "pipeline",
   "follow-ups": "pipeline",
-  onboarding: "clients",
-  projects: "clients",
-  "voice-agents": "clients",
-  "automation-studio": "clients",
-  deployments: "clients",
-  maintenance: "clients",
+  projects: "onboarding",
+  "voice-agents": "onboarding",
+  "automation-studio": "onboarding",
   subscriptions: "payments",
   commissions: "payments",
   analytics: "payments",
@@ -33,8 +28,15 @@ const PRIMARY_ROUTE = Object.freeze({
 function navCount(itemId, state) {
   const { data, automation } = state;
   if (itemId === "home") return attentionItems().length;
+  if (itemId === "leads") return data.leads.filter((item) => ["new", "ready_to_contact"].includes(item.status)).length;
   if (itemId === "clients") return clientLifecycleRows(data).filter((item) => !item.serviceActive || item.tone === "red").length;
   if (itemId === "payments") return data.payments.filter((item) => ["overdue", "failed"].includes(item.status)).length;
+  if (itemId === "onboarding") return data.onboardingRecords.filter((item) => item.status === "blocked").length;
+  if (itemId === "deployments") return data.deployments.filter((item) => item.status === "failed").length;
+  if (itemId === "maintenance") {
+    return data.maintenanceRequests.filter((item) => item.status !== "completed").length
+      + data.maintenanceSubscriptions.filter((item) => item.status === "past_due").length;
+  }
   if (itemId === "discovery") return data.discoveryResults.filter((item) => item.decision === "pending").length;
   if (itemId === "inbox") return data.emailThreads.filter((item) => item.is_unread).length;
   if (itemId === "follow-ups") {
@@ -60,7 +62,7 @@ export function renderShell() {
       ${group.label ? `<span class="nav__label">${escapeHtml(group.label)}</span>` : ""}
       ${group.items.map((item) => {
         const count = navCount(item.id, state);
-        const alert = item.id === "home" || item.id === "payments";
+        const alert = ["home", "payments", "onboarding", "deployments", "maintenance"].includes(item.id);
         const activeRoute = PRIMARY_ROUTE[route] || route;
         return `<a class="nav__item${activeRoute === item.id ? " is-active" : ""}" href="#/${item.id}" title="${escapeHtml(item.label)}">
           ${icon(item.icon)}<span>${escapeHtml(item.label)}</span>

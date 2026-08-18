@@ -13,17 +13,32 @@ export const CONFIG = Object.freeze({
   previewDomain: "",
 });
 
-/* Four primary screens replace the old wall of feature tabs. Specialist routes
-   remain available as contextual drill-downs and for old bookmarks, but they
-   no longer compete with the client workflow in the main navigation. */
+/* The primary navigation follows the agency's actual client lifecycle. Utility
+   routes remain available as contextual drill-downs and for old bookmarks,
+   without competing with the work that sells and services clients. */
 export const NAV_GROUPS = Object.freeze([
   {
-    label: "",
+    label: "Overview",
     items: [
       { id: "home", label: "Dashboard", icon: "home" },
-      { id: "pipeline", label: "Sales", icon: "columns" },
+    ],
+  },
+  {
+    label: "Sell",
+    items: [
+      { id: "leads", label: "Leads", icon: "building" },
+      { id: "calling", label: "Calls & Demos", icon: "phone" },
+      { id: "pipeline", label: "Pipeline", icon: "columns" },
+    ],
+  },
+  {
+    label: "Deliver",
+    items: [
       { id: "clients", label: "Clients", icon: "briefcase" },
-      { id: "payments", label: "Money", icon: "wallet" },
+      { id: "payments", label: "Payments", icon: "wallet" },
+      { id: "onboarding", label: "Onboarding", icon: "check-square" },
+      { id: "deployments", label: "Deployments", icon: "globe" },
+      { id: "maintenance", label: "Service", icon: "refresh" },
     ],
   },
 ]);
@@ -31,9 +46,8 @@ export const NAV_GROUPS = Object.freeze([
 /* Legacy website routes remain renderable for existing bookmarks and records,
    but are intentionally absent from the agency navigation. */
 export const LEGACY_ROUTES = Object.freeze([
-  "my-day", "assistant", "automation", "discovery", "leads", "calling", "meetings", "outreach", "inbox",
-  "follow-ups", "studio", "templates", "demos", "deployments", "onboarding", "projects", "voice-agents",
-  "automation-studio", "maintenance", "subscriptions", "commissions", "analytics", "costs", "pricing", "tasks",
+  "my-day", "assistant", "automation", "discovery", "meetings", "outreach", "inbox", "follow-ups", "studio",
+  "templates", "demos", "projects", "voice-agents", "automation-studio", "subscriptions", "commissions", "analytics", "costs", "pricing", "tasks",
   "calendar", "notes", "activity", "integrations", "team", "settings",
 ]);
 
