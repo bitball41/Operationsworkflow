@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { handleElevenLabs } from "../worker/elevenlabs.js";
 
 const workspaceId = "10000000-0000-4000-8000-000000000001";
@@ -51,4 +52,12 @@ test("the Worker exposes only the named ElevenLabs management routes", async () 
     OPERATIONS_WORKSPACE_ID: workspaceId,
   }, "/secrets", member);
   assert.equal(response.status, 404);
+});
+
+test("agent delete archives the local record even when ElevenLabs never issued an id", () => {
+  const source = readFileSync(new URL("../supabase/functions/elevenlabs-agents/index.ts", import.meta.url), "utf8");
+  assert.match(source, /providerAgentId = cleanString\(existing\.provider_agent_id/);
+  assert.match(source, /if \(providerAgentId\)/);
+  assert.match(source, /provider_deleted_at/);
+  assert.match(source, /\\b404\\b\|not found/);
 });

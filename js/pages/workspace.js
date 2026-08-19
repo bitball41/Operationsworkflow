@@ -45,7 +45,7 @@ export function renderTasks() {
       ${tasks.length ? rows(tasks.map((task) => `<div class="row">
         <button class="icon-btn" type="button" data-action="task-toggle" data-id="${task.id}" aria-label="${task.status === "completed" ? "Reopen task" : "Complete task"}" title="${task.status === "completed" ? "Reopen task" : "Complete task"}">${icon(task.status === "completed" ? "check-circle" : "circle")}</button>
         <span class="row__main"><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(entityName(data, task))} · ${escapeHtml(dueLabel(task.due_at))}</span></span>
-        <span class="row__side">${task.priority === "urgent" || task.priority === "high" ? pill(task.priority) : ""}${btn("Edit", { action: "task-open", size: "sm", attrs: `data-id="${task.id}"` })}</span>
+        <span class="row__side">${task.priority === "urgent" || task.priority === "high" ? pill(task.priority) : ""}${btn("Edit", { action: "task-open", size: "sm", attrs: `data-id="${task.id}"` })}${btn("Delete", { action: "task-delete", variant: "danger", size: "sm", attrs: `data-id="${task.id}"` })}</span>
       </div>`)) : empty({ title: `No ${view} tasks`, message: "This view is clear." })}
     </div>
   `;

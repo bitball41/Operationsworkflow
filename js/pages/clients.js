@@ -70,6 +70,7 @@ export function renderClients() {
                 ${btn(action.label, { action: action.action, attrs: action.attrs, variant: item.tone === "green" ? "" : "primary", size: "sm" })}
                 ${agent && action.action !== "voice-agent-open" ? btn("Configure agent", { action: "voice-agent-open", attrs: `data-id="${agent.id}"`, size: "sm" }) : ""}
                 ${btn("Client details", { action: "client-open", attrs: `data-id="${client.id}"`, size: "sm", variant: "quiet" })}
+                ${btn("Delete", { action: "client-delete", attrs: `data-id="${client.id}"`, size: "sm", variant: "danger" })}
               </div>
               <span class="faint">${client.updated_at ? `Updated ${relativeTime(client.updated_at)}` : "Lifecycle is derived from linked records"}</span>
             </footer>

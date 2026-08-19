@@ -102,7 +102,7 @@ export function renderVoiceAgents() {
               ${td("Channel", escapeHtml(agent.phone_number || client?.dedicated_ai_number || "Voice"))}
               ${td("Activity", recent ? `${recent} recent call${recent === 1 ? "" : "s"}` : (agent.last_synced_at ? relativeTime(agent.last_synced_at) : "No calls yet"))}
               ${td("Health", pill(health, agent.last_error ? "Error" : statusLabel(health)))}
-              ${td("", isOwner() ? `<span class="cell-actions">${btn("Configure", { action: "voice-agent-open", size: "sm", attrs: `data-id="${agent.id}"` })}</span>` : pill("warning", "View only"))}
+              ${td("", isOwner() ? `<span class="cell-actions">${btn("Configure", { action: "voice-agent-open", size: "sm", attrs: `data-id="${agent.id}"` })}${btn("Delete", { action: "voice-agent-delete", variant: "danger", size: "sm", attrs: `data-id="${agent.id}"` })}</span>` : pill("warning", "View only"))}
             </tr>`;
           }),
           emptyState: empty({ title: "No ElevenLabs agents linked", message: "Create a provider agent for a client or sync agents that already exist.", action: isOwner() ? "voice-agent-new" : "", actionLabel: "Create the first agent" }),

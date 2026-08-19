@@ -377,7 +377,15 @@ async function handle(req: Request): Promise<Response> {
     }
 
     if (req.method === "DELETE") {
-      await elevenlabs(`/v1/convai/agents/${encodeURIComponent(existing.provider_agent_id)}`, { method: "DELETE" });
+      const providerAgentId = cleanString(existing.provider_agent_id, 180);
+      if (providerAgentId) {
+        try {
+          await elevenlabs(`/v1/convai/agents/${encodeURIComponent(providerAgentId)}`, { method: "DELETE" });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          if (!/\b404\b|not found/i.test(message)) throw error;
+        }
+      }
       const { data, error } = await client.from("voice_agents").update({
         status: "archived",
         provider_deleted_at: new Date().toISOString(),

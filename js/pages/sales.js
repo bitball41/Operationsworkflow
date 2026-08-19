@@ -305,7 +305,7 @@ export function renderLeads() {
           ${td("Fit", score(lead.lead_score))}
           ${td("Stage", pill(lead.status))}
           ${td("Next step", escapeHtml(nextStep(data, lead)))}
-          ${td("", `<span class="cell-actions">${btn("Call", { action: "navigate", size: "sm", attrs: `data-route-target="calling" data-route-params='${escapeHtml(JSON.stringify({ lead: lead.id }))}' data-stop-row` })}${icon("chevron")}</span>`)}
+          ${td("", `<span class="cell-actions">${btn("Call", { action: "navigate", size: "sm", attrs: `data-route-target="calling" data-route-params='${escapeHtml(JSON.stringify({ lead: lead.id }))}' data-stop-row` })}${btn("Delete", { action: "lead-delete", variant: "danger", size: "sm", attrs: `data-id="${lead.id}"` })}</span>`)}
         </tr>`),
         emptyState: empty({
           title: data.leads.length ? "No leads match" : "No leads yet",
@@ -362,7 +362,7 @@ export function renderPipeline() {
           ${td("Value", formatCurrency(lead.deal_value || lead.asking_price || 0))}
           ${td("Last contact", lead.last_contacted_at ? relativeTime(lead.last_contacted_at) : "Never")}
           ${td("Follow-up", lead.follow_up_at ? relativeTime(lead.follow_up_at) : "—")}
-          ${td("", icon("chevron"))}
+          ${td("", `<span class="cell-actions">${btn("Delete", { action: "lead-delete", variant: "danger", size: "sm", attrs: `data-id="${lead.id}"` })}</span>`)}
         </tr>`),
         emptyState: empty({ title: "Pipeline is empty", message: "Save leads from discovery to fill it." }),
       }) : `

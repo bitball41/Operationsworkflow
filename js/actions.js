@@ -622,6 +622,24 @@ export async function onClick(event) {
       if (client) openClientForm(client);
       break;
     }
+    case "client-delete": {
+      const client = findRecord("clients", id);
+      if (!client) break;
+      const label = getState().data.leads.find((lead) => String(lead.id) === String(client.lead_id))?.business_name || "this client";
+      if (target.dataset.confirmed !== "true") {
+        confirmAction({
+          title: `Delete ${label}?`,
+          message: "This removes the client and cascaded delivery records (onboarding, projects, and subscriptions). It cannot be undone.",
+          confirmLabel: "Delete",
+          action: "client-delete",
+          attrs: `data-id="${client.id}" data-confirmed="true"`,
+        });
+        break;
+      }
+      await run(() => deleteRecord("clients", id), "Client deleted");
+      closeModal();
+      break;
+    }
     case "project-new":
       closeModal();
       openProjectForm();
@@ -680,9 +698,11 @@ export async function onClick(event) {
       if (!agent) break;
       if (target.dataset.confirmed !== "true") {
         confirmAction({
-          title: `Delete ${agent.name} from ElevenLabs?`,
-          message: "This deletes the provider agent and archives its local record. Conversation history is preserved.",
-          confirmLabel: "Delete provider agent",
+          title: `Delete ${agent.name}?`,
+          message: agent.provider_agent_id
+            ? "This deletes the ElevenLabs agent if it still exists, then archives the local record. Conversation history is preserved."
+            : "This archives the local agent record. Conversation history is preserved.",
+          confirmLabel: "Delete",
           action: "voice-agent-delete",
           attrs: `data-id="${agent.id}" data-confirmed="true"`,
         });
@@ -692,7 +712,7 @@ export async function onClick(event) {
         await deleteElevenLabsAgent(agent.id);
         await reloadWorkspace();
         closeModal();
-        toast("Agent deleted", "The ElevenLabs agent is gone; its local record is archived.");
+        toast("Agent deleted", "The provider agent is gone if it existed; the local record is archived.");
       });
       break;
     }

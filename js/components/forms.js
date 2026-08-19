@@ -253,7 +253,7 @@ export function openVoiceAgentForm(agent = null, voices = [], presetClientId = "
       ${field("Tags", input("tags", (agent?.tags || []).filter((tag) => tag !== "operationsworkflow").join(", "), { placeholder: "roofing, receptionist" }), { hint: "comma separated" })}
     </form>`,
     footer: footer("voice-agent-form", agent ? "Save in ElevenLabs" : "Create in ElevenLabs", agent
-      ? btn("Delete provider agent", { action: "voice-agent-delete", variant: "danger", attrs: `data-id="${agent.id}"` })
+      ? btn("Delete", { action: "voice-agent-delete", variant: "danger", attrs: `data-id="${agent.id}"` })
       : ""),
   });
 }
@@ -418,6 +418,7 @@ export function openLeadDetails(lead) {
       ${events.length ? rows(events.map((event) => row({ main: event.title, sub: event.detail || "Recorded", iconName: event.iconName, side: `<span class="faint">${relativeTime(event.at)}</span>` }))) : rows([row({ main: "Lead imported", sub: "No later activity is recorded", iconName: "building" })])}
     `,
     footer: `
+      ${btn("Delete", { action: "lead-delete", variant: "danger", attrs: `data-id="${lead.id}"` })}
       ${btn("Edit", { action: "lead-edit", variant: "quiet", attrs: `data-id="${lead.id}"` })}
       ${btn("Move stage", { action: "lead-stage", attrs: `data-id="${lead.id}"` })}
       ${btn("Schedule meeting", { action: "meeting-new", attrs: `data-lead-id="${lead.id}"` })}
@@ -537,7 +538,9 @@ export function openClientForm(client = null, presetLeadId = "") {
       </div>
       ${field("Notes", textarea("notes", client?.notes || "", { attrs: 'rows="3"' }))}
     </form>`,
-    footer: footer("client-form", client ? "Save client" : "Create client"),
+    footer: footer("client-form", client ? "Save client" : "Create client", client
+      ? btn("Delete", { action: "client-delete", variant: "danger", attrs: `data-id="${client.id}"` })
+      : ""),
   });
 }
 
@@ -580,7 +583,7 @@ export function openClientDetails(client) {
       ])}
       ${client.notes ? `<p class="email-preview">${escapeHtml(client.notes)}</p>` : ""}
     `,
-    footer: `${btn("Close", { action: "close-modal", variant: "quiet" })}${btn("Edit client", { action: "client-edit", variant: "primary", attrs: `data-id="${client.id}"` })}`,
+    footer: `${btn("Delete", { action: "client-delete", variant: "danger", attrs: `data-id="${client.id}"` })}${btn("Close", { action: "close-modal", variant: "quiet" })}${btn("Edit client", { action: "client-edit", variant: "primary", attrs: `data-id="${client.id}"` })}`,
   });
 }
 
