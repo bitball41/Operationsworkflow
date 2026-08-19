@@ -1622,7 +1622,6 @@ button.event-log__item:hover strong {
   .client-lifecycle-card__value { align-items: flex-start; }
   .client-facts { grid-template-columns: 1fr; }
 }
-.voice-columns { grid-template-columns: minmax(0, 1.12fr) minmax(340px, .88fr); }
 .conversation-summary { padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .conversation-summary p { margin-top: 8px; color: var(--text-2); }
 .conversation-transcript { display: grid; gap: 10px; }
@@ -1633,7 +1632,7 @@ button.event-log__item:hover strong {
 @media (max-width: 950px) {
   .voice-hero { align-items: flex-start; flex-direction: column; }
   .voice-hero__actions { justify-content: flex-start; }
-  .client-os__grid, .voice-columns { grid-template-columns: 1fr; }
+  .client-os__grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
   .voice-hero { min-height: 0; }
