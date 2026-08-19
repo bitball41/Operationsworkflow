@@ -674,6 +674,8 @@ a.row:hover .row__main strong {
 /* ---------- tables ---------- */
 .table-wrap {
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 table {
@@ -714,6 +716,13 @@ th:last-child {
   text-align: right;
 }
 
+@media (min-width: 901px) {
+  td:last-child:has(.btn) {
+    width: 1%;
+    white-space: nowrap;
+  }
+}
+
 .cell {
   display: flex;
   flex-direction: column;
@@ -723,6 +732,10 @@ th:last-child {
 
 .cell strong {
   font-weight: 500;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .cell span {
@@ -735,6 +748,7 @@ th:last-child {
   gap: 6px;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* ---------- empty + notice ---------- */

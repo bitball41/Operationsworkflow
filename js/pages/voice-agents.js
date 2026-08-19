@@ -86,41 +86,39 @@ export function renderVoiceAgents() {
       ["Webhook", provider.webhook_configured ? "Ready" : "Pending", "HMAC verified"],
     ]) })}
     ${workflowPanel(data, exampleClient, exampleAgent, provider)}
-    <div class="split voice-columns">
-      ${section("Provider agents", {
-        count: agents.length,
-        body: table({
-          columns: ["Agent", "Client", "Status", "Channel", "Activity", "Health", ""],
-          rows: agents.map((agent) => {
-            const client = byId(data.clients, agent.client_id);
-            const recent = conversations.filter((item) => String(item.voice_agent_id) === String(agent.id)).length;
-            const health = agent.last_error || agent.status === "error" ? "error" : agent.environment === "live" || agent.status === "live" ? "live" : (agent.status || agent.environment || "draft");
-            return `<tr data-action="voice-agent-open" data-id="${agent.id}">
-              ${td("Agent", `<div class="cell"><strong>${escapeHtml(agent.name)}</strong><span>${agent.is_example ? "Example · " : ""}${escapeHtml(agent.provider_agent_id || "Not synced")}</span></div>`)}
-              ${td("Client", escapeHtml(client ? clientName(data, client) : "Not linked"))}
-              ${td("Status", pill(agent.status || agent.environment || "draft"))}
-              ${td("Channel", escapeHtml(agent.phone_number || client?.dedicated_ai_number || "Voice"))}
-              ${td("Activity", recent ? `${recent} recent call${recent === 1 ? "" : "s"}` : (agent.last_synced_at ? relativeTime(agent.last_synced_at) : "No calls yet"))}
-              ${td("Health", pill(health, agent.last_error ? "Error" : statusLabel(health)))}
-              ${td("", isOwner() ? `<span class="cell-actions">${btn("Configure", { action: "voice-agent-open", size: "sm", attrs: `data-id="${agent.id}"` })}${btn("Delete", { action: "voice-agent-delete", variant: "danger", size: "sm", attrs: `data-id="${agent.id}"` })}</span>` : pill("warning", "View only"))}
-            </tr>`;
-          }),
-          emptyState: empty({ title: "No ElevenLabs agents linked", message: "Create a provider agent for a client or sync agents that already exist.", action: isOwner() ? "voice-agent-new" : "", actionLabel: "Create the first agent" }),
+    ${section("Provider agents", {
+      count: agents.length,
+      body: table({
+        columns: ["Agent", "Client", "Status", "Channel", "Activity", "Health", ""],
+        rows: agents.map((agent) => {
+          const client = byId(data.clients, agent.client_id);
+          const recent = conversations.filter((item) => String(item.voice_agent_id) === String(agent.id)).length;
+          const health = agent.last_error || agent.status === "error" ? "error" : agent.environment === "live" || agent.status === "live" ? "live" : (agent.status || agent.environment || "draft");
+          return `<tr data-action="voice-agent-open" data-id="${agent.id}">
+            ${td("Agent", `<div class="cell"><strong>${escapeHtml(agent.name)}</strong><span>${agent.is_example ? "Example · " : ""}${escapeHtml(agent.provider_agent_id || "Not synced")}</span></div>`)}
+            ${td("Client", escapeHtml(client ? clientName(data, client) : "Not linked"))}
+            ${td("Status", pill(agent.status || agent.environment || "draft"))}
+            ${td("Channel", escapeHtml(agent.phone_number || client?.dedicated_ai_number || "Voice"))}
+            ${td("Activity", recent ? `${recent} recent call${recent === 1 ? "" : "s"}` : (agent.last_synced_at ? relativeTime(agent.last_synced_at) : "No calls yet"))}
+            ${td("Health", pill(health, agent.last_error ? "Error" : statusLabel(health)))}
+            ${td("", isOwner() ? `<span class="cell-actions">${btn("Configure", { action: "voice-agent-open", size: "sm", attrs: `data-id="${agent.id}"` })}${btn("Delete", { action: "voice-agent-delete", variant: "danger", size: "sm", attrs: `data-id="${agent.id}"` })}</span>` : pill("warning", "View only"))}
+          </tr>`;
         }),
-      })}
-      ${section("Recent post-call records", {
-        count: conversations.length,
-        body: table({
-          columns: ["Caller", "Summary", "When", ""],
-          rows: conversations.slice(0, 12).map((conversation) => `<tr data-action="voice-conversation-open" data-id="${conversation.id}">
-            ${td("Caller", `<div class="cell"><strong>${escapeHtml(conversation.caller_name || conversation.caller_phone || "Unknown caller")}</strong><span>${conversation.is_example ? "Example &middot; " : ""}${escapeHtml(statusLabel(conversation.direction))}</span></div>`)}
-            ${td("Summary", `<div class="cell"><strong>${escapeHtml(conversation.problem || conversation.summary || "No summary returned")}</strong><span>${escapeHtml(conversation.appointment_status || conversation.call_successful || statusLabel(conversation.status))}</span></div>`)}
-            ${td("When", formatDateTime(conversation.started_at || conversation.created_at))}
-            ${td("", btn("Open", { action: "voice-conversation-open", size: "sm", attrs: `data-id="${conversation.id}"` }))}
-          </tr>`),
-          emptyState: empty({ title: "No completed calls yet", message: "A real signed post-call transcription webhook will add the first conversation here. No sample call is fabricated." }),
-        }),
-      })}
-    </div>
+        emptyState: empty({ title: "No ElevenLabs agents linked", message: "Create a provider agent for a client or sync agents that already exist.", action: isOwner() ? "voice-agent-new" : "", actionLabel: "Create the first agent" }),
+      }),
+    })}
+    ${section("Recent post-call records", {
+      count: conversations.length,
+      body: table({
+        columns: ["Caller", "Summary", "When", ""],
+        rows: conversations.slice(0, 12).map((conversation) => `<tr data-action="voice-conversation-open" data-id="${conversation.id}">
+          ${td("Caller", `<div class="cell"><strong>${escapeHtml(conversation.caller_name || conversation.caller_phone || "Unknown caller")}</strong><span>${conversation.is_example ? "Example &middot; " : ""}${escapeHtml(statusLabel(conversation.direction))}</span></div>`)}
+          ${td("Summary", `<div class="cell"><strong>${escapeHtml(conversation.problem || conversation.summary || "No summary returned")}</strong><span>${escapeHtml(conversation.appointment_status || conversation.call_successful || statusLabel(conversation.status))}</span></div>`)}
+          ${td("When", formatDateTime(conversation.started_at || conversation.created_at))}
+          ${td("", btn("Open", { action: "voice-conversation-open", size: "sm", attrs: `data-id="${conversation.id}"` }))}
+        </tr>`),
+        emptyState: empty({ title: "No completed calls yet", message: "A real signed post-call transcription webhook will add the first conversation here. No sample call is fabricated." }),
+      }),
+    })}
   </div>`;
 }
