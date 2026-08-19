@@ -1,41 +1,63 @@
-/* Conno.fun brand system, adapted as the pitch-black private operations workspace. */
+/* Conno Systems internal operations — dark, graphite, one electric-blue accent. */
 :root {
   color-scheme: dark;
-  --bg: #050506;
-  --bg-raised: #0a0a0c;
-  --surface: #101014;
-  --surface-2: #18181d;
-  --surface-3: #23232a;
-  --line-soft: rgba(255, 255, 255, 0.08);
-  --line: #303038;
-  --line-strong: #484851;
-  --text: #fff8fb;
-  --text-2: #c7bbc1;
-  --text-3: #94888f;
-  --accent: #ff4d8d;
-  --accent-text: #ff8ab5;
-  --accent-quiet: rgba(255, 77, 141, 0.14);
-  --accent-line: rgba(255, 77, 141, 0.7);
-  --green: #58d69b;
-  --green-quiet: rgba(88, 214, 155, 0.12);
-  --amber: #f0b85e;
-  --amber-quiet: rgba(240, 184, 94, 0.12);
-  --red: #ff8c86;
-  --red-quiet: rgba(255, 140, 134, 0.12);
-  --radius-sm: 10px;
-  --radius: 14px;
-  --radius-lg: 18px;
-  --sidebar-w: 248px;
-  --topbar-h: 60px;
+
+  --bg: #121417;
+  --bg-raised: #16191d;
+  --surface: #1c2026;
+  --surface-1: #1c2026;
+  --surface-2: #232830;
+  --surface-3: #2c333d;
+
+  --line-soft: rgba(242, 244, 247, 0.06);
+  --line: #2c333d;
+  --line-strong: #3a4350;
+
+  --text: #f2f4f7;
+  --text-1: #f2f4f7;
+  --text-2: #9aa3ad;
+  --text-3: #6e7781;
+
+  --accent: #4d8dff;
+  --accent-text: #8bb4ff;
+  --accent-quiet: rgba(77, 141, 255, 0.14);
+  --accent-line: rgba(77, 141, 255, 0.55);
+  --accent-ink: #f7f9ff;
+
+  --green: #3dcf8e;
+  --green-quiet: rgba(61, 207, 142, 0.12);
+  --amber: #e3b15a;
+  --amber-quiet: rgba(227, 177, 90, 0.12);
+  --red: #ef7a74;
+  --red-quiet: rgba(239, 122, 116, 0.12);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --sidebar-w: 244px;
+  --topbar-h: 52px;
   --gutter: 28px;
-  --stack: 28px;
-  --font: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --stack: 24px;
+
+  --font: "Geist", "Geist Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
-  --focus-ring: 0 0 0 4px var(--accent-quiet);
-  --shadow-sm: 0 5px 0 rgba(0, 0, 0, 0.72);
-  --shadow: 0 9px 0 rgba(0, 0, 0, 0.78);
-  --shadow-lg: 0 14px 0 rgba(0, 0, 0, 0.82);
+  --focus-ring: 0 0 0 3px var(--accent-quiet);
+
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.28);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.36);
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -44,12 +66,15 @@
 
 @media (prefers-contrast: more) {
   :root {
-    --text-2: #eee6ea;
-    --text-3: #c7bbc1;
-    --line-soft: rgba(255, 255, 255, 0.22);
+    --text-2: #d5dae0;
+    --text-3: #b4bcc4;
+    --line-soft: rgba(242, 244, 247, 0.16);
   }
 }
 
 @media (max-width: 900px) {
-  :root { --gutter: 18px; --stack: 22px; }
+  :root {
+    --gutter: 16px;
+    --stack: 20px;
+  }
 }

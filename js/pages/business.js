@@ -1,7 +1,7 @@
 /** Payments, Analytics, Costs and Pricing Experiments. */
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, groupBy, isSameMonth, statusLabel, sum } from "../core/utils.js";
-import { bars, btn, empty, lineChart, notice, pill, section, stats, table, td } from "../components/ui.js";
+import { bars, btn, empty, lineChart, notice, pageHeader, pill, section, stats, table, td } from "../components/ui.js";
 import { isConnected } from "../services/integrations.js";
 import { getPayments, revenueSummary } from "../services/operations.js";
 import { isOwner, ownerOnlyNotice } from "../services/permissions.js";
@@ -35,14 +35,16 @@ export function renderMoneyCenter() {
   const { gross, profit, costs } = revenueSummary();
 
   return `<div class="stack crm-center">
-    <section class="crm-center__head">
-      <div><span class="eyebrow">Close &rarr; activation &rarr; monthly service</span><h2>Money</h2><p>Collected revenue, balances, recurring service, and costs in one view.</p></div>
-      <div class="crm-center__pulse">
-        <span><b>${formatCurrency(gross)}</b> collected</span>
-        <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
-        <span><b>${formatCurrency(profit)}</b> recorded profit</span>
-      </div>
-    </section>
+    ${pageHeader({
+      title: "Finance",
+      subtitle: "Collected revenue, outstanding balances, and recurring service. No invented accounting.",
+      actions: isOwner() ? btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary" }) : "",
+    })}
+    <div class="crm-center__pulse">
+      <span><b>${formatCurrency(gross)}</b> collected</span>
+      <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
+      <span><b>${formatCurrency(profit)}</b> recorded profit</span>
+    </div>
 
     ${section("Cash position", { body: stats([
       ["This month", formatCurrency(sum(getPayments({ range: "month" }), (payment) => payment.amount))],
@@ -75,7 +77,7 @@ export function renderMoneyCenter() {
     }) : ""}
 
     ${section("Payments", {
-      actions: `${searchInput("Search customer or transaction", routeParams.q || "")}${isOwner() ? btn("Record payment", { action: "payment-new", iconName: "plus", variant: "primary", size: "sm" }) : ""}`,
+      actions: searchInput("Search customer or transaction", routeParams.q || ""),
       body: table({
         columns: ["Customer", "Type", "Amount", "Status", "Date", "Source", ""],
         rows: rowsToShow.map((payment) => `<tr>

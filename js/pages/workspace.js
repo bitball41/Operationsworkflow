@@ -1,7 +1,7 @@
 /** Tasks, Calendar, Notes and Activity. */
 import { getState } from "../core/state.js";
 import { dueLabel, escapeHtml, formatNumber, groupBy, isToday, relativeTime, statusLabel } from "../core/utils.js";
-import { btn, empty, icon, pill, row, rows, section } from "../components/ui.js";
+import { btn, empty, icon, pageHeader, pill, row, rows, section } from "../components/ui.js";
 import { entityName, filterSelect, leadName, searchInput, timeline, viewTabs } from "./shared.js";
 
 /* ---------- tasks ---------- */
@@ -26,6 +26,11 @@ export function renderTasks() {
 
   return `
     <div class="stack">
+      ${pageHeader({
+        title: "Tasks",
+        subtitle: "Assigned work, due dates, and the related client or lead.",
+        actions: btn("New task", { action: "task-new", iconName: "plus", variant: "primary" }),
+      })}
       <div class="toolbar">
         ${viewTabs("view", [
           ["open", `Open · ${counts.open}`],
@@ -35,11 +40,10 @@ export function renderTasks() {
         ], view)}
         ${searchInput("Search tasks", routeParams.q || "")}
         <span class="toolbar__spacer"></span>
-        ${btn("New task", { action: "task-new", iconName: "plus", variant: "primary", size: "sm" })}
       </div>
 
       ${tasks.length ? rows(tasks.map((task) => `<div class="row">
-        <button class="icon-btn" type="button" data-action="task-toggle" data-id="${task.id}" aria-label="${task.status === "completed" ? "Reopen task" : "Complete task"}">${icon(task.status === "completed" ? "check-circle" : "circle")}</button>
+        <button class="icon-btn" type="button" data-action="task-toggle" data-id="${task.id}" aria-label="${task.status === "completed" ? "Reopen task" : "Complete task"}" title="${task.status === "completed" ? "Reopen task" : "Complete task"}">${icon(task.status === "completed" ? "check-circle" : "circle")}</button>
         <span class="row__main"><strong>${escapeHtml(task.title)}</strong><span>${escapeHtml(entityName(data, task))} · ${escapeHtml(dueLabel(task.due_at))}</span></span>
         <span class="row__side">${task.priority === "urgent" || task.priority === "high" ? pill(task.priority) : ""}${btn("Edit", { action: "task-open", size: "sm", attrs: `data-id="${task.id}"` })}</span>
       </div>`)) : empty({ title: `No ${view} tasks`, message: "This view is clear." })}
@@ -169,6 +173,10 @@ export function renderActivity() {
 
   return `
     <div class="stack">
+      ${pageHeader({
+        title: "Activity",
+        subtitle: "Who did what, to which client, agent, or lead. This is history, not a work queue.",
+      })}
       <div class="toolbar">
         ${searchInput("Search activity", routeParams.q || "")}
         ${filterSelect("actor", [{ value: "user", label: "Me" }, { value: "system", label: "System" }, { value: "orchestrator", label: "Automation" }], actor, "Everyone")}

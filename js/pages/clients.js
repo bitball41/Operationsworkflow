@@ -3,7 +3,7 @@ import { PROJECT_STAGES } from "../config.js";
 import { CONFIG } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatDateTime, formatNumber, relativeTime, statusLabel, sum } from "../core/utils.js";
-import { bar, btn, empty, icon, notice, pill, row, rows, section, stats, table, td } from "../components/ui.js";
+import { bar, btn, empty, icon, notice, pageHeader, pill, row, rows, section, stats, table, td } from "../components/ui.js";
 import { clientLifecycleRows } from "../services/operations.js";
 import { isOwner } from "../services/permissions.js";
 import { byId, clientName, filterSelect, searchInput } from "./shared.js";
@@ -22,14 +22,16 @@ export function renderClients() {
 
   return `
     <div class="stack crm-center">
-      <section class="crm-center__head">
-        <div><span class="eyebrow">Payment &rarr; onboarding &rarr; agent &rarr; deployment &rarr; service</span><h2>Clients</h2><p>Every client, their real delivery state, and the next action in one place.</p></div>
-        <div class="crm-center__pulse">
-          <span><b>${data.clients.length}</b> clients</span>
-          <span><b>${allLifecycles.filter((item) => item.tone !== "green").length}</b> need action</span>
-          <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
-        </div>
-      </section>
+      ${pageHeader({
+        title: "Clients",
+        subtitle: "Service delivery, agent health, and the next action for each account.",
+        actions: btn("New client", { action: "client-new", iconName: "plus", variant: "primary" }),
+      })}
+      <div class="crm-center__pulse">
+        <span><b>${data.clients.length}</b> clients</span>
+        <span><b>${allLifecycles.filter((item) => item.tone !== "green").length}</b> need action</span>
+        <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
+      </div>
 
       ${provider.connected
         ? notice("ElevenLabs is connected", provider.webhook_configured ? "Agent actions and signed post-call records are managed server-side." : "Agent actions work; the signed post-call webhook still needs its secret.", { tone: provider.webhook_configured ? "success" : "warn", iconName: provider.webhook_configured ? "check-circle" : "alert", actions: isOwner() ? btn("Sync agents", { action: "voice-agent-sync", size: "sm" }) : "" })
@@ -39,7 +41,6 @@ export function renderClients() {
         ${searchInput("Search clients", routeParams.q || "")}
         ${filterSelect("stage", ["attention", "payment", "onboarding", "agent", "deployment", "service"].map((value) => ({ value, label: value === "attention" ? "Needs action" : statusLabel(value) })), stage, "All clients")}
         <span class="toolbar__spacer"></span>
-        ${btn("New client", { action: "client-new", iconName: "plus", variant: "primary", size: "sm" })}
       </div>
 
       <div class="client-lifecycle-list">

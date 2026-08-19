@@ -47,13 +47,17 @@ export function viewTabs(key, views, current) {
 
 export function timeline(items, limit = 8) {
   if (!items.length) return empty({ title: "Nothing recorded yet", message: "Business events appear here as work happens." });
-  return `<div class="event-log">${items.slice(0, limit).map((item) => `
-    <div class="event-log__item">
+  return `<div class="event-log">${items.slice(0, limit).map((item) => {
+    const target = item.lead_id ? ["lead-open", item.lead_id] : item.client_id ? ["client-open", item.client_id] : item.project_id ? ["project-open", item.project_id] : null;
+    const tag = target ? "button" : "div";
+    const action = target ? ` type="button" data-action="${target[0]}" data-id="${escapeHtml(String(target[1]))}"` : "";
+    return `
+    <${tag} class="event-log__item"${action}>
       ${icon(eventIcon(item))}
       <div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail || statusLabel(item.type))}</p></div>
       <time title="${escapeHtml(new Date(item.created_at).toLocaleString())}">${relativeTime(item.created_at)}</time>
-    </div>
-  `).join("")}</div>`;
+    </${tag}>`;
+  }).join("")}</div>`;
 }
 
 function eventIcon(item) {

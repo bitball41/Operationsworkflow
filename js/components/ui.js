@@ -9,7 +9,8 @@ export function btn(label, { action = "", iconName = "", variant = "", attrs = "
 }
 
 export function iconBtn(iconName, { action = "", label, attrs = "" } = {}) {
-  return `<button class="icon-btn" type="button" aria-label="${escapeHtml(label || action)}"${action ? ` data-action="${action}"` : ""} ${attrs}>${icon(iconName)}</button>`;
+  const text = label || action;
+  return `<button class="icon-btn" type="button" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"${action ? ` data-action="${action}"` : ""} ${attrs}>${icon(iconName)}</button>`;
 }
 
 export function externalLink(url, label = "Open") {
@@ -42,6 +43,43 @@ export function bar(percent, variant = "") {
 export function score(value = 0) {
   const number = Math.max(0, Math.min(100, Number(value) || 0));
   return `<span class="score"><i style="--score:${number}%"></i>${number}</span>`;
+}
+
+export function pageHeader({ title, subtitle = "", actions = "", eyebrow = "" } = {}) {
+  return `
+    <header class="page-header">
+      <div class="page-header__copy">
+        ${eyebrow ? `<span class="eyebrow">${escapeHtml(eyebrow)}</span>` : ""}
+        ${title ? `<h2>${escapeHtml(title)}</h2>` : ""}
+        ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
+      </div>
+      ${actions ? `<div class="page-header__actions">${actions}</div>` : ""}
+    </header>
+  `;
+}
+
+export function metricCard(label, value, hint = "") {
+  return `<div class="metric-card"><span class="metric-card__label">${escapeHtml(label)}</span><b class="metric-card__value">${value}</b>${hint ? `<small class="metric-card__hint">${escapeHtml(hint)}</small>` : ""}</div>`;
+}
+
+export function metricGrid(items) {
+  return `<div class="metric-grid">${items.map(([label, value, hint]) => metricCard(label, value, hint)).join("")}</div>`;
+}
+
+export function panel(body, { className = "" } = {}) {
+  return `<div class="panel${className ? ` ${escapeHtml(className)}` : ""}">${body}</div>`;
+}
+
+export function healthDot(tone = "") {
+  return `<span class="health-dot${tone ? ` health-dot--${tone}` : ""}" aria-hidden="true"></span>`;
+}
+
+export function loadingState(message = "Loading…") {
+  return `<div class="state-block"><strong>Loading</strong><p>${escapeHtml(message)}</p></div>`;
+}
+
+export function errorState(title, message = "") {
+  return `<div class="state-block"><strong>${escapeHtml(title)}</strong>${message ? `<p>${escapeHtml(message)}</p>` : ""}</div>`;
 }
 
 export function section(title, { subtitle = "", actions = "", body = "", count = "" } = {}) {

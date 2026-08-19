@@ -35,16 +35,16 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-lg);
 }
 
 .auth-gate h1 {
   margin: 0 0 8px;
+  font-size: 1.25rem;
 }
 
 .auth-gate__brand {
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .auth-gate__brand small {
@@ -62,8 +62,7 @@
   gap: 6px;
   background: var(--bg-raised);
   border-right: 1px solid var(--line);
-  box-shadow: 6px 0 0 rgba(0, 0, 0, 0.38);
-  padding: calc(12px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
+  padding: calc(10px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)) calc(10px + var(--safe-left));
   z-index: 40;
 }
 
@@ -72,27 +71,34 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 6px 10px;
+  padding: 6px 6px 12px;
 }
 
 .wordmark {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   font-size: 0.9375rem;
-  font-weight: 900;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  letter-spacing: -0.03em;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
+  line-height: 1.15;
 }
 
 .wordmark small {
-  color: var(--text-2);
-  font-weight: 400;
+  color: var(--text-3);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   overflow-y: auto;
   padding-bottom: 10px;
   flex: 1;
@@ -102,36 +108,36 @@
 .nav__group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .nav__label {
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.07em;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-3);
-  padding: 4px 8px 5px;
+  padding: 0 8px 6px;
 }
 
 .nav__item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 9px;
+  padding: 7px 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text-2);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   position: relative;
   transition: background 0.12s var(--ease), color 0.12s var(--ease);
-  min-height: 34px;
+  min-height: 32px;
 }
 
 .nav__item svg {
   width: 16px;
   height: 16px;
-  color: var(--text-2);
+  color: var(--text-3);
   flex: none;
 }
 
@@ -143,15 +149,17 @@
 
 .nav__item:hover {
   background: var(--surface);
-  border-color: var(--line-soft);
   color: var(--text);
 }
 
+.nav__item:hover svg {
+  color: var(--text-2);
+}
+
 .nav__item.is-active {
-  background: var(--accent);
-  border-color: var(--text);
+  background: var(--accent-quiet);
   color: var(--text);
-  font-weight: 600;
+  font-weight: 550;
 }
 
 .nav__item.is-active::before {
@@ -160,27 +168,27 @@
   inset: 7px auto 7px -1px;
   width: 2px;
   border-radius: 99px;
-  background: var(--text);
+  background: var(--accent);
 }
 
 .nav__item.is-active svg {
-  color: var(--text);
+  color: var(--accent-text);
 }
 
 .nav__count {
   margin-left: auto;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
-  background: var(--surface-2);
-  border-radius: 5px;
+  background: var(--surface-3);
+  border-radius: 4px;
   padding: 1px 6px;
   flex: none;
 }
 
 .nav__item.is-active .nav__count {
   background: var(--surface-3);
-  color: var(--text-2);
+  color: var(--accent-text);
 }
 
 .nav__count--alert {
@@ -244,17 +252,19 @@
   gap: 10px;
   height: calc(var(--topbar-h) + var(--safe-top));
   padding: var(--safe-top) var(--gutter) 0;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(14px);
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
-  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.28);
 }
 
-.topbar h1 {
+.topbar h1,
+.topbar__crumb {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 .topbar__right {
@@ -298,8 +308,8 @@
 }
 
 .page {
-  padding: 26px var(--gutter) 72px;
-  max-width: 1320px;
+  padding: 24px var(--gutter) 72px;
+  max-width: 1280px;
   width: 100%;
   min-width: 0;
   margin: 0 auto;
@@ -331,8 +341,7 @@
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgba(6, 6, 8, 0.68);
-  backdrop-filter: blur(4px);
+  background: rgba(10, 12, 15, 0.72);
   display: flex;
   justify-content: center;
   padding: 12vh 16px 16px;

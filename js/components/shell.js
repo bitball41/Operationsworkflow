@@ -6,49 +6,56 @@ import { attentionItems, clientLifecycleRows } from "../services/operations.js";
 
 const PRIMARY_ROUTE = Object.freeze({
   "my-day": "home",
-  activity: "home",
-  tasks: "home",
-  calendar: "home",
-  notes: "home",
-  discovery: "leads",
-  meetings: "calling",
+  discovery: "pipeline",
+  leads: "pipeline",
   outreach: "pipeline",
-  inbox: "pipeline",
   "follow-ups": "pipeline",
-  projects: "onboarding",
-  "voice-agents": "onboarding",
-  "automation-studio": "onboarding",
+  calendar: "meetings",
+  notes: "playbooks",
+  studio: "playbooks",
+  templates: "playbooks",
+  demos: "playbooks",
+  automation: "playbooks",
+  projects: "clients",
+  onboarding: "clients",
+  deployments: "clients",
+  maintenance: "clients",
+  "automation-studio": "voice-agents",
   subscriptions: "payments",
   commissions: "payments",
   analytics: "payments",
   costs: "payments",
+  pricing: "payments",
+  integrations: "settings",
 });
+
+const ALERT_ROUTES = new Set(["home", "inbox", "voice-agents", "payments", "clients"]);
 
 /* Only counts that mean "you have something to do" are shown. */
 function navCount(itemId, state) {
   const { data, automation } = state;
   if (itemId === "home") return attentionItems().length;
-  if (itemId === "leads") return data.leads.filter((item) => ["new", "ready_to_contact"].includes(item.status)).length;
-  if (itemId === "clients") return clientLifecycleRows(data).filter((item) => !item.serviceActive || item.tone === "red").length;
-  if (itemId === "payments") return data.payments.filter((item) => ["overdue", "failed"].includes(item.status)).length;
-  if (itemId === "onboarding") return data.onboardingRecords.filter((item) => item.status === "blocked").length;
-  if (itemId === "deployments") return data.deployments.filter((item) => item.status === "failed").length;
-  if (itemId === "maintenance") {
-    return data.maintenanceRequests.filter((item) => item.status !== "completed").length
-      + data.maintenanceSubscriptions.filter((item) => item.status === "past_due").length;
+  if (itemId === "inbox") {
+    return data.emailThreads.filter((item) => item.is_unread).length
+      + data.followUps.filter((item) => (
+        !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
+        && item.due_at && new Date(item.due_at) <= new Date()
+      )).length;
   }
-  if (itemId === "discovery") return data.discoveryResults.filter((item) => item.decision === "pending").length;
-  if (itemId === "inbox") return data.emailThreads.filter((item) => item.is_unread).length;
-  if (itemId === "follow-ups") {
-    return data.followUps.filter((item) => (
-      !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
-      && item.due_at && new Date(item.due_at) <= new Date()
-    )).length;
-  }
-  if (itemId === "outreach") return data.drafts.filter((item) => ["ready", "approved"].includes(item.status)).length;
   if (itemId === "tasks") {
     return data.tasks.filter((item) => !["completed", "cancelled"].includes(item.status) && item.due_at && new Date(item.due_at) <= new Date()).length;
   }
+  if (itemId === "voice-agents") {
+    return data.voiceAgents.filter((item) => item.last_error || item.status === "error").length
+      + data.automations.filter((item) => item.last_error).length;
+  }
+  if (itemId === "calling") return data.leads.filter((item) => ["new", "ready_to_contact"].includes(item.status)).length;
+  if (itemId === "meetings") {
+    return data.meetings.filter((item) => item.outcome === "proposal_needed" || item.outcome === "technical_discovery_required").length;
+  }
+  if (itemId === "clients") return clientLifecycleRows(data).filter((item) => !item.serviceActive || item.tone === "red").length;
+  if (itemId === "pipeline") return data.leads.filter((item) => ["new", "ready_to_contact"].includes(item.status)).length;
+  if (itemId === "payments") return data.payments.filter((item) => ["overdue", "failed"].includes(item.status)).length;
   if (itemId === "automation" && (automation.status === "running" || automation.status === "stopping")) return "•";
   return 0;
 }
@@ -62,11 +69,10 @@ export function renderShell() {
       ${group.label ? `<span class="nav__label">${escapeHtml(group.label)}</span>` : ""}
       ${group.items.map((item) => {
         const count = navCount(item.id, state);
-        const alert = ["home", "payments", "onboarding", "deployments", "maintenance"].includes(item.id);
         const activeRoute = PRIMARY_ROUTE[route] || route;
         return `<a class="nav__item${activeRoute === item.id ? " is-active" : ""}" href="#/${item.id}" title="${escapeHtml(item.label)}">
           ${icon(item.icon)}<span>${escapeHtml(item.label)}</span>
-          ${count ? `<span class="nav__count${alert ? " nav__count--alert" : ""}">${count}</span>` : ""}
+          ${count ? `<span class="nav__count${ALERT_ROUTES.has(item.id) ? " nav__count--alert" : ""}">${count}</span>` : ""}
         </a>`;
       }).join("")}
     </section>
@@ -77,13 +83,12 @@ export function renderShell() {
       ${icon(state.storage === "cloud" ? "globe" : "file")}
       <span>${state.storage === "cloud" ? "Synced" : "Local data"}</span>
     </div>
-    <a class="sidebar__status" href="#/settings">${icon("settings")}<span>Settings</span></a>
     ${state.connection.ok ? "" : `<a class="sidebar__status" href="#/settings" style="color:var(--amber)">${icon("alert")}<span>${escapeHtml(state.connection.message)}</span></a>`}
   `;
 
   const title = PAGE_TITLES[route] || "Operations";
   document.getElementById("page-title").textContent = title;
-  document.title = `${title} · Operations`;
+  document.title = `${title} · Conno Operations`;
 
   const page = document.getElementById("page");
   page.classList.toggle("page--full", FULL_BLEED_ROUTES.includes(route));

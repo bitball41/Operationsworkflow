@@ -13,42 +13,57 @@ export const CONFIG = Object.freeze({
   previewDomain: "",
 });
 
-/* The primary navigation follows the agency's actual client lifecycle. Utility
-   routes remain available as contextual drill-downs and for old bookmarks,
-   without competing with the work that sells and services clients. */
+/* Primary navigation for the agency operating workspace. Legacy routes stay
+   renderable for bookmarks and drill-downs without crowding the sidebar. */
 export const NAV_GROUPS = Object.freeze([
   {
-    label: "Overview",
+    label: "Workspace",
     items: [
       { id: "home", label: "Dashboard", icon: "home" },
+      { id: "assistant", label: "Copilot", icon: "sparkle" },
+      { id: "tasks", label: "Tasks", icon: "check-square" },
+      { id: "inbox", label: "Inbox", icon: "inbox" },
     ],
   },
   {
-    label: "Sell",
+    label: "Operations",
     items: [
-      { id: "leads", label: "Leads", icon: "building" },
-      { id: "calling", label: "Calls & Demos", icon: "phone" },
-      { id: "pipeline", label: "Pipeline", icon: "columns" },
-    ],
-  },
-  {
-    label: "Deliver",
-    items: [
+      { id: "voice-agents", label: "Agents", icon: "smartphone" },
+      { id: "calling", label: "Calls", icon: "phone" },
+      { id: "meetings", label: "Meetings", icon: "calendar" },
       { id: "clients", label: "Clients", icon: "briefcase" },
-      { id: "payments", label: "Payments", icon: "wallet" },
-      { id: "onboarding", label: "Onboarding", icon: "check-square" },
-      { id: "deployments", label: "Deployments", icon: "globe" },
-      { id: "maintenance", label: "Service", icon: "refresh" },
+    ],
+  },
+  {
+    label: "Growth",
+    items: [
+      { id: "pipeline", label: "Sales", icon: "columns" },
+      { id: "playbooks", label: "Playbooks", icon: "book" },
+    ],
+  },
+  {
+    label: "Business",
+    items: [
+      { id: "team", label: "Team", icon: "user" },
+      { id: "payments", label: "Finance", icon: "wallet" },
+      { id: "activity", label: "Activity", icon: "activity" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { id: "settings", label: "Settings", icon: "settings" },
     ],
   },
 ]);
 
-/* Legacy website routes remain renderable for existing bookmarks and records,
-   but are intentionally absent from the agency navigation. */
+/* Legacy website and drill-down routes remain renderable for existing
+   bookmarks and records, but are intentionally absent from the sidebar. */
 export const LEGACY_ROUTES = Object.freeze([
-  "my-day", "assistant", "automation", "discovery", "meetings", "outreach", "inbox", "follow-ups", "studio",
-  "templates", "demos", "projects", "voice-agents", "automation-studio", "subscriptions", "commissions", "analytics", "costs", "pricing", "tasks",
-  "calendar", "notes", "activity", "integrations", "team", "settings",
+  "my-day", "automation", "discovery", "leads", "outreach", "follow-ups", "studio",
+  "templates", "demos", "projects", "automation-studio", "subscriptions", "commissions",
+  "analytics", "costs", "pricing", "calendar", "notes", "integrations",
+  "onboarding", "deployments", "maintenance",
 ]);
 
 export const ROUTES = Object.freeze([
@@ -60,14 +75,10 @@ export const PAGE_TITLES = Object.freeze(Object.fromEntries(
   [
     ...NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item.label])),
     ["my-day", "My Day"],
-    ["assistant", "AI Assistant"],
     ["automation", "Legacy website automation"],
     ["discovery", "Lead Discovery"],
     ["leads", "Leads"],
-    ["calling", "Calling"],
-    ["meetings", "Meetings"],
     ["outreach", "Outreach"],
-    ["inbox", "Inbox"],
     ["follow-ups", "Follow-Ups"],
     ["studio", "Website Studio"],
     ["templates", "Templates"],
@@ -75,7 +86,6 @@ export const PAGE_TITLES = Object.freeze(Object.fromEntries(
     ["deployments", "Deployments"],
     ["onboarding", "Onboarding"],
     ["projects", "Projects"],
-    ["voice-agents", "Voice Agents"],
     ["automation-studio", "Automation Studio"],
     ["maintenance", "Legacy maintenance"],
     ["subscriptions", "Subscriptions"],
@@ -83,13 +93,9 @@ export const PAGE_TITLES = Object.freeze(Object.fromEntries(
     ["analytics", "Analytics"],
     ["costs", "Costs"],
     ["pricing", "Legacy pricing experiments"],
-    ["tasks", "Tasks"],
     ["calendar", "Calendar"],
     ["notes", "Notes"],
-    ["activity", "Activity"],
     ["integrations", "Integrations"],
-    ["team", "Team"],
-    ["settings", "Settings"],
   ],
 ));
 

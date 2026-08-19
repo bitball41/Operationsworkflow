@@ -40,6 +40,7 @@ const workspace = await import("../js/pages/workspace.js");
 const system = await import("../js/pages/system.js");
 const agency = await import("../js/pages/agency.js");
 const voiceAgents = await import("../js/pages/voice-agents.js");
+const playbooks = await import("../js/pages/playbooks.js");
 
 test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   const html = readFileSync(new URL("../voice-demo/index.html", import.meta.url), "utf8");
@@ -71,8 +72,8 @@ test("Operations owns the dark brand treatment while the public voice demo stays
   const demoStyles = readFileSync(new URL("../voice-demo/style.css", import.meta.url), "utf8");
 
   assert.match(operationsTokens, /color-scheme:\s*dark/);
-  assert.match(operationsTokens, /--bg:\s*#050506/);
-  assert.match(operationsTokens, /--accent:\s*#ff4d8d/);
+  assert.match(operationsTokens, /--bg:\s*#121417/);
+  assert.match(operationsTokens, /--accent:\s*#4d8dff/);
   assert.match(demoStyles, /color-scheme:\s*light/);
   assert.match(demoStyles, /\.call-panel\s*\{[\s\S]*background:\s*linear-gradient\(155deg,\s*#fffdfd,\s*var\(--surface\)\)/);
   assert.doesNotMatch(demoStyles, /\.call-panel\s*\{[\s\S]*rgba\(20,\s*20,\s*26/);
@@ -122,6 +123,7 @@ const renderers = {
   tasks: workspace.renderTasks,
   calendar: workspace.renderCalendar,
   notes: workspace.renderNotes,
+  playbooks: playbooks.renderPlaybooks,
   activity: workspace.renderActivity,
   integrations: system.renderIntegrations,
   settings: system.renderSettings,
@@ -144,15 +146,23 @@ test("every route has a renderer and every renderer has a route", () => {
   assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("navigation follows the client lifecycle while contextual tools remain routable", () => {
+test("navigation is grouped into workspace, operations, growth, business, and system", () => {
   const items = NAV_GROUPS.flatMap((group) => group.items);
-  assert.deepEqual(items.map((item) => item.label), [
-    "Dashboard", "Leads", "Calls & Demos", "Pipeline", "Clients", "Payments", "Onboarding", "Deployments", "Service",
+  assert.deepEqual(NAV_GROUPS.map((group) => group.label), [
+    "Workspace", "Operations", "Growth", "Business", "System",
   ]);
-  assert.equal(new Set(items.map((item) => item.id)).size, 9);
+  assert.deepEqual(items.map((item) => item.label), [
+    "Dashboard", "Copilot", "Tasks", "Inbox",
+    "Agents", "Calls", "Meetings", "Clients",
+    "Sales", "Playbooks",
+    "Team", "Finance", "Activity",
+    "Settings",
+  ]);
+  assert.equal(new Set(items.map((item) => item.id)).size, 14);
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
   assert.ok(ROUTES.includes("voice-agents"));
+  assert.ok(ROUTES.includes("playbooks"));
 });
 
 test("salespeople get a phone-first personal day without losing the business dashboard", () => {
@@ -207,16 +217,27 @@ test("marketing copy is gone", () => {
   }
 });
 
-test("home shows agency health, attention, and today's sales work", () => {
+test("playbooks is a frontend shell over existing notes", () => {
+  setState({ route: "playbooks", routeParams: {} }, { silent: true });
+  const html = renderers.playbooks();
+  assert.match(html, /Playbooks/);
+  assert.match(html, /Sales scripts/);
+  assert.match(html, /Frontend shell/);
+  assert.match(html, /Outreach script/);
+  assert.doesNotMatch(html, /fetch\(|\/api\/playbooks/);
+});
+
+test("home shows attention, snapshot, today, pipeline, and health", () => {
   setState({ route: "home", routeParams: {} }, { silent: true });
   const html = renderers.home();
   assert.match(html, /Needs attention/);
-  assert.match(html, /Agency pulse/);
-  assert.match(html, /Calls today/);
-  assert.match(html, /Every client · next action/);
+  assert.match(html, /Agency snapshot/);
+  assert.match(html, /Sales pipeline/);
+  assert.match(html, /Client and agent health/);
+  assert.match(html, /Create agent/);
+  assert.match(html, /Add lead/);
   assert.match(html, /MRR/);
-  /* Metrics stay grouped into three operating questions, not an unstructured wall. */
-  assert.ok((html.match(/class="stat"/g) || []).length <= 14);
+  assert.ok((html.match(/class="metric-card"/g) || []).length <= 8);
 });
 
 test("clients unite lifecycle, next action, onboarding, and voice-agent setup", () => {
@@ -326,7 +347,7 @@ test("studio exposes the real bundle files in the code view", () => {
 test("assistant page exposes conversations, access and tools without faking answers", () => {
   setState({ route: "assistant", routeParams: {} }, { silent: true });
   const html = renderers.assistant();
-  assert.match(html, /Operations AI/);
+  assert.match(html, /Copilot/);
   assert.match(html, /Model offline|Direct commands available/);
   assert.match(html, /Full access|Full control/);
   assert.match(html, /Context/);
