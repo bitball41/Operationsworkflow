@@ -2,7 +2,7 @@
 import { AUTOMATION_OPPORTUNITIES, CALL_OUTCOMES } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, isToday, relativeTime, statusLabel, sum } from "../core/utils.js";
-import { bar, btn, empty, field, input, notice, pill, row, rows, section, select, stats, table, td, textarea } from "../components/ui.js";
+import { bar, btn, empty, field, input, notice, pageHeader, pill, row, rows, section, select, stats, table, td, textarea } from "../components/ui.js";
 import { commissionAmount, getNextCallLead } from "../services/operations.js";
 import { currentMemberId, isOwner, isSalesperson, ownerOnlyNotice } from "../services/permissions.js";
 import { byId, clientName, filterSelect, searchInput, viewTabs } from "./shared.js";
@@ -17,6 +17,50 @@ function leadName(data, id) {
 
 function clientBusiness(data, client) {
   return clientName(data, client) || "Client";
+}
+
+function callHistory(data, routeParams = {}) {
+  const query = String(routeParams.q || "").toLowerCase();
+  const outcome = routeParams.outcome || "all";
+  const salesRows = data.salesCalls
+    .filter((call) => outcome === "all" || call.outcome === outcome)
+    .filter((call) => {
+      const lead = byId(data.leads, call.lead_id);
+      return !query || `${lead?.business_name || ""} ${call.outcome} ${call.notes || ""}`.toLowerCase().includes(query);
+    });
+  const agentRows = data.voiceConversations.filter((conversation) => (
+    !query || `${conversation.caller_name || ""} ${conversation.summary || ""} ${conversation.problem || ""}`.toLowerCase().includes(query)
+  ));
+
+  return `
+    ${section("Call history", {
+      subtitle: "Recorded sales outcomes and signed agent conversations",
+      actions: `${searchInput("Search calls", routeParams.q || "")}${filterSelect("outcome", CALL_OUTCOMES.map(([value, label]) => ({ value, label })), outcome, "All outcomes")}`,
+      body: table({
+        columns: ["Who", "Context", "Outcome", "When", ""],
+        rows: [
+          ...salesRows.map((call) => {
+            const lead = byId(data.leads, call.lead_id);
+            return `<tr>
+              ${td("Who", `<div class="cell"><strong>${escapeHtml(lead?.business_name || "Lead")}</strong><span>${escapeHtml(memberName(data, call.salesperson_id))}</span></div>`)}
+              ${td("Context", escapeHtml(call.pain_point || call.notes || "Sales call"))}
+              ${td("Outcome", pill(call.outcome))}
+              ${td("When", `${relativeTime(call.called_at || call.created_at)}`)}
+              ${td("", btn("Lead", { action: "lead-open", size: "sm", attrs: `data-id="${call.lead_id}"` }))}
+            </tr>`;
+          }),
+          ...agentRows.slice(0, 20).map((conversation) => `<tr data-action="voice-conversation-open" data-id="${conversation.id}">
+            ${td("Who", `<div class="cell"><strong>${escapeHtml(conversation.caller_name || conversation.caller_phone || "Unknown caller")}</strong><span>Agent call${conversation.duration_seconds == null ? "" : ` · ${Math.round(Number(conversation.duration_seconds))}s`}</span></div>`)}
+            ${td("Context", escapeHtml(conversation.problem || conversation.summary || "No summary returned"))}
+            ${td("Outcome", pill(conversation.status || conversation.call_successful || "completed"))}
+            ${td("When", relativeTime(conversation.started_at || conversation.created_at))}
+            ${td("", btn("Open", { action: "voice-conversation-open", size: "sm", attrs: `data-id="${conversation.id}"` }))}
+          </tr>`),
+        ],
+        emptyState: empty({ title: "No recorded calls", message: "Save a sales outcome or wait for a signed agent post-call record." }),
+      }),
+    })}
+  `;
 }
 
 function opportunityTags(lead) {
@@ -34,14 +78,16 @@ export function renderSalesActivity() {
   ));
 
   return `<div class="stack crm-center">
-    <section class="crm-center__head">
-      <div><span class="eyebrow">Lead &rarr; conversation &rarr; next step</span><h2>Calls &amp; Demos</h2><p>Work the next call, run the demo, and record what happens.</p></div>
-      <div class="crm-center__pulse">
-        <span><b>${upcoming.length}</b> upcoming</span>
-        <span><b>${data.meetings.filter((meeting) => meeting.outcome === "proposal_needed").length}</b> need proposals</span>
-      </div>
-    </section>
-    ${viewTabs("view", [["calls", "Call queue"], ["demos", "Demos & meetings"]], view)}
+    ${pageHeader({
+      title: "Calls",
+      subtitle: "Work the next conversation, then keep a searchable record of outcomes.",
+    })}
+    <div class="crm-center__pulse">
+      <span><b>${upcoming.length}</b> upcoming meetings</span>
+      <span><b>${data.meetings.filter((meeting) => meeting.outcome === "proposal_needed").length}</b> need proposals</span>
+      <span><b>${data.salesCalls.length}</b> recorded calls</span>
+    </div>
+    ${viewTabs("view", [["calls", "Queue & history"], ["demos", "Demos & meetings"]], view)}
     ${view === "demos" ? renderMeetings() : renderCalling()}
   </div>`;
 }
@@ -64,6 +110,7 @@ export function renderCalling() {
         ["Calls", callsToday.length], ["Contacts", contacts.length], ["Meetings", booked.length], ["Closes", closes.length],
       ]) })}
       ${empty({ title: "No lead is ready to call", message: "Assign or save an open lead, or clear the salesperson filter." })}
+      ${callHistory(data, routeParams)}
     </div>`;
   }
 
@@ -129,6 +176,7 @@ export function renderCalling() {
           </div>
         </form>
       </section>
+      ${callHistory(data, routeParams)}
     </div>
   `;
 }
@@ -140,10 +188,20 @@ export function renderMeetings() {
   const now = new Date();
   const meetings = data.meetings
     .filter((meeting) => outcome === "all" || meeting.outcome === outcome)
-    .filter((meeting) => !query || `${meeting.title} ${leadName(data, meeting.lead_id)} ${meeting.automation_proposed || ""}`.toLowerCase().includes(query));
+    .filter((meeting) => !query || `${meeting.title} ${leadName(data, meeting.lead_id)} ${meeting.automation_proposed || ""}`.toLowerCase().includes(query))
+    .sort((left, right) => {
+      const leftUpcoming = new Date(left.starts_at) >= now ? 0 : 1;
+      const rightUpcoming = new Date(right.starts_at) >= now ? 0 : 1;
+      return leftUpcoming - rightUpcoming || new Date(left.starts_at) - new Date(right.starts_at);
+    });
   const upcoming = data.meetings.filter((meeting) => new Date(meeting.starts_at) >= now && !["cancelled", "lost"].includes(meeting.outcome));
 
   return `<div class="stack">
+    ${pageHeader({
+      title: "Meetings",
+      subtitle: "Upcoming first. Keep preparation notes and the next step on the record.",
+      actions: btn("New meeting", { action: "meeting-new", iconName: "plus", variant: "primary" }),
+    })}
     ${section("Meeting flow", { body: stats([
       ["Upcoming", upcoming.length],
       ["This week", upcoming.filter((meeting) => new Date(meeting.starts_at).getTime() < Date.now() + 7 * 86_400_000).length],
@@ -154,7 +212,6 @@ export function renderMeetings() {
       ${searchInput("Search meetings", routeParams.q || "")}
       ${filterSelect("outcome", ["scheduled", "proposal_needed", "follow_up", "won", "lost", "technical_discovery_required", "cancelled"].map((value) => ({ value, label: statusLabel(value) })), outcome, "All outcomes")}
       <span class="toolbar__spacer"></span>
-      ${btn("New meeting", { action: "meeting-new", iconName: "plus", variant: "primary", size: "sm" })}
     </div>
     ${table({
       columns: ["Meeting", "Business", "When", "Salesperson", "Proposal", "Outcome", ""],
@@ -336,11 +393,15 @@ export function renderTeam() {
   const status = routeParams.status || "active";
   const members = data.teamMembers.filter((member) => status === "all" || member.status === status);
   return `<div class="stack">
+    ${pageHeader({
+      title: "Team",
+      subtitle: "Employees and contractors mapped from Cloudflare Access. This is not an application account list.",
+      actions: isOwner() ? btn("Add team member", { action: "team-member-new", iconName: "plus", variant: "primary" }) : pill("warning", "View only"),
+    })}
     ${notice("Cloudflare Access is the only sign-in boundary", isOwner() ? "Verified Access email claims map to active team records, and the Worker enforces owner and salesperson permissions." : ownerOnlyNotice("Team and permission administration"), { tone: isOwner() ? "success" : "warn", iconName: "user" })}
     <div class="toolbar">
       ${filterSelect("status", ["active", "inactive"].map((value) => ({ value, label: statusLabel(value) })), status, "All statuses")}
       <span class="toolbar__spacer"></span>
-      ${isOwner() ? btn("Add team member", { action: "team-member-new", iconName: "plus", variant: "primary", size: "sm" }) : pill("warning", "View only")}
     </div>
     ${table({
       columns: ["Name", "Role", "Assigned leads", "Clients", "Commission", "Status", ""],

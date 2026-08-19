@@ -128,7 +128,7 @@ function messageBlock(message) {
       <article class="msg msg--assistant">
         <div class="msg__avatar">${icon("sparkle")}</div>
         <div class="msg__content">
-          <span class="msg__who">Operations AI</span>
+          <span class="msg__who">Copilot</span>
           <div class="msg__body msg__markdown">${formatAssistantText(message.text)}</div>
         </div>
       </article>
@@ -151,7 +151,7 @@ function conversationRail(conversations, activeId) {
       <div class="assistant-rail__head">
         <div>
           <span class="eyebrow">Workspace</span>
-          <strong>Operations AI</strong>
+          <strong>Copilot</strong>
         </div>
         ${btn("New", { action: "assistant-new", iconName: "plus", size: "sm", variant: "primary" })}
       </div>
@@ -259,7 +259,7 @@ function emptyConversation() {
   return `
     <div class="assistant-welcome">
       <div class="assistant-welcome__mark">${icon("sparkle")}</div>
-      <span class="eyebrow">Operations AI</span>
+      <span class="eyebrow">Copilot</span>
       <h2>What should we move forward?</h2>
       <p>${ready
         ? `The assistant has live workspace context and ${escapeHtml(permission.label.toLowerCase())}.`
@@ -319,7 +319,7 @@ export function renderAssistant() {
             <div class="chat__mobile-title">
               <div class="chat__identity-mark">${icon("sparkle")}</div>
               <div>
-                <strong>Operations AI</strong>
+                <strong>Copilot</strong>
                 <span>${ready ? "Ready to work" : "Direct commands available"}</span>
               </div>
             </div>
@@ -368,7 +368,7 @@ export function renderAssistant() {
               <article class="msg msg--assistant msg--pending">
                 <div class="msg__avatar">${icon("sparkle")}</div>
                 <div class="msg__content">
-                  <span class="msg__who">Operations AI</span>
+                  <span class="msg__who">Copilot</span>
                   <div class="thinking"><span class="thinking__spinner" aria-hidden="true"></span><span>Working through the workspace</span></div>
                 </div>
               </article>

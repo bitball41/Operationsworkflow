@@ -1,4 +1,4 @@
-import { btn, empty, icon, notice, pill, section, stats, table, td } from "../components/ui.js";
+import { btn, empty, icon, notice, pageHeader, pill, section, stats, table, td } from "../components/ui.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatDateTime, formatNumber, relativeTime, statusLabel } from "../core/utils.js";
 import { isOwner } from "../services/permissions.js";
@@ -71,18 +71,15 @@ export function renderVoiceAgents() {
     : pill("warning", "View only");
 
   return `<div class="stack voice-os">
-    <section class="voice-hero">
-      <div>
-        <span class="voice-hero__eyebrow">ELEVENLABS CONTROL ROOM</span>
-        <h2>Build the receptionist.<br><em>Run the client.</em></h2>
-        <p>Create and manage provider agents without putting a credential in the browser. Signed post-call webhooks turn completed conversations into CRM records.</p>
-      </div>
-      <div class="voice-hero__actions">${ownerActions}</div>
-    </section>
+    ${pageHeader({
+      title: "Agents",
+      subtitle: "Create, configure, and monitor ElevenLabs receptionists without putting a credential in the browser.",
+      actions: ownerActions,
+    })}
     ${provider.connected
       ? notice("ElevenLabs is connected", provider.webhook_configured ? "Agent actions and signed post-call ingestion are configured server-side." : "Agent actions work, but the signed post-call webhook still needs its secret.", { tone: provider.webhook_configured ? "success" : "warn", iconName: provider.webhook_configured ? "check-circle" : "alert" })
       : notice("ElevenLabs is not ready", "The dashboard cannot create or change agents until the server-side connection passes. No browser credential fallback is allowed.", { tone: "error", iconName: "lock" })}
-    ${section("Live operating totals", { body: stats([
+    ${section("Operating totals", { body: stats([
       ["Client agents", formatNumber(realAgents.length), "Examples and unlinked agents excluded"],
       ["Real calls", formatNumber(realConversations.length), "Examples excluded"],
       ["Needs attention", formatNumber(agentsNeedingAttention.length), "Errors or agents without a client"],
@@ -93,16 +90,19 @@ export function renderVoiceAgents() {
       ${section("Provider agents", {
         count: agents.length,
         body: table({
-          columns: ["Agent", "Client", "Environment", "Voice / model", "Synced", ""],
+          columns: ["Agent", "Client", "Status", "Channel", "Activity", "Health", ""],
           rows: agents.map((agent) => {
             const client = byId(data.clients, agent.client_id);
+            const recent = conversations.filter((item) => String(item.voice_agent_id) === String(agent.id)).length;
+            const health = agent.last_error || agent.status === "error" ? "error" : agent.environment === "live" || agent.status === "live" ? "live" : (agent.status || agent.environment || "draft");
             return `<tr data-action="voice-agent-open" data-id="${agent.id}">
-              ${td("Agent", `<div class="cell"><strong>${escapeHtml(agent.name)}</strong><span>${agent.is_example ? "Example &middot; " : ""}${escapeHtml(agent.provider_agent_id)}</span></div>`)}
+              ${td("Agent", `<div class="cell"><strong>${escapeHtml(agent.name)}</strong><span>${agent.is_example ? "Example · " : ""}${escapeHtml(agent.provider_agent_id || "Not synced")}</span></div>`)}
               ${td("Client", escapeHtml(client ? clientName(data, client) : "Not linked"))}
-              ${td("Environment", pill(agent.environment))}
-              ${td("Voice / model", `<div class="cell"><strong>${escapeHtml(agent.voice_id || "Default voice")}</strong><span>${escapeHtml(agent.llm || "Provider default")}</span></div>`)}
-              ${td("Synced", agent.last_synced_at ? relativeTime(agent.last_synced_at) : "Never")}
-              ${td("", isOwner() ? btn("Configure", { action: "voice-agent-open", size: "sm", attrs: `data-id="${agent.id}"` }) : pill("warning", "View only"))}
+              ${td("Status", pill(agent.status || agent.environment || "draft"))}
+              ${td("Channel", escapeHtml(agent.phone_number || client?.dedicated_ai_number || "Voice"))}
+              ${td("Activity", recent ? `${recent} recent call${recent === 1 ? "" : "s"}` : (agent.last_synced_at ? relativeTime(agent.last_synced_at) : "No calls yet"))}
+              ${td("Health", pill(health, agent.last_error ? "Error" : statusLabel(health)))}
+              ${td("", isOwner() ? `<span class="cell-actions">${btn("Configure", { action: "voice-agent-open", size: "sm", attrs: `data-id="${agent.id}"` })}</span>` : pill("warning", "View only"))}
             </tr>`;
           }),
           emptyState: empty({ title: "No ElevenLabs agents linked", message: "Create a provider agent for a client or sync agents that already exist.", action: isOwner() ? "voice-agent-new" : "", actionLabel: "Create the first agent" }),

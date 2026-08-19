@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#050506">
+    <meta name="theme-color" content="#121417">
     <meta name="description" content="Private AI voice-agent agency operations dashboard">
-    <title>Voice Agency Operations</title>
+    <title>Conno Operations</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./styles/tokens.css">
     <link rel="stylesheet" href="./styles/base.css">
     <link rel="stylesheet" href="./styles/layout.css">
@@ -18,7 +18,7 @@
     <div id="app" class="app">
       <aside id="sidebar" class="sidebar" aria-label="Navigation">
         <div class="sidebar__top">
-          <a class="wordmark" href="#/my-day">Connor <small>/ Voice Operations</small></a>
+          <a class="wordmark" href="#/home">Conno <small>Operations</small></a>
           <button id="sidebar-collapse" class="icon-btn only-desktop" type="button" data-icon="sidebar" aria-label="Collapse navigation"></button>
           <button id="sidebar-close" class="icon-btn only-mobile" type="button" data-icon="x" aria-label="Close navigation"></button>
         </div>
@@ -31,14 +31,14 @@
       <div class="main">
         <header class="topbar">
           <button id="menu-open" class="icon-btn only-mobile" type="button" data-icon="menu" aria-label="Open navigation"></button>
-          <h1 id="page-title">My Day</h1>
+          <h1 id="page-title" class="topbar__crumb">Dashboard</h1>
           <div class="topbar__right">
             <button id="palette-open" class="search-btn" type="button">
               <span data-icon="search"></span>
               <span class="only-desktop">Search</span>
               <kbd class="only-desktop">⌘K</kbd>
             </button>
-            <a class="icon-btn" href="#/assistant" data-icon="sparkle" aria-label="AI Assistant"></a>
+            <a class="icon-btn" href="#/assistant" data-icon="sparkle" aria-label="Copilot" title="Copilot"></a>
           </div>
         </header>
 

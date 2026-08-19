@@ -18,6 +18,7 @@ import {
   icon,
   input,
   notice,
+  pageHeader,
   pill,
   row,
   rows,
@@ -50,14 +51,16 @@ export function renderSalesCenter() {
         : renderCalling();
 
   return `<div class="stack crm-center">
-    <section class="crm-center__head">
-      <div><span class="eyebrow">Lead &rarr; demo &rarr; close</span><h2>Sales</h2><p>One queue for the work that moves a real business forward.</p></div>
-      <div class="crm-center__pulse">
-        <span><b>${openLeads.length}</b> open leads</span>
-        <span><b>${dueFollowUps.length}</b> due follow-ups</span>
-        <span><b>${upcomingMeetings.length}</b> upcoming meetings</span>
-      </div>
-    </section>
+    ${pageHeader({
+      title: "Sales",
+      subtitle: "Leads, deals, next follow-up, and the work that closes the receptionist package.",
+      actions: btn("Add lead", { action: "lead-new", iconName: "plus", variant: "primary" }),
+    })}
+    <div class="crm-center__pulse">
+      <span><b>${openLeads.length}</b> open leads</span>
+      <span><b>${dueFollowUps.length}</b> due follow-ups</span>
+      <span><b>${upcomingMeetings.length}</b> upcoming meetings</span>
+    </div>
     ${viewTabs("view", [["work", "Call next"], ["pipeline", "Pipeline"], ["leads", "Lead list"], ["discover", "Find leads"]], view)}
     ${body}
   </div>`;

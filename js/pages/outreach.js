@@ -12,8 +12,10 @@ import {
   empty,
   externalLink,
   field,
+  healthDot,
   input,
   notice,
+  pageHeader,
   pill,
   section,
   select,
@@ -24,6 +26,7 @@ import {
 } from "../components/ui.js";
 import { canSend, draftOutreach } from "../services/email/outreach.js";
 import { canReadOutlookMail, outlookBlocker } from "../services/integrations.js";
+import { attentionItems } from "../services/operations.js";
 import { preferences } from "../services/data.js";
 import { byId, demoForLead, filterSelect, leadName, searchInput, viewTabs } from "./shared.js";
 
@@ -142,14 +145,38 @@ export function renderInbox() {
 
   return `
     <div class="stack">
+      ${pageHeader({
+        title: "Inbox",
+        subtitle: "Human review: replies, overdue follow-ups, and items that need a decision. Activity is history.",
+        actions: btn("Sync inbox", { action: "inbox-sync", iconName: "refresh", variant: "primary", attrs: inboxBlocker ? "disabled" : "" }),
+      })}
       ${inboxBlocker ? notice("Inbox cannot sync yet", inboxBlocker, { tone: "warn", iconName: "inbox" }) : ""}
+      ${section("Needs review", {
+        count: attentionItems().length,
+        body: attentionItems().length ? `<div class="attention-list">${attentionItems().slice(0, 8).map((item) => `
+          <div class="attention-item">
+            ${healthDot(item.tone || "amber")}
+            <div class="attention-item__copy">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.detail || "")}</span>
+            </div>
+            <div class="attention-item__meta">
+              ${item.at ? `<span class="faint">${relativeTime(item.at)}</span>` : ""}
+              ${btn("Open", {
+                action: "navigate",
+                size: "sm",
+                attrs: `data-route-target="${item.route}"${item.params ? ` data-route-params="${escapeHtml(JSON.stringify(item.params))}"` : ""}`,
+              })}
+            </div>
+          </div>
+        `).join("")}</div>` : empty({ title: "Review queue is clear", message: "Unread replies, overdue follow-ups, and agent issues land here." }),
+      })}
 
       <div class="toolbar">
         ${searchInput("Search replies", routeParams.q || "")}
         ${filterSelect("classification", REPLY_CLASSIFICATIONS.map((value) => ({ value, label: statusLabel(value) })), classification, "All replies")}
         <span class="toolbar__spacer"></span>
         <span class="faint">${formatNumber(data.emailThreads.filter((thread) => thread.is_unread).length)} unread</span>
-        ${btn("Sync inbox", { action: "inbox-sync", iconName: "refresh", size: "sm", variant: "primary", attrs: inboxBlocker ? "disabled" : "" })}
       </div>
 
       <div class="inbox">

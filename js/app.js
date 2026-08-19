@@ -36,6 +36,7 @@ import { renderStudio, mountStudio } from "./pages/studio.js";
 import { renderIntegrations, renderSettings } from "./pages/system.js";
 import { renderDemos, renderTemplates } from "./pages/websites.js";
 import { renderActivity, renderCalendar, renderNotes, renderTasks } from "./pages/workspace.js";
+import { renderPlaybooks } from "./pages/playbooks.js";
 import { renderVoiceAgents } from "./pages/voice-agents.js";
 
 const PAGES = {
@@ -70,6 +71,7 @@ const PAGES = {
   tasks: renderTasks,
   calendar: renderCalendar,
   notes: renderNotes,
+  playbooks: renderPlaybooks,
   activity: renderActivity,
   integrations: renderIntegrations,
   team: renderTeam,
@@ -99,7 +101,7 @@ function renderWorkspaceGate() {
 
   renderInto(document.getElementById("page"), `
     <section class="auth-gate stack">
-      <div class="auth-gate__brand">Connor <small>/ Operations</small></div>
+      <div class="auth-gate__brand">Conno <small>Operations</small></div>
       <div><h1>${title}</h1><p class="faint">${escapeHtml(message)}</p></div>
       ${body}
     </section>

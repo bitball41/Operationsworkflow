@@ -8,6 +8,7 @@ import {
   field,
   input,
   notice,
+  pageHeader,
   pill,
   row,
   rows,
@@ -168,6 +169,10 @@ export function renderIntegrations() {
 
   return `
     <div class="stack">
+      ${pageHeader({
+        title: "Integrations",
+        subtitle: "Capability status reported by the Worker. Unavailable adapters are labeled honestly.",
+      })}
       ${outlookNotice}
       ${isOwner() ? "" : notice("Integration administration is owner-only", ownerOnlyNotice("Connecting, disconnecting, or configuring services"), { tone: "warn", iconName: "plug" })}
       ${blocker ? notice("Email is not sending", blocker, {
@@ -296,6 +301,10 @@ export function renderSettings() {
 
   return `
     <div class="stack">
+      ${pageHeader({
+        title: "Settings",
+        subtitle: "Workspace preferences, model access, and server-side connections. Secrets stay on the Worker.",
+      })}
       ${state.connection.ok ? "" : notice("Database connection issue", state.connection.message, { tone: "warn", iconName: "alert" })}
 
       ${section("Data", {
