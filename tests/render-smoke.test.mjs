@@ -564,7 +564,11 @@ test("tasks, leads, clients, and agents expose delete on the lists operators use
       }],
     }, { silent: true });
     setState({ route: "voice-agents", routeParams: {} }, { silent: true });
-    assert.match(renderers["voice-agents"](), /data-action="voice-agent-delete"/);
+    const html = renderers["voice-agents"]();
+    assert.match(html, /data-action="voice-agent-delete"/);
+    assert.match(html, /Provider agents/);
+    assert.match(html, /Recent post-call records/);
+    assert.doesNotMatch(html, /split voice-columns|voice-columns/);
   } finally {
     setData({ voiceAgents: previousAgents }, { silent: true });
   }
