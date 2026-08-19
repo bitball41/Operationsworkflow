@@ -537,3 +537,49 @@ test("overlays never stop click propagation", () => {
     assert.ok(!content.includes("stopPropagation"), `${file} must not stop click propagation`);
   }
 });
+
+test("tasks, leads, clients, and agents expose delete on the lists operators use", () => {
+  setState({ route: "tasks", routeParams: {} }, { silent: true });
+  assert.match(renderers.tasks(), /data-action="task-delete"/);
+
+  setState({ route: "leads", routeParams: {} }, { silent: true });
+  assert.match(renderers.leads(), /data-action="lead-delete"/);
+
+  setState({ route: "pipeline", routeParams: { view: "list" } }, { silent: true });
+  assert.match(sales.renderPipeline(), /data-action="lead-delete"/);
+
+  setState({ route: "clients", routeParams: {} }, { silent: true });
+  assert.match(renderers.clients(), /data-action="client-delete"/);
+
+  const previousAgents = getState().data.voiceAgents;
+  try {
+    setData({
+      voiceAgents: [{
+        id: "10000000-0000-4000-8000-000000000270",
+        name: "Test receptionist",
+        client_id: getState().data.clients[0]?.id || null,
+        status: "active",
+        provider_agent_id: "agent_test",
+        provider_deleted_at: null,
+      }],
+    }, { silent: true });
+    setState({ route: "voice-agents", routeParams: {} }, { silent: true });
+    assert.match(renderers["voice-agents"](), /data-action="voice-agent-delete"/);
+  } finally {
+    setData({ voiceAgents: previousAgents }, { silent: true });
+  }
+});
+
+test("delete for those records is wired through confirm and the existing APIs", () => {
+  const forms = readFileSync(new URL("../js/components/forms.js", import.meta.url), "utf8");
+  const actions = readFileSync(new URL("../js/actions.js", import.meta.url), "utf8");
+  assert.match(forms, /action: "lead-delete"/);
+  assert.match(forms, /action: "task-delete"/);
+  assert.match(forms, /action: "client-delete"/);
+  assert.match(forms, /action: "voice-agent-delete"/);
+  assert.match(actions, /case "client-delete"/);
+  assert.match(actions, /deleteRecord\("clients"/);
+  assert.match(actions, /deleteRecord\("leads"/);
+  assert.match(actions, /deleteRecord\("tasks"/);
+  assert.match(actions, /deleteElevenLabsAgent/);
+});
