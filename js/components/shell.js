@@ -42,9 +42,6 @@ function navCount(itemId, state) {
         && item.due_at && new Date(item.due_at) <= new Date()
       )).length;
   }
-  if (itemId === "tasks") {
-    return data.tasks.filter((item) => !["completed", "cancelled"].includes(item.status) && item.due_at && new Date(item.due_at) <= new Date()).length;
-  }
   if (itemId === "voice-agents") {
     return data.voiceAgents.filter((item) => item.last_error || item.status === "error").length
       + data.automations.filter((item) => item.last_error).length;
@@ -53,7 +50,7 @@ function navCount(itemId, state) {
   if (itemId === "meetings") {
     return data.meetings.filter((item) => item.outcome === "proposal_needed" || item.outcome === "technical_discovery_required").length;
   }
-  if (itemId === "clients") return clientLifecycleRows(data).filter((item) => !item.serviceActive || item.tone === "red").length;
+  if (itemId === "clients") return clientLifecycleRows(data, { includeExamples: false }).filter((item) => !item.serviceActive || item.tone === "red").length;
   if (itemId === "pipeline") return data.leads.filter((item) => ["new", "ready_to_contact"].includes(item.status)).length;
   if (itemId === "payments") return data.payments.filter((item) => ["overdue", "failed"].includes(item.status)).length;
   if (itemId === "automation" && (automation.status === "running" || automation.status === "stopping")) return "•";

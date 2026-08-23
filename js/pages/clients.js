@@ -12,13 +12,15 @@ export function renderClients() {
   const { data, routeParams, services } = getState();
   const query = (routeParams.q || "").toLowerCase();
   const stage = routeParams.stage || "all";
-  const allLifecycles = clientLifecycleRows(data);
+  const realClients = data.clients.filter((client) => client.is_example !== true);
+  const realClientIds = new Set(realClients.map((client) => String(client.id)));
+  const allLifecycles = clientLifecycleRows(data, { includeExamples: false });
   const lifecycles = allLifecycles
     .filter((item) => stage === "all" || (stage === "attention" ? item.tone !== "green" : item.currentStage === stage))
     .filter((item) => !query || `${clientName(data, item.client)} ${item.client.contact_name} ${item.client.email} ${item.client.package_name}`.toLowerCase().includes(query));
-  const activeSubscriptions = data.maintenanceSubscriptions.filter((item) => item.status === "active");
+  const activeSubscriptions = data.maintenanceSubscriptions.filter((item) => item.status === "active" && realClientIds.has(String(item.client_id)));
   const provider = services.elevenlabs || { connected: false, webhook_configured: false };
-  const conversations = data.voiceConversations.filter((item) => !item.is_example).slice(0, 10);
+  const conversations = data.voiceConversations.filter((item) => !item.is_example && realClientIds.has(String(item.client_id))).slice(0, 10);
 
   return `
     <div class="stack crm-center">
@@ -28,7 +30,7 @@ export function renderClients() {
         actions: btn("New client", { action: "client-new", iconName: "plus", variant: "primary" }),
       })}
       <div class="crm-center__pulse">
-        <span><b>${data.clients.length}</b> clients</span>
+        <span><b>${realClients.length}</b> real clients</span>
         <span><b>${allLifecycles.filter((item) => item.tone !== "green").length}</b> need action</span>
         <span><b>${formatCurrency(sum(activeSubscriptions, (item) => item.monthly_amount))}</b> MRR</span>
       </div>
@@ -74,7 +76,7 @@ export function renderClients() {
               <span class="faint">${client.updated_at ? `Updated ${relativeTime(client.updated_at)}` : "Lifecycle is derived from linked records"}</span>
             </footer>
           </article>`;
-        }).join("") : empty({ title: "No clients match", message: data.clients.length ? "Change the lifecycle filter or search." : "Winning a lead creates the client, onboarding, and delivery records automatically." })}
+        }).join("") : empty({ title: "No real clients match", message: realClients.length ? "Change the lifecycle filter or search." : "Winning a real lead creates the client, onboarding, and delivery records automatically. Example accounts are kept out of these totals." })}
       </div>
 
       ${section("Recent client calls", {
