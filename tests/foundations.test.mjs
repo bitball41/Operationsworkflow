@@ -413,7 +413,27 @@ test("the public demo hostname serves the voice demo root without exposing dashb
     "/voice-demo/app.js",
   ]);
 
-  for (const path of ["/api/status", "/mcp", "/anything-else", "/voice-demo/src/app.js"]) {
+  const clientRedirect = await worker.fetch(new Request("https://demos.conno.fun/client-dashboard?business=Acme%20Roofing"), env);
+  assert.equal(clientRedirect.status, 308);
+  assert.equal(clientRedirect.headers.get("location"), "https://demos.conno.fun/client-dashboard/?business=Acme%20Roofing");
+
+  const clientDashboard = await worker.fetch(new Request("https://demos.conno.fun/client-dashboard/"), env);
+  const clientStyle = await worker.fetch(new Request("https://demos.conno.fun/client-dashboard/style.css"), env);
+  const clientScript = await worker.fetch(new Request("https://demos.conno.fun/client-dashboard/app.js"), env);
+  assert.equal(clientDashboard.status, 200);
+  assert.equal(clientStyle.headers.get("content-type"), "text/css; charset=utf-8");
+  assert.equal(clientScript.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(clientDashboard.headers.get("permissions-policy"), /microphone=\(\)/);
+  assert.match(clientDashboard.headers.get("content-security-policy"), /connect-src 'none'/);
+  assert.doesNotMatch(clientDashboard.headers.get("content-security-policy"), /api\.elevenlabs\.io/);
+
+  assert.deepEqual(assetRequests.slice(-3), [
+    "/client-demo/",
+    "/client-demo/style.css",
+    "/client-demo/app.js",
+  ]);
+
+  for (const path of ["/api/status", "/mcp", "/anything-else", "/voice-demo/src/app.js", "/client-demo/app.js"]) {
     const response = await worker.fetch(new Request(`https://demos.conno.fun${path}`), env);
     assert.equal(response.status, 404, `${path} must not fall through to the dashboard or an API`);
   }

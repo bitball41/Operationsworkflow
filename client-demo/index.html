@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#241820">
+    <meta name="description" content="Preview the client call dashboard included with Conno Systems' AI receptionist service.">
+    <title>Client Dashboard Preview | Conno Systems</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css?v=20260823-1">
+  </head>
+  <body>
+    <div class="demo-ribbon" role="status">
+      <span>Demo preview</span>
+      <p>Every call, name, and metric on this page is example data.</p>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Client dashboard navigation">
+        <div class="brand-lockup">
+          <span class="brand-lockup__mark" aria-hidden="true">S</span>
+          <span>
+            <strong data-business-name>Summit Roofing</strong>
+            <small>Call dashboard</small>
+          </span>
+        </div>
+
+        <nav class="nav-list" aria-label="Dashboard views">
+          <button class="nav-item is-active" type="button" data-view-target="overview" aria-current="page">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
+            Overview
+          </button>
+          <button class="nav-item" type="button" data-view-target="calls">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 3.7 5.1 4.8c-1.2.6-1.7 2-1.3 3.2 2 6 6.2 10.2 12.2 12.2 1.2.4 2.6-.1 3.2-1.3l1.1-2.3c.4-.9.1-2-.8-2.5l-3.1-1.8c-.8-.5-1.8-.3-2.5.3l-1.2 1.2a14 14 0 0 1-2.5-2.1 14 14 0 0 1-2.1-2.5L9.3 8c.7-.7.8-1.7.3-2.5L7.9 4.4c-.1-.3-.3-.5-.5-.7Z"/></svg>
+            Calls
+            <span class="nav-count" data-call-count>24</span>
+          </button>
+          <button class="nav-item" type="button" data-view-target="bookings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1Zm3 8h3m2 0h3m-8 4h3"/></svg>
+            Bookings
+            <span class="nav-count" data-booking-count>6</span>
+          </button>
+        </nav>
+
+        <div class="agent-card">
+          <div class="agent-card__top">
+            <span class="agent-avatar" data-agent-initial>M</span>
+            <span><strong data-agent-name>Michael</strong><small>AI receptionist</small></span>
+            <i aria-label="Available"></i>
+          </div>
+          <dl>
+            <div><dt>Coverage</dt><dd>24/7</dd></div>
+            <div><dt>Routing</dt><dd>18 sec + after hours</dd></div>
+          </dl>
+        </div>
+
+        <p class="powered-by">Powered by <strong>Conno Systems</strong></p>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Client dashboard</p>
+            <h1 data-page-title>Good morning, Summit Roofing.</h1>
+            <p data-page-subtitle>Here is what your receptionist handled while your team stayed focused on the job.</p>
+          </div>
+          <label class="range-control">
+            <span>Reporting window</span>
+            <select id="range-select">
+              <option value="7" selected>Last 7 days</option>
+              <option value="30">Last 30 days</option>
+            </select>
+          </label>
+        </header>
+
+        <section class="view is-active" data-view="overview" aria-labelledby="overview-heading">
+          <h2 id="overview-heading" class="sr-only">Overview</h2>
+          <div class="metric-grid" aria-label="Receptionist results">
+            <article class="metric-card metric-card--primary">
+              <span class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4 5 5c-1 .5-1.5 1.7-1.1 2.8 1.9 5.8 6.5 10.4 12.3 12.3 1.1.4 2.3-.1 2.8-1.1l1-2c.5-1 .1-2.1-.8-2.7l-2.8-1.7c-.8-.5-1.8-.3-2.5.4l-1 1c-1.7-.9-3-2.2-3.9-3.9l1-1c.7-.7.9-1.7.4-2.5L8.7 4.8C8.3 4.1 7.6 3.8 7 4Z"/></svg></span>
+              <span class="metric-card__label">Calls handled</span>
+              <strong data-metric="handled">22</strong>
+              <small><b data-metric="answerRate">92%</b> of incoming calls</small>
+            </article>
+            <article class="metric-card">
+              <span class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1Zm3 8h3m2 0h3"/></svg></span>
+              <span class="metric-card__label">Inspections booked</span>
+              <strong data-metric="booked">6</strong>
+              <small>Added to your calendar</small>
+            </article>
+            <article class="metric-card">
+              <span class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v12H9l-4 4V4Zm4 4h6m-6 4h4"/></svg></span>
+              <span class="metric-card__label">Messages captured</span>
+              <strong data-metric="messages">4</strong>
+              <small>Name, number, and reason</small>
+            </article>
+            <article class="metric-card">
+              <span class="metric-card__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h11m-4-4 4 4-4 4M16 18H5m4 4-4-4 4-4"/></svg></span>
+              <span class="metric-card__label">Urgent transfers</span>
+              <strong data-metric="transfers">2</strong>
+              <small>Sent to the on-call person</small>
+            </article>
+          </div>
+
+          <div class="overview-grid">
+            <article class="panel volume-panel">
+              <header class="panel__head">
+                <div><h3>Call activity</h3><p>Incoming calls and booked inspections</p></div>
+                <span class="legend"><i></i> Calls <i></i> Booked</span>
+              </header>
+              <div class="bar-chart" aria-label="Example daily call activity chart">
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Sun</span></div>
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Mon</span></div>
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Tue</span></div>
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Wed</span></div>
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Thu</span></div>
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Fri</span></div>
+                <div class="chart-column"><div class="bars"><i></i><b></b></div><span>Sat</span></div>
+              </div>
+            </article>
+
+            <article class="panel outcomes-panel">
+              <header class="panel__head"><div><h3>Call outcomes</h3><p>What callers needed</p></div></header>
+              <div class="outcome-list">
+                <div><span><i class="dot dot--pink"></i>Inspection booked</span><strong data-outcome="booked">6</strong><progress value="6" max="24"></progress></div>
+                <div><span><i class="dot dot--purple"></i>Question answered</span><strong data-outcome="answered">8</strong><progress value="8" max="24"></progress></div>
+                <div><span><i class="dot dot--amber"></i>Message taken</span><strong data-outcome="messages">4</strong><progress value="4" max="24"></progress></div>
+                <div><span><i class="dot dot--green"></i>Urgent transfer</span><strong data-outcome="transfers">2</strong><progress value="2" max="24"></progress></div>
+                <div><span><i class="dot dot--gray"></i>Missed / abandoned</span><strong data-outcome="missed">2</strong><progress value="2" max="24"></progress></div>
+              </div>
+            </article>
+          </div>
+
+          <article class="panel call-panel">
+            <header class="panel__head">
+              <div><h3>Recent calls</h3><p>Provider records appear here after each completed call</p></div>
+              <button class="text-button" type="button" data-view-target="calls">View all calls <span aria-hidden="true">→</span></button>
+            </header>
+            <div class="call-list" data-recent-calls></div>
+          </article>
+        </section>
+
+        <section class="view" data-view="calls" aria-labelledby="calls-heading" hidden>
+          <div class="view-heading">
+            <div><h2 id="calls-heading">Calls</h2><p>Search every completed call, see what happened, and open the transcript.</p></div>
+            <span class="record-note">Example records</span>
+          </div>
+          <div class="filter-bar">
+            <label class="search-field">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+              <span class="sr-only">Search calls</span>
+              <input id="call-search" type="search" placeholder="Search caller, number, or reason">
+            </label>
+            <label class="filter-select"><span class="sr-only">Filter by outcome</span><select id="outcome-filter"><option value="all">All outcomes</option><option value="booked">Booked</option><option value="message">Message</option><option value="transfer">Transferred</option><option value="answered">Answered</option></select></label>
+          </div>
+          <article class="panel calls-table-panel">
+            <div class="calls-table" data-all-calls></div>
+            <div class="empty-state" data-call-empty hidden><strong>No matching calls</strong><p>Try another caller, number, or outcome.</p></div>
+          </article>
+        </section>
+
+        <section class="view" data-view="bookings" aria-labelledby="bookings-heading" hidden>
+          <div class="view-heading">
+            <div><h2 id="bookings-heading">Upcoming inspections</h2><p>Appointments the receptionist added to the connected calendar.</p></div>
+            <span class="record-note">Example bookings</span>
+          </div>
+          <div class="booking-layout">
+            <article class="panel booking-list" data-bookings></article>
+            <aside class="panel setup-panel">
+              <span class="setup-panel__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 12 2 2 4-5M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"/></svg></span>
+              <p class="eyebrow">Connected workflow</p>
+              <h3>Bookings go where your team already works.</h3>
+              <p>The live client dashboard reflects the connected calendar. It does not claim an appointment until the booking tool confirms it.</p>
+              <dl>
+                <div><dt>Calendar</dt><dd>Inspection calendar</dd></div>
+                <div><dt>Default duration</dt><dd>60 minutes</dd></div>
+                <div><dt>Confirmation</dt><dd>Caller + office</dd></div>
+              </dl>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="call-dialog" class="call-dialog" aria-labelledby="dialog-title">
+      <div class="dialog-shell">
+        <header class="dialog-head">
+          <div><span class="eyebrow">Call record</span><h2 id="dialog-title">Call details</h2></div>
+          <button class="icon-button" type="button" data-dialog-close aria-label="Close call details">×</button>
+        </header>
+        <div class="dialog-body" data-dialog-body></div>
+      </div>
+    </dialog>
+
+    <script defer src="./app.js?v=20260823-1"></script>
+  </body>
+</html>

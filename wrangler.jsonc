@@ -7,7 +7,7 @@
   "preview_urls": false,
   "build": {
     "command": "npm run build:demo",
-    "watch_dir": ["scripts/build-voice-demo.mjs", "voice-demo/src", "voice-demo/index.html", "voice-demo/style.css"]
+    "watch_dir": ["scripts/build-voice-demo.mjs", "voice-demo/src", "voice-demo/index.html", "voice-demo/style.css", "client-demo"]
   },
   "assets": {
     "directory": ".",
