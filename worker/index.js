@@ -419,8 +419,8 @@ export default {
       return handleWhopWebhook(request, env);
     }
 
-    /* Demos are public. Restrict this hostname to the dedicated voice demo and
-       numbered R2 sites so it can never expose the dashboard or its APIs. */
+    /* Demos are public. Restrict this hostname to the dedicated voice/client
+       previews and numbered R2 sites so it can never expose Operations or APIs. */
     if (isPublicDemoHost(url, env)) {
       const voiceDemo = await serveVoiceAgentDemo(request, env);
       if (voiceDemo) return voiceDemo;

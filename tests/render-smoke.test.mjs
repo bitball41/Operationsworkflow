@@ -68,6 +68,41 @@ test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   assert.ok(bundle.length > 100_000, "the local ElevenLabs browser SDK bundle should be built");
 });
 
+test("the client dashboard demo is honest, focused, and interactive", () => {
+  const html = readFileSync(new URL("../client-demo/index.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../client-demo/style.css", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../client-demo/app.js", import.meta.url), "utf8");
+
+  assert.match(html, /Demo preview/);
+  assert.match(html, /Every call, name, and metric on this page is example data/);
+  assert.match(html, /Calls handled/);
+  assert.match(html, /Inspections booked/);
+  assert.match(html, /Messages captured/);
+  assert.match(html, /Urgent transfers/);
+  assert.match(html, /data-view="overview"/);
+  assert.match(html, /data-view="calls"/);
+  assert.match(html, /data-view="bookings"/);
+  assert.match(html, /id="call-dialog"/);
+  assert.doesNotMatch(html, /revenue|roi|jobs won|closed jobs/i);
+  assert.doesNotMatch(html, /style=/i, "public CSP should not require inline styles");
+
+  assert.match(source, /showModal\(\)/);
+  assert.match(source, /call-search/);
+  assert.match(source, /outcome-filter/);
+  assert.match(source, /safeParam\("business"/);
+  assert.match(source, /textContent = businessName/);
+  assert.match(source, /replaceAll\("Summit Roofing", businessName\)/);
+  assert.match(source, /replaceAll\("Michael", agentName\)/);
+  assert.match(source, /displayText\(line\)/);
+  assert.match(source, /Caller not supplied/);
+  assert.doesNotMatch(source, /fetch\s*\(/, "the public preview must not read private APIs");
+
+  assert.match(css, /@media \(max-width: 680px\)/);
+  assert.match(css, /@media \(max-width: 380px\)/);
+  assert.match(css, /\.call-row/);
+  assert.match(css, /\.booking-layout/);
+});
+
 test("Operations owns the dark brand treatment while the public voice demo stays light", () => {
   const operationsTokens = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
   const demoStyles = readFileSync(new URL("../voice-demo/style.css", import.meta.url), "utf8");
