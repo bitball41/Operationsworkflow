@@ -5,9 +5,9 @@
  * location, how many. Everything else lives under Advanced with defaults that
  * match the business model (no website, deduplicated, skip contacted).
  */
-import { AUTOMATION_OPPORTUNITIES, PIPELINE_STAGES } from "../config.js";
+import { AUTOMATION_OPPORTUNITIES, PIPELINE_GROUPS, PIPELINE_STAGES } from "../config.js";
 import { getState } from "../core/state.js";
-import { escapeHtml, formatCurrency, formatNumber, relativeTime, statusLabel, sum } from "../core/utils.js";
+import { escapeHtml, formatCurrency, formatNumber, relativeTime, statusLabel } from "../core/utils.js";
 import {
   advanced,
   bar,
@@ -30,13 +30,17 @@ import {
   td,
 } from "../components/ui.js";
 import { canUseDirectWebsiteVerification, workerHoldsMapsKey } from "../services/openscout/adapter.js";
-import { renderCalling } from "./agency.js";
+import { leadActivationValue, pipelineValueSummary } from "../services/operations.js";
+import { renderCalling, renderMeetings } from "./agency.js";
 import { filterSelect, locationOf, searchInput, viewTabs } from "./shared.js";
 
 /** One sales screen: do the next call, move the pipeline, review leads, or find more. */
 export function renderSalesCenter() {
   const { data, routeParams } = getState();
-  const view = ["work", "pipeline", "leads", "discover"].includes(routeParams.view) ? routeParams.view : "work";
+  const legacySection = ["work", "pipeline", "leads", "meetings", "discover"].includes(routeParams.view) ? routeParams.view : "";
+  const sectionId = ["work", "pipeline", "leads", "meetings", "discover"].includes(routeParams.section)
+    ? routeParams.section
+    : legacySection || "work";
   const openLeads = data.leads.filter((lead) => !["won", "lost"].includes(lead.status));
   const dueFollowUps = data.followUps.filter((item) => (
     !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
@@ -45,10 +49,11 @@ export function renderSalesCenter() {
   const upcomingMeetings = data.meetings.filter((meeting) => (
     new Date(meeting.starts_at).getTime() >= Date.now() && !["cancelled", "lost"].includes(meeting.outcome)
   ));
-  const body = view === "pipeline" ? renderPipeline()
-    : view === "leads" ? renderLeads()
-      : view === "discover" ? renderDiscovery()
-        : renderCalling();
+  const body = sectionId === "pipeline" ? renderPipeline()
+    : sectionId === "leads" ? renderLeads()
+      : sectionId === "meetings" ? renderMeetings()
+        : sectionId === "discover" ? renderDiscovery()
+          : renderCalling();
 
   return `<div class="stack crm-center">
     ${pageHeader({
@@ -61,7 +66,7 @@ export function renderSalesCenter() {
       <span><b>${dueFollowUps.length}</b> due follow-ups</span>
       <span><b>${upcomingMeetings.length}</b> upcoming meetings</span>
     </div>
-    ${viewTabs("view", [["work", "Call next"], ["pipeline", "Pipeline"], ["leads", "Lead list"], ["discover", "Find leads"]], view)}
+    ${viewTabs("section", [["work", "Call next"], ["pipeline", "Pipeline"], ["leads", "Lead list"], ["meetings", "Meetings"], ["discover", "Find leads"]], sectionId)}
     ${body}
   </div>`;
 }
@@ -244,6 +249,7 @@ export function renderLeads() {
   const opportunity = routeParams.opportunity || "all";
   const callState = routeParams.call || "all";
   const contact = routeParams.contact || "all";
+  const actionState = routeParams.action || "all";
   const sort = routeParams.sort || "score";
 
   const leads = data.leads
@@ -257,15 +263,26 @@ export function renderLeads() {
       || (contact === "email" && Boolean(lead.email))
       || (contact === "both" && Boolean(lead.phone) && Boolean(lead.email))
       || (contact === "none" && !lead.phone && !lead.email))
+    .filter((lead) => actionState !== "missing" || (
+      !["won", "lost"].includes(lead.status)
+      && !lead.next_action
+      && !lead.next_action_at
+      && !lead.follow_up_at
+      && !data.followUps.some((item) => (
+        String(item.lead_id) === String(lead.id)
+        && !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
+      ))
+    ))
     .filter((lead) => !query || `${lead.business_name} ${lead.category} ${lead.city} ${lead.phone} ${lead.email}`.toLowerCase().includes(query))
     .sort((a, b) => {
       if (sort === "name") return a.business_name.localeCompare(b.business_name);
       if (sort === "recent") return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
-      if (sort === "value") return Number(b.deal_value || 0) - Number(a.deal_value || 0);
+      if (sort === "value") return leadActivationValue(b) - leadActivationValue(a);
       return Number(b.lead_score || 0) - Number(a.lead_score || 0);
     });
 
   const open = data.leads.filter((lead) => !["won", "lost"].includes(lead.status));
+  const pipeline = pipelineValueSummary(open);
 
   return `
     <div class="stack">
@@ -273,7 +290,7 @@ export function renderLeads() {
         body: stats([
           ["Leads", formatNumber(data.leads.length)],
           ["Uncontacted", formatNumber(data.leads.filter((lead) => !lead.last_contacted_at && !["won", "lost"].includes(lead.status)).length)],
-          ["Open value", formatCurrency(sum(open, (lead) => lead.deal_value || lead.asking_price))],
+          [pipeline.estimated ? "Estimated open value" : "Quoted open value", formatCurrency(pipeline.value)],
           ["Won", formatNumber(data.leads.filter((lead) => lead.status === "won").length)],
         ]),
       })}
@@ -282,10 +299,12 @@ export function renderLeads() {
         ${searchInput("Search business, city, phone…", routeParams.q || "")}
         ${filterSelect("stage", PIPELINE_STAGES.map((item) => ({ value: item.id, label: item.label })), stage, "All stages")}
         ${filterSelect("assignee", [{ value: "unassigned", label: "Unassigned" }, ...data.teamMembers.map((member) => ({ value: member.id, label: member.full_name }))], assignee, "All salespeople")}
-        ${filterSelect("qualification", ["unreviewed", "potential", "qualified", "unqualified"].map((value) => ({ value, label: statusLabel(value) })), qualification, "All qualifications")}
-        ${filterSelect("opportunity", AUTOMATION_OPPORTUNITIES.map(([value, label]) => ({ value, label })), opportunity, "All opportunities")}
-        ${filterSelect("call", [{ value: "uncalled", label: "Not called" }, { value: "called", label: "Called" }], callState, "All call states")}
-        ${filterSelect("contact", [{ value: "phone", label: "Has phone" }, { value: "email", label: "Has email" }, { value: "both", label: "Phone + email" }, { value: "none", label: "No contact" }], contact, "All contact availability")}
+        ${advanced("More filters", `<div class="advanced-filter-grid">
+          ${filterSelect("qualification", ["unreviewed", "potential", "qualified", "unqualified"].map((value) => ({ value, label: statusLabel(value) })), qualification, "All qualifications")}
+          ${filterSelect("opportunity", AUTOMATION_OPPORTUNITIES.map(([value, label]) => ({ value, label })), opportunity, "All opportunities")}
+          ${filterSelect("call", [{ value: "uncalled", label: "Not called" }, { value: "called", label: "Called" }], callState, "All call states")}
+          ${filterSelect("contact", [{ value: "phone", label: "Has phone" }, { value: "email", label: "Has email" }, { value: "both", label: "Phone + email" }, { value: "none", label: "No contact" }], contact, "All contact availability")}
+        </div>`, qualification !== "all" || opportunity !== "all" || callState !== "all" || contact !== "all")}
         <select class="select-sm" data-action="route-select" data-key="sort" aria-label="Sort">
           <option value="score"${sort === "score" ? " selected" : ""}>Best score</option>
           <option value="recent"${sort === "recent" ? " selected" : ""}>Recently updated</option>
@@ -305,11 +324,11 @@ export function renderLeads() {
           ${td("Fit", score(lead.lead_score))}
           ${td("Stage", pill(lead.status))}
           ${td("Next step", escapeHtml(nextStep(data, lead)))}
-          ${td("", `<span class="cell-actions">${btn("Call", { action: "navigate", size: "sm", attrs: `data-route-target="calling" data-route-params='${escapeHtml(JSON.stringify({ lead: lead.id }))}' data-stop-row` })}${icon("chevron")}</span>`)}
+          ${td("", `<span class="cell-actions">${btn("Call", { action: "navigate", size: "sm", attrs: `data-route-target="pipeline" data-route-params='${escapeHtml(JSON.stringify({ section: "work", lead: lead.id }))}' data-stop-row` })}${icon("chevron")}</span>`)}
         </tr>`),
         emptyState: empty({
           title: data.leads.length ? "No leads match" : "No leads yet",
-          message: data.leads.length ? "Clear the search or stage filter." : "Find local service businesses in Lead Discovery.",
+          message: data.leads.length ? "Clear the search or filters." : "Find local service businesses in Lead Discovery.",
           action: data.leads.length ? "" : "navigate",
           actionLabel: "Open Lead Discovery",
           actionAttrs: 'data-route-target="discovery"',
@@ -325,12 +344,14 @@ function deal(data, lead) {
   const assignee = data.teamMembers.find((member) => String(member.id) === String(lead.assigned_team_member_id));
   const entered = new Date(lead.stage_entered_at || lead.updated_at || lead.created_at || Date.now());
   const age = Math.max(0, Math.floor((Date.now() - entered.getTime()) / 86_400_000));
+  const movable = !["won", "lost"].includes(lead.status);
   return `
-    <article class="deal" draggable="true" data-lead-id="${lead.id}" data-action="lead-open" data-id="${lead.id}">
+    <article class="deal" draggable="${movable}" data-lead-id="${lead.id}" data-action="lead-open" data-id="${lead.id}">
       <strong>${escapeHtml(lead.business_name)}</strong>
       <div class="deal__meta">
         <span>${escapeHtml(assignee?.full_name || "Unassigned")}</span>
-        <span>${formatCurrency(lead.quoted_setup_fee || lead.deal_value || lead.asking_price || 0)}</span>
+        <span>${formatCurrency(leadActivationValue(lead))}</span>
+        <span>${pill(lead.status)}</span>
         <span>${escapeHtml(nextStep(data, lead))}</span>
         <span>${age}d in stage</span>
       </div>
@@ -340,18 +361,19 @@ function deal(data, lead) {
 
 export function renderPipeline() {
   const { data, routeParams } = getState();
-  const view = routeParams.view || "board";
+  const view = ["board", "list"].includes(routeParams.layout) ? routeParams.layout : "board";
   const query = (routeParams.q || "").toLowerCase();
   const leads = data.leads.filter((lead) => !query || `${lead.business_name} ${lead.category} ${lead.city}`.toLowerCase().includes(query));
   const open = leads.filter((lead) => !["won", "lost"].includes(lead.status));
+  const pipeline = pipelineValueSummary(open);
 
   return `
     <div class="stack">
       <div class="toolbar">
         ${searchInput("Search the pipeline", routeParams.q || "")}
-        ${viewTabs("view", [["board", "Board"], ["list", "List"]], view)}
+        ${viewTabs("layout", [["board", "Board"], ["list", "List"]], view)}
         <span class="toolbar__spacer"></span>
-        <span class="faint">${formatNumber(open.length)} open · ${formatCurrency(sum(open, (lead) => lead.deal_value || lead.asking_price))}</span>
+        <span class="faint">${formatNumber(open.length)} open · ${pipeline.estimated ? "estimated " : ""}${formatCurrency(pipeline.value)}</span>
       </div>
 
       ${view === "list" ? table({
@@ -359,7 +381,7 @@ export function renderPipeline() {
         rows: leads.map((lead) => `<tr data-action="lead-open" data-id="${lead.id}">
           ${td("Business", `<div class="cell"><strong>${escapeHtml(lead.business_name)}</strong><span>${escapeHtml(lead.category || "")}</span></div>`)}
           ${td("Stage", pill(lead.status))}
-          ${td("Value", formatCurrency(lead.deal_value || lead.asking_price || 0))}
+          ${td("Value", formatCurrency(leadActivationValue(lead)))}
           ${td("Last contact", lead.last_contacted_at ? relativeTime(lead.last_contacted_at) : "Never")}
           ${td("Follow-up", lead.follow_up_at ? relativeTime(lead.follow_up_at) : "—")}
           ${td("", icon("chevron"))}
@@ -367,12 +389,12 @@ export function renderPipeline() {
         emptyState: empty({ title: "Pipeline is empty", message: "Save leads from discovery to fill it." }),
       }) : `
         <div class="board">
-          ${PIPELINE_STAGES.map((stage) => {
-            const stageLeads = leads.filter((lead) => lead.status === stage.id);
-            return `<section class="board__col" data-stage="${stage.id}">
-              <header class="board__head"><span>${escapeHtml(stage.label)}</span><b>${stageLeads.length}</b></header>
-              <div class="board__list" data-stage="${stage.id}">
-                ${stageLeads.map((lead) => deal(data, lead)).join("") || `<p class="board__empty">Drop here</p>`}
+          ${PIPELINE_GROUPS.map((group) => {
+            const stageLeads = leads.filter((lead) => group.statuses.includes(lead.status));
+            return `<section class="board__col" data-group="${group.id}">
+              <header class="board__head"><span>${escapeHtml(group.label)}</span><b>${stageLeads.length}</b></header>
+              <div class="board__list${group.target ? "" : " board__list--static"}"${group.target ? ` data-stage="${group.target}"` : ""}>
+                ${stageLeads.map((lead) => deal(data, lead)).join("") || `<p class="board__empty">${group.target ? "Drop here" : "No closed deals"}</p>`}
               </div>
             </section>`;
           }).join("")}

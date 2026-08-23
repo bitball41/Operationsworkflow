@@ -103,6 +103,8 @@ import {
   replyToThread,
   recordPayment,
   recordSalesCall,
+  pipelineDropTarget,
+  leadPricingFromForm,
   saveDemoFiles,
   sendDirectEmail,
   sendDraft,
@@ -963,23 +965,28 @@ export async function onSubmit(event) {
         break;
 
       case "lead": {
+        const existing = id ? findRecord("leads", id) : null;
+        const scoreValue = values.lead_score == null
+          ? Number(existing?.lead_score ?? 80)
+          : number(values.lead_score, 80);
         const payload = {
           ...values,
           has_website: Boolean(values.has_website),
           website_status: values.has_website ? "Has website" : "No website",
-          lead_score: number(values.lead_score, 80),
-          qualification_score: number(values.lead_score, 80),
-          opportunity_score: number(values.lead_score, 80),
-          deal_value: number(values.deal_value, 2500),
-          asking_price: number(values.deal_value, 2500),
-          quoted_setup_fee: values.quoted_setup_fee === null ? null : number(values.quoted_setup_fee, 0),
-          quoted_monthly_fee: values.quoted_monthly_fee === null ? null : number(values.quoted_monthly_fee, 0),
-          opportunity_tags: lines(values.opportunity_tags),
-          pain_points: lines(values.pain_points),
-          objections: lines(values.objections),
-          source: id ? findRecord("leads", id)?.source || "manual" : "manual",
-          source_key: id ? findRecord("leads", id)?.source_key || null : `manual-${slugify(values.business_name || uid())}`,
-          discovered_at: id ? findRecord("leads", id)?.discovered_at : new Date().toISOString(),
+          lead_score: scoreValue,
+          qualification_score: values.lead_score == null
+            ? Number(existing?.qualification_score ?? scoreValue)
+            : scoreValue,
+          opportunity_score: values.lead_score == null
+            ? Number(existing?.opportunity_score ?? scoreValue)
+            : scoreValue,
+          ...leadPricingFromForm(values, existing),
+          opportunity_tags: values.opportunity_tags == null ? existing?.opportunity_tags || [] : lines(values.opportunity_tags),
+          pain_points: values.pain_points == null ? existing?.pain_points || [] : lines(values.pain_points),
+          objections: values.objections == null ? existing?.objections || [] : lines(values.objections),
+          source: existing?.source || "manual",
+          source_key: existing?.source_key || `manual-${slugify(values.business_name || uid())}`,
+          discovered_at: existing?.discovered_at || new Date().toISOString(),
         };
         const saved = id ? await updateRecord("leads", id, payload) : await createRecord("leads", payload);
         await logActivity(id ? "lead_updated" : "lead_created", id ? "Lead updated" : "Lead added", saved.business_name, { lead_id: saved.id });
@@ -1004,7 +1011,7 @@ export async function onSubmit(event) {
           meeting_starts_at: values.meeting_starts_at ? iso(values.meeting_starts_at) : null,
         });
         form.reset();
-        navigate("calling");
+        navigate("pipeline", { section: "work" });
         toast("Call saved", "The lead, activity, and any follow-up or meeting were updated.");
         break;
       }
@@ -1731,7 +1738,7 @@ export function bindBoardDrag() {
     card.addEventListener("dragend", () => card.classList.remove("dragging"));
   });
 
-  document.querySelectorAll(".board__list").forEach((column) => {
+  document.querySelectorAll(".board__list[data-stage]").forEach((column) => {
     column.addEventListener("dragover", (event) => {
       event.preventDefault();
       column.classList.add("is-over");
@@ -1743,8 +1750,11 @@ export function bindBoardDrag() {
       const leadId = event.dataTransfer?.getData("text/plain") || document.querySelector(".deal.dragging")?.dataset.leadId;
       const stage = column.dataset.stage;
       const lead = findRecord("leads", leadId);
-      if (!lead || !PIPELINE_STAGES.some((item) => item.id === stage) || lead.status === stage) return;
-      await run(() => updatePipeline(lead.id, stage), "Moved", `${lead.business_name} → ${stage.replaceAll("_", " ")}`);
+      const target = lead && PIPELINE_STAGES.some((item) => item.id === stage)
+        ? pipelineDropTarget(lead.status, stage)
+        : "";
+      if (!lead || !target) return;
+      await run(() => updatePipeline(lead.id, target), "Moved", `${lead.business_name} → ${target.replaceAll("_", " ")}`);
     });
   });
 }

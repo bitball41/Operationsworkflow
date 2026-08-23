@@ -219,6 +219,10 @@
   white-space: nowrap;
 }
 
+.sidebar__status--ok { color: var(--green); }
+.sidebar__status--busy { color: var(--text-2); }
+.sidebar__status--error { color: var(--amber); }
+
 .app.is-collapsed .nav__label,
 .app.is-collapsed .nav__item span,
 .app.is-collapsed .nav__count,
@@ -561,5 +565,10 @@
 @media (max-width: 560px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+  }
+
+  .stat b {
+    font-size: 1.25rem;
   }
 }

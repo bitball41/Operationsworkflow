@@ -3,6 +3,7 @@ import { CONFIG, PIPELINE_STAGES, PROJECT_STAGES, REPLY_CLASSIFICATIONS } from "
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, isSameMonth, relativeTime, statusLabel } from "../core/utils.js";
 import {
+  advanced,
   btn,
   checkbox,
   externalLink,
@@ -58,36 +59,40 @@ function memberOptions(data) {
 
 export function openLeadForm(lead = null) {
   const { data } = getState();
+  const coreFields = `
+    <div class="field-grid">
+      ${field("Business name", input("business_name", lead?.business_name || "", { required: true }))}
+      ${field("Owner / contact", input("contact_name", lead?.contact_name || ""))}
+      ${field("Phone", input("phone", lead?.phone || ""))}
+      ${field("Email", input("email", lead?.email || "", { type: "email" }))}
+      ${field("Niche", input("category", lead?.category || "", { placeholder: "Roofing contractor" }))}
+      ${field("City", input("city", lead?.city || ""))}
+      ${field("State", input("region", lead?.region || ""))}
+      ${field("Salesperson", select("assigned_team_member_id", memberOptions(data), lead?.assigned_team_member_id || "", { placeholder: "Unassigned" }))}
+    </div>`;
+  const optionalFields = `
+    <div class="field-grid">
+      ${lead ? field("Service type", input("service_type", lead.service_type || lead.category || "")) : ""}
+      ${lead ? field("Qualification", select("qualification_status", ["unreviewed", "potential", "qualified", "unqualified"].map((value) => ({ value, label: statusLabel(value) })), lead.qualification_status || "unreviewed")) : ""}
+      ${lead ? field("Fit score", input("lead_score", lead.lead_score ?? 80, { type: "number", attrs: 'min="0" max="100"' })) : ""}
+      ${field("Quoted activation fee", input("quoted_setup_fee", lead?.quoted_setup_fee ?? "", { type: "number", attrs: 'min="0" step="50"' }), { hint: "leave blank until quoted" })}
+      ${field("Quoted monthly service", input("quoted_monthly_fee", lead?.quoted_monthly_fee ?? "", { type: "number", attrs: 'min="0" step="1"' }), { hint: "leave blank until quoted" })}
+    </div>
+    ${field("Address", input("address", lead?.address || ""))}
+    ${lead ? field("Opportunity tags", input("opportunity_tags", (lead.opportunity_tags || []).join(", "), { placeholder: "missed_call, booking, lead_follow_up" }), { hint: "comma separated; verify inferred tags during outreach" }) : ""}
+    ${lead ? `<div class="field-grid">
+      ${field("Pain points", textarea("pain_points", (lead.pain_points || []).join("\n"), { attrs: 'rows="3"' }), { hint: "one per line" })}
+      ${field("Objections", textarea("objections", (lead.objections || []).join("\n"), { attrs: 'rows="3"' }), { hint: "one per line" })}
+    </div>` : ""}
+    ${field("Notes", textarea("notes", lead?.notes || "", { attrs: 'rows="3"' }))}
+    ${checkbox("has_website", "This business already has a real website", Boolean(lead?.has_website))}`;
   openModal({
     title: lead ? "Edit lead" : "Add lead",
     wide: true,
     body: `
       <form id="lead-form" data-form="lead"${lead ? ` data-id="${lead.id}"` : ""}>
-        <div class="field-grid">
-          ${field("Business name", input("business_name", lead?.business_name || "", { required: true }))}
-          ${field("Owner / contact", input("contact_name", lead?.contact_name || ""))}
-          ${field("Email", input("email", lead?.email || "", { type: "email" }))}
-          ${field("Phone", input("phone", lead?.phone || ""))}
-          ${field("Niche", input("category", lead?.category || "", { placeholder: "Tree Service" }))}
-          ${field("Service type", input("service_type", lead?.service_type || lead?.category || ""))}
-          ${field("City", input("city", lead?.city || ""))}
-          ${field("State", input("region", lead?.region || ""))}
-          ${field("Stage", select("status", PIPELINE_STAGES.map((stage) => ({ value: stage.id, label: stage.label })), lead?.status || "new"))}
-          ${field("Qualification", select("qualification_status", ["unreviewed", "potential", "qualified", "unqualified"].map((value) => ({ value, label: statusLabel(value) })), lead?.qualification_status || "unreviewed"))}
-          ${field("Salesperson", select("assigned_team_member_id", memberOptions(data), lead?.assigned_team_member_id || "", { placeholder: "Unassigned" }))}
-          ${field("Fit score", input("lead_score", lead?.lead_score ?? 80, { type: "number", attrs: 'min="0" max="100"' }))}
-          ${field("Activation value", input("deal_value", lead?.deal_value ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
-          ${field("Activation fee", input("quoted_setup_fee", lead?.quoted_setup_fee ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
-          ${field("Monthly service", input("quoted_monthly_fee", lead?.quoted_monthly_fee ?? CONFIG.defaultMonthlyFee, { type: "number", attrs: 'min="0" step="1"' }))}
-        </div>
-        ${field("Address", input("address", lead?.address || ""))}
-        ${field("Opportunity tags", input("opportunity_tags", (lead?.opportunity_tags || []).join(", "), { placeholder: "missed_call, booking, lead_follow_up" }), { hint: "comma separated; inferred tags must be verified during outreach" })}
-        <div class="field-grid">
-          ${field("Pain points", textarea("pain_points", (lead?.pain_points || []).join("\n"), { attrs: 'rows="3"' }), { hint: "one per line" })}
-          ${field("Objections", textarea("objections", (lead?.objections || []).join("\n"), { attrs: 'rows="3"' }), { hint: "one per line" })}
-        </div>
-        ${field("Notes", textarea("notes", lead?.notes || "", { attrs: 'rows="3"' }))}
-        ${checkbox("has_website", "This business already has a real website", Boolean(lead?.has_website))}
+        ${coreFields}
+        ${advanced(lead ? "Pipeline and qualification details" : "Optional deal details", optionalFields)}
       </form>
     `,
     footer: footer("lead-form", lead ? "Save lead" : "Add lead", lead
@@ -107,10 +112,13 @@ export function openMeetingForm(meeting = null, presetLeadId = "") {
       <div class="field-grid">
         ${field("Title", input("title", meeting?.title || "Discovery meeting", { required: true }))}
         ${field("Lead", select("lead_id", leadOptions(data.leads), meeting?.lead_id || presetLeadId, { placeholder: "Not linked to a lead" }))}
-        ${field("Client", select("client_id", clientOptions(data), meeting?.client_id || "", { placeholder: "Not linked to a client" }))}
         ${field("Salesperson", select("salesperson_id", memberOptions(data), meeting?.salesperson_id || "", { placeholder: "Unassigned" }))}
         ${field("Starts", input("starts_at", localDateTime(meeting?.starts_at || new Date(Date.now() + 86_400_000)), { type: "datetime-local", required: true }))}
         ${field("Ends", input("ends_at", meeting?.ends_at ? localDateTime(meeting.ends_at) : "", { type: "datetime-local" }))}
+      </div>
+      ${advanced("Discovery, proposal, and follow-up details", `
+       <div class="field-grid">
+        ${field("Client", select("client_id", clientOptions(data), meeting?.client_id || "", { placeholder: "Not linked to a client" }))}
         ${field("Outcome", select("outcome", ["scheduled", "proposal_needed", "follow_up", "won", "lost", "technical_discovery_required", "cancelled"].map((value) => ({ value, label: statusLabel(value) })), meeting?.outcome || "scheduled"))}
         ${field("Complexity", select("implementation_complexity", ["low", "medium", "high", "custom"].map((value) => ({ value, label: statusLabel(value) })), meeting?.implementation_complexity || "", { placeholder: "Not assessed" }))}
         ${field("Activation fee", input("quoted_setup_fee", meeting?.quoted_setup_fee ?? CONFIG.defaultSetupFee, { type: "number", attrs: 'min="0" step="50"' }))}
@@ -133,6 +141,7 @@ export function openMeetingForm(meeting = null, presetLeadId = "") {
       </div>
       ${field("Meeting notes", textarea("notes", meeting?.notes || "", { attrs: 'rows="5"' }))}
       ${field("Next action", input("next_action", meeting?.next_action || ""))}
+      `, Boolean(meeting))}
     </form>`,
     footer: footer("meeting-form", meeting ? "Save meeting" : "Create meeting"),
   });
@@ -265,7 +274,7 @@ export function openVoiceConversation(conversation) {
   const transcript = Array.isArray(conversation.transcript) ? conversation.transcript : [];
   openModal({
     title: conversation.caller_name || conversation.caller_phone || "Voice conversation",
-    subtitle: `${client ? clientOptions({ clients: [client], leads: data.leads })[0]?.label : "Unlinked client"} \u00b7 ${agent?.name || "Unlinked agent"}`,
+    subtitle: `${client ? clientOptions({ clients: [client], leads: data.leads })[0]?.label : "No client assigned"} \u00b7 ${agent?.name || "Provider agent unavailable"}`,
     wide: true,
     body: `
       <dl class="detail-list">
@@ -421,7 +430,7 @@ export function openLeadDetails(lead) {
       ${btn("Edit", { action: "lead-edit", variant: "quiet", attrs: `data-id="${lead.id}"` })}
       ${btn("Move stage", { action: "lead-stage", attrs: `data-id="${lead.id}"` })}
       ${btn("Schedule meeting", { action: "meeting-new", attrs: `data-lead-id="${lead.id}"` })}
-      ${btn("Open in Calling", { action: "navigate", variant: "primary", iconName: "phone", attrs: `data-route-target="calling" data-route-params='${escapeHtml(JSON.stringify({ lead: lead.id }))}'` })}
+      ${btn("Open in Call next", { action: "navigate", variant: "primary", iconName: "phone", attrs: `data-route-target="pipeline" data-route-params='${escapeHtml(JSON.stringify({ section: "work", lead: lead.id }))}'` })}
     `,
   });
 }

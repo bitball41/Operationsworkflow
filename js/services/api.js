@@ -132,6 +132,10 @@ export async function fetchWorkspace() {
   return request("/workspace");
 }
 
+export async function winWorkspaceLead(leadId) {
+  return request(`/workspace/leads/${encodeURIComponent(leadId)}/win`, { method: "POST" });
+}
+
 export async function createWorkspaceRecords(collection, records) {
   const data = await request(`/workspace/records/${encodeURIComponent(collection)}`, {
     method: "POST",

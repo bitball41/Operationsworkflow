@@ -52,6 +52,7 @@ import {
   handleWorkspaceAssetDownload,
   handleWorkspaceAssetUpload,
   handleWorkspaceProfile,
+  handleWorkspaceLeadWin,
   handleWorkspaceRecords,
   handleWorkspaceSignedUrls,
   handleWorkspaceSnapshot,
@@ -331,6 +332,10 @@ async function handleApi(request, env, url, member) {
     }
     if (path === "/api/workspace/profile" && request.method === "PATCH") {
       return await handleWorkspaceProfile(request, env, member);
+    }
+    const winLeadRoute = path.match(/^\/api\/workspace\/leads\/([0-9a-f-]{36})\/win$/i);
+    if (winLeadRoute && isPost) {
+      return await handleWorkspaceLeadWin(env, winLeadRoute[1], member);
     }
     if (path === "/api/workspace/assets" && isPost) {
       return await handleWorkspaceAssetUpload(request, env, member);

@@ -141,6 +141,81 @@ test("attention items surface replies, overdue follow-ups and failed deployments
   assert.ok(items[0].weight <= items[items.length - 1].weight, "most urgent first");
 });
 
+test("pipeline value uses the quote first and identifies estimates", () => {
+  const leads = [
+    { status: "new", quoted_setup_fee: 5000, deal_value: 2500, asking_price: 2000 },
+    { status: "contacted", quoted_setup_fee: null, deal_value: 3200, asking_price: 3000 },
+    { status: "won", quoted_setup_fee: 9000, deal_value: 9000 },
+  ];
+  assert.equal(operations.leadActivationValue(leads[0]), 5000);
+  assert.deepEqual(operations.pipelineValueSummary(leads), {
+    count: 2,
+    value: 8200,
+    estimated: true,
+  });
+});
+
+test("an untouched Add Lead keeps defaults as estimates, not quotes", () => {
+  const pricing = operations.leadPricingFromForm({ quoted_setup_fee: null, quoted_monthly_fee: null });
+  assert.deepEqual(pricing, {
+    deal_value: 2500,
+    asking_price: 2500,
+    quoted_setup_fee: null,
+    quoted_monthly_fee: null,
+  });
+  assert.deepEqual(operations.pipelineValueSummary([{ status: "new", ...pricing }]), {
+    count: 1,
+    value: 2500,
+    estimated: true,
+  });
+});
+
+test("saving an unquoted existing lead does not promote its estimate to a quote", () => {
+  const pricing = operations.leadPricingFromForm(
+    { quoted_setup_fee: null, quoted_monthly_fee: null },
+    { deal_value: 3200, asking_price: 3000, quoted_setup_fee: null, quoted_monthly_fee: null },
+  );
+  assert.equal(pricing.deal_value, 3200);
+  assert.equal(pricing.quoted_setup_fee, null);
+  assert.equal(pricing.quoted_monthly_fee, null);
+});
+
+test("dropping within a grouped pipeline lane never regresses the stored stage", () => {
+  for (const [current, target] of [
+    ["ready_to_contact", "new"],
+    ["interested", "contacted"],
+    ["follow_up_later", "contacted"],
+    ["demo_completed", "meeting_scheduled"],
+    ["negotiating", "proposal_sent"],
+  ]) assert.equal(operations.pipelineDropTarget(current, target), "", `${current} must stay unchanged`);
+
+  assert.equal(operations.pipelineDropTarget("new", "contacted"), "contacted");
+  assert.equal(operations.pipelineDropTarget("contacted", "meeting_scheduled"), "meeting_scheduled");
+});
+
+test("attention surfaces open leads without an owner or next action", () => {
+  const previous = structuredClone(getState().data);
+  try {
+    const lead = {
+      ...previous.leads[0],
+      id: "attention-unassigned",
+      business_name: "Unassigned Roofing",
+      status: "new",
+      assigned_team_member_id: null,
+      next_action: null,
+      next_action_at: null,
+      follow_up_at: null,
+    };
+    setData({ ...previous, leads: [lead], followUps: [] }, { silent: true });
+    const items = operations.attentionItems();
+    assert.ok(items.some((item) => item.id === "unassigned-leads"));
+    assert.ok(items.some((item) => item.id === "leads-without-next-action"));
+    assert.ok(items.every((item) => item.route !== "leads"));
+  } finally {
+    setData(previous, { silent: true });
+  }
+});
+
 test("client lifecycle derives the next action from linked records", () => {
   const workspace = createSeedData();
   const client = workspace.clients.find((item) => item.contact_name === "June Park");

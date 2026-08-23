@@ -10,7 +10,8 @@ globalThis.localStorage = {
   get length() { return this.values.size; },
 };
 
-const { clearLocalWorkspace } = await import("../js/services/data.js");
+const { COLLECTIONS, clearLocalWorkspace, loadCloudWorkspace, reloadWorkspace } = await import("../js/services/data.js");
+const { getState, setState } = await import("../js/core/state.js");
 
 test("release clears legacy business records and obsolete account sessions", () => {
   localStorage.setItem("operations.data.v2", JSON.stringify({ leads: [{ id: "old-lead" }] }));
@@ -39,4 +40,21 @@ test("there is no local workspace loader or upload bridge", async () => {
   const data = await import("../js/services/data.js");
   assert.equal(data.loadLocalWorkspace, undefined);
   assert.equal(data.pushLocalWorkspaceToCloud, undefined);
+});
+
+test("a failed refresh never leaves the workspace claiming it is synced", async () => {
+  const snapshot = Object.fromEntries(Object.keys(COLLECTIONS).map((key) => [key, []]));
+  await loadCloudWorkspace({ ...snapshot, profile: null, workspace: { id: "test-workspace" } });
+  const lastSyncedAt = getState().connection.lastSyncedAt;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("network offline"); };
+  try {
+    await assert.rejects(reloadWorkspace(), /Could not reach the API worker/);
+    assert.equal(getState().connection.ok, false);
+    assert.equal(getState().connection.status, "degraded");
+    assert.equal(getState().connection.lastSyncedAt, lastSyncedAt);
+  } finally {
+    globalThis.fetch = originalFetch;
+    setState({ connection: { ok: false, status: "loading", message: "", lastSyncedAt: null } }, { silent: true });
+  }
 });

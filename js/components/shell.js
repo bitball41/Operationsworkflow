@@ -1,7 +1,7 @@
 import { FULL_BLEED_ROUTES, NAV_GROUPS, PAGE_TITLES } from "../config.js";
 import { hydrateIcons, icon } from "../core/icons.js";
 import { getState } from "../core/state.js";
-import { escapeHtml } from "../core/utils.js";
+import { escapeHtml, relativeTime } from "../core/utils.js";
 import { attentionItems, clientLifecycleRows } from "../services/operations.js";
 
 const PRIMARY_ROUTE = Object.freeze({
@@ -78,12 +78,15 @@ export function renderShell() {
     </section>
   `).join("");
 
-  document.getElementById("sidebar-foot").innerHTML = `
-    <div class="sidebar__status">
-      ${icon(state.storage === "cloud" ? "globe" : "file")}
-      <span>${state.storage === "cloud" ? "Synced" : "Local data"}</span>
+  const connection = workspaceConnectionStatus(state.connection);
+  document.getElementById("sidebar-foot").innerHTML = connection.href ? `
+    <a class="sidebar__status sidebar__status--${connection.tone}" href="${connection.href}" title="${escapeHtml(connection.message)}">
+      ${icon(connection.iconName)}<span>${escapeHtml(connection.label)}</span>
+    </a>
+  ` : `
+    <div class="sidebar__status sidebar__status--${connection.tone}" title="${escapeHtml(connection.message)}">
+      ${icon(connection.iconName)}<span>${escapeHtml(connection.label)}</span>
     </div>
-    ${state.connection.ok ? "" : `<a class="sidebar__status" href="#/settings" style="color:var(--amber)">${icon("alert")}<span>${escapeHtml(state.connection.message)}</span></a>`}
   `;
 
   const title = PAGE_TITLES[route] || "Operations";
@@ -95,6 +98,52 @@ export function renderShell() {
 
   document.getElementById("app").classList.toggle("is-collapsed", state.navCollapsed);
   hydrateIcons(document.getElementById("app"));
+}
+
+export function workspaceConnectionStatus(connection = {}) {
+  if (connection.status === "synced" && connection.ok) {
+    return {
+      tone: "ok",
+      iconName: "globe",
+      label: connection.lastSyncedAt ? `Synced ${relativeTime(connection.lastSyncedAt)}` : "Workspace synced",
+      message: "The latest workspace snapshot loaded successfully.",
+      href: "",
+    };
+  }
+  if (connection.status === "refreshing") {
+    return {
+      tone: "busy",
+      iconName: "refresh",
+      label: connection.lastSyncedAt ? "Refreshing workspace…" : "Connecting…",
+      message: connection.message || "Refreshing workspace…",
+      href: "",
+    };
+  }
+  if (connection.status === "auth_error") {
+    return {
+      tone: "error",
+      iconName: "alert",
+      label: "Access needs attention",
+      message: connection.message || "Cloudflare Access could not verify this request.",
+      href: "#/settings",
+    };
+  }
+  if (connection.status === "degraded" || connection.ok === false) {
+    return {
+      tone: "error",
+      iconName: "alert",
+      label: connection.lastSyncedAt ? `Sync paused · last ${relativeTime(connection.lastSyncedAt)}` : "Workspace unavailable",
+      message: connection.message || "The workspace service is unavailable.",
+      href: "#/settings",
+    };
+  }
+  return {
+    tone: "busy",
+    iconName: "refresh",
+    label: "Connecting…",
+    message: connection.message || "Opening workspace…",
+    href: "",
+  };
 }
 
 export function setNav(open) {
