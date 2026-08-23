@@ -126,7 +126,7 @@ The following local migrations correspond to differently versioned remote entrie
 5. **Close the Notion P0s.** The launch plan has 18 open tasks and several overdue P0 items. Finish the call flow, calendar, number, prompt, consent behavior, transcript, and end-to-end test before adding platform scope.
 6. **Document production migration equivalence.** This is required before the next Supabase migration.
 7. **Retire dormant Auth deliberately.** Confirm the two legacy users are unused, then remove or retain them through an explicit migration—not an ad hoc delete.
-8. **Verify deployment after merge.** The code changes are currently branch-only. Production must be checked after deployment, including the hosted asset, not just repository source.
+8. **Finish the deployment boundary.** Operations was automatically published by its Cloudflare Git integration from the pull-request commit and now needs an authenticated hosted-UI recheck. Conno.fun passed its Cloudflare build check but did not create or activate a new Worker version; its production site still needs deployment and hosted-asset verification.
 
 ## Verification performed
 
@@ -138,10 +138,11 @@ The following local migrations correspond to differently versioned remote entrie
 - Live Operations, Clients, Agents, Sales, Money, Settings, Conno.fun, and the services page were inspected before implementation.
 - Supabase schema, grants, policies, functions, rows, Edge Functions, logs, advisors, and migration history were read directly.
 - Cloudflare deployment history was inspected for both Workers.
-- No production deployment, payment mutation, provider mutation, or database DDL was performed.
+- No manual production deployment, payment mutation, provider mutation, or database DDL was performed. Pushing the Operations pull-request branch triggered the repository's existing Cloudflare Git integration, which automatically uploaded and activated that commit.
 
 ## Deployment truth
 
-The latest observed Operations Worker deployment was August 23, 2026 at 15:34 UTC. The latest observed Conno.fun Worker deployment was August 17, 2026 at 04:22 UTC.
+Both redesigns are implemented, tested, pushed on `codex/business-truth-usability`, and open for review.
 
-The redesign in this audit is implemented and tested on the local branches named `codex/business-truth-usability`. It is **not yet deployed**. Production will continue showing the old behavior until the branches are reviewed, merged, and deployed.
+- **Operations:** Cloudflare's Git integration automatically published the functional redesign commit `40d06fd8` at 21:27 UTC. Worker deployment history confirmed version `db8e862b-894b-436b-aacb-59f2feb627cb` at 100% during inspection. The public route remains behind Cloudflare Access, so the new authenticated UI still needs a post-deployment browser check by an allowed user.
+- **Conno.fun:** Cloudflare's pull-request check passed for commit `8b05d5bf`, but Worker version and deployment history still stop at August 17, 2026 at 04:22 UTC. Direct production checks still show the old homepage, old phone-request form, and old contact email. Treat this redesign as **reviewed branch code, not production** until the hosted artifact changes and is rechecked.
