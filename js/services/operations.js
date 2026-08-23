@@ -1061,8 +1061,9 @@ export function clientLifecycle(client, workspace = data()) {
   };
 }
 
-export function clientLifecycleRows(workspace = data()) {
+export function clientLifecycleRows(workspace = data(), { includeExamples = true } = {}) {
   return (Array.isArray(workspace.clients) ? workspace.clients : [])
+    .filter((client) => includeExamples || client.is_example !== true)
     .map((client) => clientLifecycle(client, workspace))
     .filter(Boolean)
     .sort((left, right) => (
@@ -1085,6 +1086,22 @@ export function getPayments({ range = "all" } = {}) {
   return paid;
 }
 
+/**
+ * Revenue belongs in operating totals only after it is linked to a real client
+ * or to a project owned by a real client. Unassigned provider receipts remain
+ * visible for reconciliation, but cannot inflate the business headline.
+ */
+export function isAssignedBusinessPayment(payment, workspace = data()) {
+  const clients = Array.isArray(workspace.clients) ? workspace.clients : [];
+  const projects = Array.isArray(workspace.projects) ? workspace.projects : [];
+  const directClient = clients.find((client) => String(client.id) === String(payment?.client_id || ""));
+  if (directClient) return directClient.is_example !== true;
+  const project = projects.find((item) => String(item.id) === String(payment?.project_id || ""));
+  if (!project) return false;
+  const projectClient = clients.find((client) => String(client.id) === String(project.client_id || ""));
+  return Boolean(projectClient && projectClient.is_example !== true);
+}
+
 export function getTasks({ view = "open" } = {}) {
   const tasks = data().tasks;
   if (view === "today") return tasks.filter((task) => task.status !== "completed" && isToday(task.due_at));
@@ -1094,19 +1111,22 @@ export function getTasks({ view = "open" } = {}) {
 }
 
 export function revenueSummary() {
-  const paid = getPayments();
+  const allPaid = getPayments();
+  const paid = allPaid.filter((payment) => isAssignedBusinessPayment(payment));
+  const unassignedPaid = allPaid.filter((payment) => !isAssignedBusinessPayment(payment));
   const gross = sum(paid, (payment) => payment.amount);
   const fees = sum(paid, (payment) => payment.fee_amount);
   const costs = sum(data().expenses, (expense) => expense.amount) + sum(data().aiUsage, (usage) => usage.cost);
-  return { paid, gross, fees, costs, profit: gross - fees - costs };
+  return { paid, unassignedPaid, gross, fees, costs, profit: gross - fees - costs };
 }
 
 /** Compact agency metrics used by Home and the assistant. */
 export function agencySummary() {
   const workspace = data();
-  const paid = getPayments();
-  const paidThisMonth = getPayments({ range: "month" });
-  const activeSubscriptions = workspace.maintenanceSubscriptions.filter((item) => item.status === "active");
+  const paid = getPayments().filter((payment) => isAssignedBusinessPayment(payment, workspace));
+  const paidThisMonth = getPayments({ range: "month" }).filter((payment) => isAssignedBusinessPayment(payment, workspace));
+  const realClientIds = new Set(workspace.clients.filter((client) => client.is_example !== true).map((client) => String(client.id)));
+  const activeSubscriptions = workspace.maintenanceSubscriptions.filter((item) => item.status === "active" && realClientIds.has(String(item.client_id)));
   const openStages = new Set(PIPELINE_STAGES.map((stage) => stage.id).filter((stage) => !["won", "lost"].includes(stage)));
   const closedLeads = workspace.leads.filter((lead) => ["won", "lost"].includes(lead.status));
   const wonLeads = workspace.leads.filter((lead) => lead.status === "won");
@@ -1129,7 +1149,7 @@ export function agencySummary() {
     totalRevenue: sum(paid, (payment) => payment.amount),
     monthlyRecurringRevenue: sum(activeSubscriptions, (item) => item.monthly_amount),
     setupRevenueThisMonth: sum(paidThisMonth.filter((payment) => payment.payment_type === "setup_fee"), (payment) => payment.amount),
-    activeClients: workspace.clients.filter((client) => client.status === "active").length,
+    activeClients: workspace.clients.filter((client) => client.is_example !== true && client.status === "active").length,
     automationsLive: workspace.automations.filter((item) => item.status === "live").length,
     automationsRequiringAttention: automationAttention.length,
     leadsInPipeline: workspace.leads.filter((lead) => openStages.has(lead.status)).length,
@@ -1246,20 +1266,6 @@ export function attentionItems() {
       title: `${automation.failures.length} automation item${automation.failures.length === 1 ? "" : "s"} failed`,
       detail: automation.failures[0]?.reason || "Open Automation for details",
       route: "automation-studio",
-    });
-  }
-
-  const dueTasks = getTasks({ view: "overdue" });
-  if (dueTasks.length) {
-    items.push({
-      id: "tasks",
-      weight: 4,
-      tone: "amber",
-      iconName: "check-square",
-      title: `${dueTasks.length} task${dueTasks.length === 1 ? "" : "s"} overdue`,
-      detail: dueTasks.slice(0, 2).map((task) => task.title).join(", "),
-      route: "tasks",
-      params: { view: "overdue" },
     });
   }
 

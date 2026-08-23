@@ -306,6 +306,19 @@ export function renderSettings() {
         subtitle: "Workspace preferences, model access, and server-side connections. Secrets stay on the Worker.",
       })}
       ${state.connection.ok ? "" : notice("Database connection issue", state.connection.message, { tone: "warn", iconName: "alert" })}
+      ${String(settings.business_name || "").trim() ? "" : notice(
+        "Business identity is incomplete",
+        "Add the business name below. Until then, launch readiness stays blocked and generated customer-facing work has no authoritative company identity.",
+        { tone: "warn", iconName: "alert" },
+      )}
+
+      ${section("What belongs where", {
+        body: rows([
+          row({ main: "Operations", sub: "Leads, sales outcomes, real clients, voice agents, client calls, and money", iconName: "layers", side: pill("connected", "Live records") }),
+          row({ main: "Notion", sub: "Launch plan, project tasks, decisions, and playbooks — not duplicate CRM records", iconName: "check-square", side: pill("active", "Planning") }),
+          row({ main: "Supabase", sub: "Private system of record behind the Worker; never a browser-side credential store", iconName: "lock", side: pill("connected", "Server only") }),
+        ]),
+      })}
 
       ${section("Data", {
         body: rows([

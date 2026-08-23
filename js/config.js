@@ -19,7 +19,7 @@ export const NAV_GROUPS = Object.freeze([
   {
     label: "Workspace",
     items: [
-      { id: "home", label: "Dashboard", icon: "home" },
+      { id: "home", label: "Today", icon: "home" },
       { id: "pipeline", label: "Sales", icon: "columns" },
       { id: "clients", label: "Clients", icon: "briefcase" },
       { id: "voice-agents", label: "Agents", icon: "smartphone" },
@@ -29,8 +29,7 @@ export const NAV_GROUPS = Object.freeze([
     label: "Work",
     items: [
       { id: "inbox", label: "Inbox", icon: "inbox" },
-      { id: "tasks", label: "Tasks", icon: "check-square" },
-      { id: "payments", label: "Finance", icon: "wallet" },
+      { id: "payments", label: "Money", icon: "wallet" },
     ],
   },
   {
@@ -46,7 +45,7 @@ export const NAV_GROUPS = Object.freeze([
 export const LEGACY_ROUTES = Object.freeze([
   "my-day", "assistant", "automation", "calling", "meetings", "discovery", "leads", "outreach", "follow-ups", "studio",
   "templates", "demos", "projects", "automation-studio", "subscriptions", "commissions",
-  "analytics", "costs", "pricing", "calendar", "notes", "playbooks", "activity", "team", "integrations",
+  "analytics", "costs", "pricing", "tasks", "calendar", "notes", "playbooks", "activity", "team", "integrations",
   "onboarding", "deployments", "maintenance",
 ]);
 

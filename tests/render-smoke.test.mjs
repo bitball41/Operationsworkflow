@@ -182,16 +182,16 @@ test("every route has a renderer and every renderer has a route", () => {
   assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("primary navigation is limited to the eight operating destinations", () => {
+test("primary navigation is limited to the seven operating destinations", () => {
   const items = NAV_GROUPS.flatMap((group) => group.items);
   assert.deepEqual(NAV_GROUPS.map((group) => group.label), [
     "Workspace", "Work", "System",
   ]);
   assert.deepEqual(items.map((item) => item.label), [
-    "Dashboard", "Sales", "Clients", "Agents",
-    "Inbox", "Tasks", "Finance", "Settings",
+    "Today", "Sales", "Clients", "Agents",
+    "Inbox", "Money", "Settings",
   ]);
-  assert.equal(new Set(items.map((item) => item.id)).size, 8);
+  assert.equal(new Set(items.map((item) => item.id)).size, 7);
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
   assert.ok(ROUTES.includes("voice-agents"));
@@ -295,11 +295,13 @@ test("playbooks is a frontend shell over existing notes", () => {
   assert.doesNotMatch(html, /fetch\(|\/api\/playbooks/);
 });
 
-test("home shows attention, snapshot, today, pipeline, and health", () => {
+test("home shows attention, launch truth, pipeline, and health", () => {
   setState({ route: "home", routeParams: {} }, { silent: true });
   const html = renderers.home();
   assert.match(html, /Needs attention/);
-  assert.match(html, /Agency snapshot/);
+  assert.match(html, /Launch readiness/);
+  assert.match(html, /Business truth/);
+  assert.match(html, /Assigned revenue/);
   assert.match(html, /Sales pipeline/);
   assert.match(html, /Client and agent health/);
   assert.match(html, /Create agent/);
@@ -318,6 +320,30 @@ test("clients unite lifecycle, next action, onboarding, and voice-agent setup", 
   assert.match(html, /Recent client calls/);
   assert.match(html, /Edge Function connection/);
   assert.match(html, /No browser credential fallback/);
+});
+
+test("sales and clients do not leak unlinked receptionist calls", () => {
+  const originalConversations = structuredClone(getState().data.voiceConversations || []);
+  try {
+    setData({ voiceConversations: [
+      ...originalConversations,
+      {
+        id: "unlinked-call",
+        client_id: null,
+        is_example: false,
+        caller_name: "SHOULD_NOT_BE_IN_SALES_OR_CLIENTS",
+        summary: "Unlinked provider test",
+        status: "completed",
+        created_at: new Date().toISOString(),
+      },
+    ] }, { silent: true });
+    setState({ route: "pipeline", routeParams: { section: "work" } }, { silent: true });
+    assert.doesNotMatch(renderers.pipeline(), /SHOULD_NOT_BE_IN_SALES_OR_CLIENTS/);
+    setState({ route: "clients", routeParams: {} }, { silent: true });
+    assert.doesNotMatch(renderers.clients(), /SHOULD_NOT_BE_IN_SALES_OR_CLIENTS/);
+  } finally {
+    setData({ voiceConversations: originalConversations }, { silent: true });
+  }
 });
 
 test("lead discovery leads with three inputs and hides the rest", () => {

@@ -258,6 +258,32 @@ test("today's numbers and revenue read from records", () => {
   assert.equal(revenue.profit, revenue.gross - revenue.fees - revenue.costs);
 });
 
+test("unassigned receipts stay visible without becoming business revenue", () => {
+  const originalPayments = structuredClone(getState().data.payments);
+  try {
+    const before = operations.revenueSummary();
+    setData({ payments: [
+      ...originalPayments,
+      {
+        id: "unassigned-provider-receipt",
+        client_id: null,
+        project_id: null,
+        payment_type: "website_sale",
+        amount: 777,
+        fee_amount: 0,
+        status: "paid",
+        source: "whop",
+        created_at: new Date().toISOString(),
+      },
+    ] }, { silent: true });
+    const after = operations.revenueSummary();
+    assert.equal(after.gross, before.gross);
+    assert.ok(after.unassignedPaid.some((payment) => payment.id === "unassigned-provider-receipt"));
+  } finally {
+    setData({ payments: originalPayments }, { silent: true });
+  }
+});
+
 /* ---------- automation ---------- */
 
 test("automation runs the intended sequence", () => {

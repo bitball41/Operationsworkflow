@@ -3,6 +3,7 @@ import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, greeting, isToday, relativeTime, statusLabel } from "../core/utils.js";
 import { btn, empty, healthDot, icon, metricGrid, pageHeader, pill, row, rows, section, table, td } from "../components/ui.js";
 import { agencySummary, attentionItems, clientLifecycleRows, commissionAmount, leadActivationValue, pipelineCounts, pipelineValueSummary } from "../services/operations.js";
+import { preferences } from "../services/data.js";
 import { currentMember, isOwner } from "../services/permissions.js";
 import { clientName } from "./shared.js";
 
@@ -172,96 +173,66 @@ function attentionSection() {
   });
 }
 
-function todayItems(data) {
-  const now = Date.now();
-  const week = now + 7 * 86_400_000;
-  const items = [];
+function launchReadinessSection(data, services) {
+  const settings = preferences();
+  const realClients = data.clients.filter((client) => client.is_example !== true);
+  const realClientIds = new Set(realClients.map((client) => String(client.id)));
+  const linkedAgents = data.voiceAgents.filter((agent) => (
+    agent.is_example !== true
+    && agent.provider_deleted_at == null
+    && realClientIds.has(String(agent.client_id))
+  ));
+  const providerReady = services.elevenlabs?.connected === true && services.elevenlabs?.webhook_configured === true;
+  const calendarReady = data.integrations.some((item) => item.provider === "calendar_provider" && item.status === "connected");
+  const phoneReady = realClients.some((client) => (
+    Boolean(client.dedicated_ai_number)
+    && Boolean(client.phone_routing_mode)
+    && client.phone_routing_mode !== "not_configured"
+  ));
+  const callReady = data.voiceConversations.some((conversation) => (
+    conversation.is_example !== true
+    && realClientIds.has(String(conversation.client_id))
+  ));
+  const checks = [
+    ["Business identity", Boolean(String(settings.business_name || "").trim()), settings.business_name || "Add the business name in Settings"],
+    ["Voice provider", providerReady, providerReady ? "ElevenLabs and signed webhook ready" : "Finish the server-side provider connection"],
+    ["Client agent", linkedAgents.some((agent) => Boolean(agent.provider_agent_id)), linkedAgents.length ? "Linked to a real client" : "Link the provider agent to a real client"],
+    ["Phone path", phoneReady, phoneReady ? "Dedicated number and forwarding mode recorded" : "Record the AI number and forwarding mode"],
+    ["Booking calendar", calendarReady, calendarReady ? "Live availability is connected" : "No verified booking provider connected"],
+    ["End-to-end call", callReady, callReady ? "A signed real client call is stored" : "Test from an unrelated phone and verify the record"],
+  ];
+  const passed = checks.filter(([, ready]) => ready).length;
 
-  data.meetings
-    .filter((meeting) => {
-      const start = new Date(meeting.starts_at).getTime();
-      return start >= now && start < week && !["cancelled", "lost"].includes(meeting.outcome);
-    })
-    .forEach((meeting) => {
-      items.push({
-        at: meeting.starts_at,
-        kind: "Meeting",
-        title: meeting.title,
-        detail: data.leads.find((lead) => String(lead.id) === String(meeting.lead_id))?.business_name || "Scheduled meeting",
-        iconName: "calendar",
-        action: "meeting-open",
-        attrs: `data-id="${meeting.id}"`,
-      });
-    });
-
-  data.tasks
-    .filter((task) => !["completed", "cancelled"].includes(task.status) && task.due_at)
-    .filter((task) => isToday(task.due_at) || new Date(task.due_at).getTime() < now)
-    .forEach((task) => {
-      items.push({
-        at: task.due_at,
-        kind: new Date(task.due_at).getTime() < now && !isToday(task.due_at) ? "Overdue task" : "Task",
-        title: task.title,
-        detail: task.priority ? statusLabel(task.priority) : "Assigned work",
-        iconName: "check-square",
-        action: "task-open",
-        attrs: `data-id="${task.id}"`,
-      });
-    });
-
-  data.followUps
-    .filter((item) => !CLOSED_FOLLOW_UPS.has(item.status) && item.due_at && new Date(item.due_at).getTime() <= now)
-    .forEach((item) => {
-      const lead = data.leads.find((entry) => String(entry.id) === String(item.lead_id));
-      items.push({
-        at: item.due_at,
-        kind: "Follow-up",
-        title: lead?.business_name || "Sales follow-up",
-        detail: `Attempt ${item.sequence_number || 1}`,
-        iconName: "timer",
-        action: "navigate",
-        attrs: `data-route-target="follow-ups" data-route-params="${escapeHtml(JSON.stringify({ view: "overdue" }))}"`,
-      });
-    });
-
-  data.leads
-    .filter((lead) => ["new", "ready_to_contact"].includes(lead.status) && lead.phone)
-    .slice(0, 4)
-    .forEach((lead) => {
-      items.push({
-        at: lead.follow_up_at || lead.updated_at,
-        kind: "Call",
-        title: lead.business_name,
-        detail: [lead.category, lead.city].filter(Boolean).join(" · ") || "Ready to call",
-        iconName: "phone",
-        action: "navigate",
-        attrs: `data-route-target="pipeline" data-route-params="${escapeHtml(JSON.stringify({ section: "work", lead: lead.id }))}"`,
-      });
-    });
-
-  return items.sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0)).slice(0, 8);
+  return section("Launch readiness", {
+    subtitle: "The proof required before this can be sold as live",
+    actions: `${btn("Open Agents", { action: "navigate", attrs: 'data-route-target="voice-agents"', size: "sm" })}${btn("Settings", { action: "navigate", attrs: 'data-route-target="settings"', size: "sm" })}`,
+    body: `<div class="launch-readiness">
+      <div class="launch-readiness__score"><strong>${passed}/${checks.length}</strong><span>verified gates</span><small>${realClients[0] ? escapeHtml(clientName(data, realClients[0])) : "No real client created yet"}</small></div>
+      <div class="readiness-list">
+        ${checks.map(([label, ready, detail]) => `<div class="readiness-item${ready ? " is-ready" : ""}">
+          <span class="readiness-item__icon">${icon(ready ? "check" : "clock")}</span>
+          <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(detail)}</small></span>
+        </div>`).join("")}
+      </div>
+    </div>`,
+  });
 }
 
 export function renderHome() {
-  const { data } = getState();
+  const { data, services } = getState();
   const summary = agencySummary();
-  const clients = clientLifecycleRows(data);
+  const clients = clientLifecycleRows(data, { includeExamples: false });
+  const realClientIds = new Set(data.clients.filter((client) => client.is_example !== true).map((client) => String(client.id)));
   const name = currentMember()?.full_name || data.profile?.full_name || "Connor";
   const openLeads = data.leads.filter((lead) => !CLOSED_LEADS.has(lead.status));
   const pipeline = pipelineValueSummary(openLeads);
-  const agentsLive = data.voiceAgents.filter((agent) => agent.provider_deleted_at == null && ["live", "active", "production"].includes(agent.environment || agent.status)).length
-    || summary.automationsLive;
-  const meetingsThisWeek = data.meetings.filter((meeting) => {
-    const start = new Date(meeting.starts_at).getTime();
-    return start >= Date.now() && start < Date.now() + 7 * 86_400_000 && !["cancelled", "lost"].includes(meeting.outcome);
-  }).length;
+  const agentsLive = data.voiceAgents.filter((agent) => agent.is_example !== true && realClientIds.has(String(agent.client_id)) && agent.provider_deleted_at == null && ["live", "active", "production"].includes(agent.environment || agent.status)).length;
   const stages = pipelineCounts().filter((stage) => !["won", "lost"].includes(stage.id) && stage.count);
   const maxStage = Math.max(...stages.map((stage) => stage.count), 1);
   const priorityDeals = openLeads
     .slice()
     .sort((left, right) => new Date(left.follow_up_at || 0) - new Date(right.follow_up_at || 0) || Number(right.lead_score || 0) - Number(left.lead_score || 0))
     .slice(0, 5);
-  const today = todayItems(data);
   const healthRows = [
     ...clients.slice(0, 5).map((item) => ({
       tone: item.tone || "amber",
@@ -270,13 +241,16 @@ export function renderHome() {
       when: item.client.updated_at,
       action: item.action,
     })),
-    ...data.voiceAgents.filter((agent) => agent.provider_deleted_at == null).slice(0, 4).map((agent) => ({
-      tone: agent.last_error || agent.status === "error" ? "red" : ["live", "active"].includes(agent.status || agent.environment) ? "green" : "amber",
-      title: agent.name,
-      detail: agent.last_error || statusLabel(agent.status || agent.environment || "draft"),
-      when: agent.last_synced_at || agent.updated_at,
-      action: { label: "Open", action: "voice-agent-open", attrs: `data-id="${agent.id}"` },
-    })),
+    ...data.voiceAgents.filter((agent) => agent.is_example !== true && agent.provider_deleted_at == null).slice(0, 4).map((agent) => {
+      const linked = realClientIds.has(String(agent.client_id));
+      return {
+        tone: agent.last_error || agent.status === "error" ? "red" : linked && ["live", "active"].includes(agent.status || agent.environment) ? "green" : "amber",
+        title: agent.name,
+        detail: agent.last_error || (linked ? statusLabel(agent.status || agent.environment || "draft") : "Not linked to a real client"),
+        when: agent.last_synced_at || agent.updated_at,
+        action: { label: "Open", action: "voice-agent-open", attrs: `data-id="${agent.id}"` },
+      };
+    }),
     ...(!data.voiceAgents.length ? data.automations.slice(0, 4).map((automation) => ({
       tone: automation.last_error ? "red" : automation.status === "live" ? "green" : "amber",
       title: automation.name,
@@ -289,31 +263,22 @@ export function renderHome() {
   return `
     <div class="stack">
       ${pageHeader({
-        title: "Dashboard",
-        subtitle: `${greeting()}, ${name.split(" ")[0]}. Here's what needs your attention.`,
+        title: "Today",
+        subtitle: `${greeting()}, ${name.split(" ")[0]}. Real work, real records, and the next move.`,
         actions: `${isOwner() ? btn("Create agent", { action: "voice-agent-new", iconName: "plus", variant: "primary" }) : ""}${btn("Add lead", { action: "lead-new", iconName: "plus" })}`,
       })}
 
       ${attentionSection()}
 
-      ${section("Agency snapshot", {
-        body: metricGrid([
-          ["Active clients", summary.activeClients],
-          ["Agents live", agentsLive, summary.automationsRequiringAttention ? `${summary.automationsRequiringAttention} need review` : ""],
-          [pipeline.estimated ? "Estimated open pipeline" : "Quoted open pipeline", formatCurrency(pipeline.value), `${pipeline.count} open leads`],
-          ["Meetings this week", meetingsThisWeek, `MRR ${formatCurrency(summary.monthlyRecurringRevenue)}`],
-        ]),
-      })}
+      ${launchReadinessSection(data, services)}
 
-      ${section("Today", {
-        subtitle: "What to do next",
-        body: today.length ? `<div class="today-list">${today.map((item) => `
-          <button class="today-item" type="button" data-action="${item.action}" ${item.attrs}>
-            <span class="row__icon">${icon(item.iconName)}</span>
-            <span class="today-item__copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.kind)} · ${escapeHtml(item.detail)}</span></span>
-            <span class="today-item__meta"><span class="faint">${item.at ? relativeTime(item.at) : ""}</span>${icon("chevron")}</span>
-          </button>
-        `).join("")}</div>` : empty({ title: "Nothing queued for today", message: "Upcoming meetings, assigned tasks, and overdue follow-ups appear here." }),
+      ${section("Business truth", {
+        body: metricGrid([
+          ["Active clients", summary.activeClients, `MRR ${formatCurrency(summary.monthlyRecurringRevenue)}`],
+          ["Linked agents live", agentsLive, "Examples and unlinked agents excluded"],
+          ["Assigned revenue", formatCurrency(summary.totalRevenue), "Unassigned receipts excluded"],
+          [pipeline.estimated ? "Estimated open pipeline" : "Quoted open pipeline", formatCurrency(pipeline.value), `${pipeline.count} open leads`],
+        ]),
       })}
 
       ${section("Sales pipeline", {

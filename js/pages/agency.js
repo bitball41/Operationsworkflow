@@ -28,18 +28,13 @@ function callHistory(data, routeParams = {}) {
       const lead = byId(data.leads, call.lead_id);
       return !query || `${lead?.business_name || ""} ${call.outcome} ${call.notes || ""}`.toLowerCase().includes(query);
     });
-  const agentRows = data.voiceConversations.filter((conversation) => (
-    !query || `${conversation.caller_name || ""} ${conversation.summary || ""} ${conversation.problem || ""}`.toLowerCase().includes(query)
-  ));
-
   return `
     ${section("Call history", {
-      subtitle: "Recorded sales outcomes and signed agent conversations",
+      subtitle: "Recorded sales outcomes only. Client receptionist calls stay in Agents.",
       actions: `${searchInput("Search calls", routeParams.q || "")}${filterSelect("outcome", CALL_OUTCOMES.map(([value, label]) => ({ value, label })), outcome, "All outcomes")}`,
       body: table({
         columns: ["Who", "Context", "Outcome", "When", ""],
-        rows: [
-          ...salesRows.map((call) => {
+        rows: salesRows.map((call) => {
             const lead = byId(data.leads, call.lead_id);
             return `<tr>
               ${td("Who", `<div class="cell"><strong>${escapeHtml(lead?.business_name || "Lead")}</strong><span>Manual sales record · ${escapeHtml(memberName(data, call.salesperson_id))}</span></div>`)}
@@ -49,15 +44,7 @@ function callHistory(data, routeParams = {}) {
               ${td("", btn("Lead", { action: "lead-open", size: "sm", attrs: `data-id="${call.lead_id}"` }))}
             </tr>`;
           }),
-          ...agentRows.slice(0, 20).map((conversation) => `<tr data-action="voice-conversation-open" data-id="${conversation.id}">
-            ${td("Who", `<div class="cell"><strong>${escapeHtml(conversation.caller_name || conversation.caller_phone || "Caller not supplied")}</strong><span>Signed AI agent record${conversation.duration_seconds == null ? "" : ` · ${Math.round(Number(conversation.duration_seconds))}s`}</span></div>`)}
-            ${td("Context", escapeHtml(conversation.problem || conversation.summary || "No summary returned"))}
-            ${td("Outcome", pill(conversation.status || conversation.call_successful || "completed"))}
-            ${td("When", relativeTime(conversation.started_at || conversation.created_at))}
-            ${td("", btn("Open", { action: "voice-conversation-open", size: "sm", attrs: `data-id="${conversation.id}"` }))}
-          </tr>`),
-        ],
-        emptyState: empty({ title: "No recorded calls", message: "Save a sales outcome or wait for a signed agent post-call record." }),
+        emptyState: empty({ title: "No sales calls recorded", message: "Call a lead and save the real outcome here." }),
       }),
     })}
   `;
@@ -86,7 +73,6 @@ export function renderSalesActivity() {
       <span><b>${upcoming.length}</b> upcoming meetings</span>
       <span><b>${data.meetings.filter((meeting) => meeting.outcome === "proposal_needed").length}</b> need proposals</span>
       <span><b>${data.salesCalls.length}</b> manual outcomes</span>
-      <span><b>${data.voiceConversations.length}</b> AI call records</span>
     </div>
     ${viewTabs("view", [["calls", "Queue & history"], ["demos", "Demos & meetings"]], view)}
     ${view === "demos" ? renderMeetings() : renderCalling()}
@@ -144,7 +130,7 @@ export function renderCalling() {
             <div><dt>Calls attempted</dt><dd>${formatNumber(lead.calls_attempted || 0)}</dd></div>
             <div><dt>Last contacted</dt><dd>${lead.last_contacted_at ? relativeTime(lead.last_contacted_at) : "Never"}</dd></div>
             <div><dt>Activation value</dt><dd>${formatCurrency(leadActivationValue(lead))}</dd></div>
-            <div><dt>Monthly value</dt><dd>${formatCurrency(lead.quoted_monthly_fee || 0)}</dd></div>
+            <div><dt>Monthly value</dt><dd>${lead.quoted_monthly_fee == null ? "Not quoted" : formatCurrency(lead.quoted_monthly_fee)}</dd></div>
           </dl>
 
           <div class="tag-list">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("") || '<span class="faint">No inferred opportunity tags; qualify manually.</span>'}</div>
