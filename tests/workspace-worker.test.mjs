@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { collectionWriteAllowed, handleWorkspaceRecords, handleWorkspaceSnapshot } from "../worker/workspace.js";
+import { collectionWriteAllowed, handleWorkspaceLeadWin, handleWorkspaceRecords, handleWorkspaceSnapshot } from "../worker/workspace.js";
 
 const WORKSPACE_ID = "2847b8e2-8a34-4a72-8e44-2cfc1be4255b";
 const OWNER = { id: "10000000-0000-4000-8000-000000000001", role: "owner", status: "active" };
@@ -129,4 +129,56 @@ test("salesperson lead inserts are assigned to the verified employee", async () 
 
   assert.equal(response.status, 201);
   assert.equal(inserted[0].assigned_team_member_id, SALESPERSON.id);
+});
+
+test("winning a lead delegates one atomic conversion to Postgres", async () => {
+  const leadId = "44444444-4444-4444-8444-444444444444";
+  let rpcBody = null;
+  const response = await withFetch(async (input, init = {}) => {
+    const url = new URL(String(input));
+    assert.ok(url.pathname.endsWith("/rest/v1/rpc/convert_lead_to_client"));
+    rpcBody = JSON.parse(init.body);
+    return json({
+      lead: { id: leadId, status: "won" },
+      client: { id: "55555555-5555-4555-8555-555555555555", lead_id: leadId },
+      onboardingRecord: { id: "66666666-6666-4666-8666-666666666666" },
+      project: { id: "77777777-7777-4777-8777-777777777777" },
+    });
+  }, () => handleWorkspaceLeadWin(env(), leadId, OWNER));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(rpcBody, {
+    p_workspace_id: WORKSPACE_ID,
+    p_lead_id: leadId,
+    p_actor_member_id: OWNER.id,
+  });
+  assert.equal((await response.json()).lead.status, "won");
+});
+
+test("salespeople cannot win somebody else's lead", async () => {
+  const leadId = "88888888-8888-4888-8888-888888888888";
+  let rpcCalled = false;
+  const response = await withFetch(async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/leads")) return json([]);
+    rpcCalled = true;
+    return json({});
+  }, () => handleWorkspaceLeadWin(env(), leadId, SALESPERSON));
+
+  assert.equal(response.status, 403);
+  assert.equal(rpcCalled, false);
+});
+
+test("non-sales roles cannot close leads", async () => {
+  let called = false;
+  const response = await withFetch(async () => {
+    called = true;
+    return json({});
+  }, () => handleWorkspaceLeadWin(env(), "99999999-9999-4999-8999-999999999999", {
+    id: "10000000-0000-4000-8000-000000000009",
+    role: "support",
+    status: "active",
+  }));
+  assert.equal(response.status, 403);
+  assert.equal(called, false);
 });

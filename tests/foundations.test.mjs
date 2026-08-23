@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { buildBundleForTemplateRecord, composeDocument } from "../js/services/sites/bundle.js";
@@ -416,6 +417,25 @@ test("the public demo hostname serves the voice demo root without exposing dashb
     const response = await worker.fetch(new Request(`https://demos.conno.fun${path}`), env);
     assert.equal(response.status, 404, `${path} must not fall through to the dashboard or an API`);
   }
+});
+
+test("core workflow migration is atomic, least privilege, and narrowly repairs example data", () => {
+  const migration = readFileSync(new URL("../supabase/migrations/20260822203000_core_workflow_integrity.sql", import.meta.url), "utf8");
+  assert.match(migration, /create or replace function public\.convert_lead_to_client/);
+  assert.match(migration, /for update/);
+  assert.match(migration, /set search_path = ''/);
+  assert.match(migration, /revoke all on function public\.convert_lead_to_client[\s\S]*from public, anon, authenticated/);
+  assert.match(migration, /grant execute on function public\.convert_lead_to_client[\s\S]*to service_role/);
+  assert.match(migration, /lead_row\.is_sample = true/);
+  assert.doesNotMatch(migration, /where lead_row\.status = 'won'\s*;\s*$/m);
+});
+
+test("unknown ElevenLabs agents are quarantined instead of guessed onto a workspace", () => {
+  const source = readFileSync(new URL("../supabase/functions/elevenlabs-webhook/index.ts", import.meta.url), "utf8");
+  assert.match(source, /elevenlabs_webhook_quarantine/);
+  assert.match(source, /reason:\s*"unknown_agent"/);
+  assert.doesNotMatch(source, /OPERATIONS_WORKSPACE_ID/);
+  assert.doesNotMatch(source, /\.from\("voice_agents"\)[\s\S]{0,300}\.limit\(1\)/);
 });
 
 class FakeR2 {

@@ -1974,19 +1974,18 @@ button.event-log__item:hover strong {
 
 /* ---------- pipeline ---------- */
 .board {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(168px, 1fr));
   gap: 12px;
   overflow-x: auto;
   padding-bottom: 12px;
-  scroll-snap-type: x proximity;
 }
 
 .board__col {
-  flex: 0 0 258px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  scroll-snap-align: start;
 }
 
 .board__head {
@@ -2020,6 +2019,44 @@ button.event-log__item:hover strong {
 .board__list.is-over {
   border-color: var(--accent-line);
   background: var(--accent-quiet);
+}
+
+.board__list--static {
+  background: var(--bg-raised);
+}
+
+.board__list--static .deal {
+  cursor: default;
+}
+
+.toolbar details.advanced {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.toolbar details.advanced > summary {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.toolbar details.advanced[open] {
+  flex-basis: 100%;
+}
+
+.toolbar details.advanced > .advanced__body {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.advanced-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .deal {
@@ -2501,8 +2538,19 @@ button.event-log__item:hover strong {
     height: calc(100dvh - var(--topbar-h) - var(--safe-top));
   }
 
-  .board__col {
-    flex-basis: 84vw;
+  .board {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+  }
+
+  .advanced-filter-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .advanced-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

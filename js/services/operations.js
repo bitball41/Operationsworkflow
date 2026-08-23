@@ -6,16 +6,18 @@
  * around these — so an assistant, a keyboard shortcut and the batch runner can
  * never drift apart.
  */
-import { CONFIG, PIPELINE_STAGES } from "../config.js";
+import { CONFIG, PIPELINE_GROUPS, PIPELINE_STAGES } from "../config.js";
 import { getState } from "../core/state.js";
 import { daysSince, isSameMonth, isToday, slugify, sum } from "../core/utils.js";
 import {
+  applyWorkspaceTransaction,
   createRecord,
   findRecord,
   logActivity,
   preferences,
   updateRecord,
 } from "./data.js";
+import { winWorkspaceLead } from "./api.js";
 import { TEMPLATE_CATALOG } from "../data/site-templates.js";
 import { draftFollowUp, draftOutreach, isEmailAddress, replyToMessage, sendEmail } from "./email/outreach.js";
 import { NotConnectedError } from "./integrations.js";
@@ -31,6 +33,56 @@ function data() {
 
 export function leadById(id) {
   return findRecord("leads", id);
+}
+
+/** Canonical activation value used everywhere in the sales UI. A quoted setup
+ * fee is authoritative; otherwise Operations shows the best recorded estimate. */
+export function leadActivationValue(lead) {
+  if (!lead) return 0;
+  return Math.max(0, Number(
+    lead.quoted_setup_fee
+      ?? lead.deal_value
+      ?? lead.asking_price
+      ?? 0,
+  ) || 0);
+}
+
+export function pipelineValueSummary(leads = data().leads) {
+  const open = leads.filter((lead) => !CLOSED_STATUSES.includes(lead.status));
+  return {
+    count: open.length,
+    value: sum(open, leadActivationValue),
+    estimated: open.some((lead) => lead.quoted_setup_fee == null),
+  };
+}
+
+/** Form pricing keeps an internal estimate separate from an explicit quote.
+ * Merely opening or saving a lead must never turn the package default into a
+ * customer-facing quote. */
+export function leadPricingFromForm(values = {}, existing = null) {
+  const numeric = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+  };
+  const estimate = numeric(existing?.deal_value ?? existing?.asking_price, CONFIG.defaultSetupFee);
+  return {
+    deal_value: estimate,
+    asking_price: numeric(existing?.asking_price, estimate),
+    quoted_setup_fee: values.quoted_setup_fee == null
+      ? existing?.quoted_setup_fee ?? null
+      : numeric(values.quoted_setup_fee),
+    quoted_monthly_fee: values.quoted_monthly_fee == null
+      ? existing?.quoted_monthly_fee ?? null
+      : numeric(values.quoted_monthly_fee),
+  };
+}
+
+/** A visual lane can contain several stored statuses. Dropping within the
+ * same lane is a no-op so the compact board never regresses hidden detail. */
+export function pipelineDropTarget(currentStatus, targetStage) {
+  const targetGroup = PIPELINE_GROUPS.find((group) => group.target === targetStage);
+  if (!targetGroup || targetGroup.statuses.includes(currentStatus)) return "";
+  return targetStage;
 }
 
 export function demoForLead(leadId) {
@@ -434,6 +486,12 @@ export async function updatePipeline(leadId, status) {
   if (!PIPELINE_STAGES.some((stage) => stage.id === status)) throw new Error(`Unknown pipeline stage "${status}".`);
   const lead = leadById(leadId);
   if (!lead) throw new Error("Lead not found.");
+  if (status === "won" && getState().storage === "cloud") {
+    const result = await winWorkspaceLead(leadId);
+    applyWorkspaceTransaction(result);
+    return result.lead;
+  }
+
   const updated = await updateRecord("leads", leadId, {
     status,
     ...(lead.status === status ? {} : { stage_entered_at: new Date().toISOString() }),
@@ -1205,17 +1263,52 @@ export function attentionItems() {
     });
   }
 
+  const openLeads = data().leads.filter((lead) => !CLOSED_STATUSES.includes(lead.status));
+  const unassigned = openLeads.filter((lead) => !lead.assigned_team_member_id);
+  if (unassigned.length) {
+    items.push({
+      id: "unassigned-leads",
+      weight: 4,
+      tone: "amber",
+      iconName: "user",
+      title: `${unassigned.length} open lead${unassigned.length === 1 ? " is" : "s are"} unassigned`,
+      detail: unassigned.slice(0, 3).map((lead) => lead.business_name).join(", "),
+      route: "pipeline",
+      params: { section: "leads", assignee: "unassigned" },
+    });
+  }
+
+  const withoutNextAction = openLeads.filter((lead) => {
+    if (lead.next_action || lead.next_action_at || lead.follow_up_at) return false;
+    return !data().followUps.some((item) => (
+      String(item.lead_id) === String(lead.id)
+      && !["sent", "replied", "completed", "dead", "skipped", "cancelled"].includes(item.status)
+    ));
+  });
+  if (withoutNextAction.length) {
+    items.push({
+      id: "leads-without-next-action",
+      weight: 5,
+      tone: "",
+      iconName: "check-square",
+      title: `${withoutNextAction.length} open lead${withoutNextAction.length === 1 ? " needs" : "s need"} a next action`,
+      detail: withoutNextAction.slice(0, 3).map((lead) => lead.business_name).join(", "),
+      route: "pipeline",
+      params: { section: "leads", action: "missing" },
+    });
+  }
+
   const stale = data().leads.filter((lead) => lead.status === "contacted" && !data().followUps.some((item) => String(item.lead_id) === String(lead.id) && !["sent", "completed", "dead"].includes(item.status)) && daysSince(lead.last_contacted_at) >= 4);
   if (stale.length) {
     items.push({
       id: "stale",
-      weight: 5,
+      weight: 6,
       tone: "",
       iconName: "user",
       title: `${stale.length} contacted lead${stale.length === 1 ? "" : "s"} with no follow-up`,
       detail: stale.slice(0, 3).map((lead) => lead.business_name).join(", "),
-      route: "leads",
-      params: { stage: "contacted" },
+      route: "pipeline",
+      params: { section: "leads", stage: "contacted" },
     });
   }
 

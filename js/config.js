@@ -20,33 +20,17 @@ export const NAV_GROUPS = Object.freeze([
     label: "Workspace",
     items: [
       { id: "home", label: "Dashboard", icon: "home" },
-      { id: "assistant", label: "Copilot", icon: "sparkle" },
-      { id: "tasks", label: "Tasks", icon: "check-square" },
-      { id: "inbox", label: "Inbox", icon: "inbox" },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { id: "voice-agents", label: "Agents", icon: "smartphone" },
-      { id: "calling", label: "Calls", icon: "phone" },
-      { id: "meetings", label: "Meetings", icon: "calendar" },
-      { id: "clients", label: "Clients", icon: "briefcase" },
-    ],
-  },
-  {
-    label: "Growth",
-    items: [
       { id: "pipeline", label: "Sales", icon: "columns" },
-      { id: "playbooks", label: "Playbooks", icon: "book" },
+      { id: "clients", label: "Clients", icon: "briefcase" },
+      { id: "voice-agents", label: "Agents", icon: "smartphone" },
     ],
   },
   {
-    label: "Business",
+    label: "Work",
     items: [
-      { id: "team", label: "Team", icon: "user" },
+      { id: "inbox", label: "Inbox", icon: "inbox" },
+      { id: "tasks", label: "Tasks", icon: "check-square" },
       { id: "payments", label: "Finance", icon: "wallet" },
-      { id: "activity", label: "Activity", icon: "activity" },
     ],
   },
   {
@@ -60,9 +44,9 @@ export const NAV_GROUPS = Object.freeze([
 /* Legacy website and drill-down routes remain renderable for existing
    bookmarks and records, but are intentionally absent from the sidebar. */
 export const LEGACY_ROUTES = Object.freeze([
-  "my-day", "automation", "discovery", "leads", "outreach", "follow-ups", "studio",
+  "my-day", "assistant", "automation", "calling", "meetings", "discovery", "leads", "outreach", "follow-ups", "studio",
   "templates", "demos", "projects", "automation-studio", "subscriptions", "commissions",
-  "analytics", "costs", "pricing", "calendar", "notes", "integrations",
+  "analytics", "costs", "pricing", "calendar", "notes", "playbooks", "activity", "team", "integrations",
   "onboarding", "deployments", "maintenance",
 ]);
 
@@ -75,6 +59,12 @@ export const PAGE_TITLES = Object.freeze(Object.fromEntries(
   [
     ...NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item.label])),
     ["my-day", "My Day"],
+    ["assistant", "Copilot"],
+    ["calling", "Calls"],
+    ["meetings", "Meetings"],
+    ["playbooks", "Playbooks"],
+    ["activity", "Activity"],
+    ["team", "Team"],
     ["automation", "Legacy website automation"],
     ["discovery", "Lead Discovery"],
     ["leads", "Leads"],
@@ -114,6 +104,16 @@ export const PIPELINE_STAGES = Object.freeze([
   { id: "won", label: "Won" },
   { id: "lost", label: "Lost" },
   { id: "follow_up_later", label: "Follow Up Later" },
+]);
+
+/* Stored stage ids stay unchanged for automation and reporting. The board uses
+   five customer-meaningful lanes so the full pipeline fits on a normal screen. */
+export const PIPELINE_GROUPS = Object.freeze([
+  { id: "new", label: "New", statuses: ["new", "ready_to_contact"], target: "new" },
+  { id: "conversation", label: "Conversation", statuses: ["contacted", "interested", "follow_up_later"], target: "contacted" },
+  { id: "meeting", label: "Meeting", statuses: ["meeting_scheduled", "demo_completed"], target: "meeting_scheduled" },
+  { id: "proposal", label: "Proposal", statuses: ["proposal_sent", "negotiating"], target: "proposal_sent" },
+  { id: "closed", label: "Closed", statuses: ["won", "lost"], target: "" },
 ]);
 
 export const PROJECT_STAGES = Object.freeze([

@@ -85,7 +85,7 @@ const state = {
   /* Operational records are always stored server-side. */
   storage: "cloud",
   workspace: { status: "loading", message: "" },
-  connection: { ok: true, message: "" },
+  connection: { ok: false, status: "loading", message: "Opening workspace…", lastSyncedAt: null },
   /* Which API keys the Cloudflare Worker holds. Filled in once at boot from
      /api/status; every provider stays false when the Worker is not there. */
   services: {

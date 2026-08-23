@@ -6,8 +6,21 @@ const routeSet = new Set(ROUTES);
 export function parseRoute() {
   const raw = location.hash.replace(/^#\/?/, "") || CONFIG.defaultRoute;
   const [path, queryString = ""] = raw.split("?");
+  const routeParams = Object.fromEntries(new URLSearchParams(queryString));
+  if (path === "calling") {
+    return {
+      route: "pipeline",
+      routeParams: {
+        ...routeParams,
+        section: routeParams.view === "demos" ? "meetings" : "work",
+      },
+    };
+  }
+  if (path === "meetings") {
+    return { route: "pipeline", routeParams: { ...routeParams, section: "meetings" } };
+  }
   const route = routeSet.has(path) ? path : CONFIG.defaultRoute;
-  return { route, routeParams: Object.fromEntries(new URLSearchParams(queryString)) };
+  return { route, routeParams };
 }
 
 export function navigate(route, params = {}) {

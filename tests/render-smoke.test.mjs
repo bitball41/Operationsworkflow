@@ -41,6 +41,7 @@ const system = await import("../js/pages/system.js");
 const agency = await import("../js/pages/agency.js");
 const voiceAgents = await import("../js/pages/voice-agents.js");
 const playbooks = await import("../js/pages/playbooks.js");
+const shell = await import("../js/components/shell.js");
 
 test("the Michael voice demo is a custom ElevenLabs SDK frontend", () => {
   const html = readFileSync(new URL("../voice-demo/index.html", import.meta.url), "utf8");
@@ -146,23 +147,55 @@ test("every route has a renderer and every renderer has a route", () => {
   assert.equal(new Set(ROUTES).size, ROUTES.length);
 });
 
-test("navigation is grouped into workspace, operations, growth, business, and system", () => {
+test("primary navigation is limited to the eight operating destinations", () => {
   const items = NAV_GROUPS.flatMap((group) => group.items);
   assert.deepEqual(NAV_GROUPS.map((group) => group.label), [
-    "Workspace", "Operations", "Growth", "Business", "System",
+    "Workspace", "Work", "System",
   ]);
   assert.deepEqual(items.map((item) => item.label), [
-    "Dashboard", "Copilot", "Tasks", "Inbox",
-    "Agents", "Calls", "Meetings", "Clients",
-    "Sales", "Playbooks",
-    "Team", "Finance", "Activity",
-    "Settings",
+    "Dashboard", "Sales", "Clients", "Agents",
+    "Inbox", "Tasks", "Finance", "Settings",
   ]);
-  assert.equal(new Set(items.map((item) => item.id)).size, 14);
+  assert.equal(new Set(items.map((item) => item.id)).size, 8);
   assert.ok(ROUTES.includes("assistant"));
   assert.ok(ROUTES.includes("automation"));
   assert.ok(ROUTES.includes("voice-agents"));
   assert.ok(ROUTES.includes("playbooks"));
+});
+
+test("the shell reports degraded sync truthfully", () => {
+  const status = shell.workspaceConnectionStatus({
+    ok: false,
+    status: "degraded",
+    message: "Failed to fetch",
+    lastSyncedAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  assert.match(status.label, /Sync paused/);
+  assert.doesNotMatch(status.label, /^Synced/);
+  assert.equal(status.href, "#/settings");
+});
+
+test("Sales consolidates calls, pipeline, leads, meetings, and discovery", () => {
+  setState({ route: "pipeline", routeParams: { section: "pipeline" } }, { silent: true });
+  const html = renderers.pipeline();
+  for (const label of ["Call next", "Pipeline", "Lead list", "Meetings", "Find leads"]) {
+    assert.match(html, new RegExp(label));
+  }
+  assert.equal((html.match(/class="board__col"/g) || []).length, 5);
+  assert.match(html, /data-group="conversation"/);
+  assert.doesNotMatch(html, /data-group="ready_to_contact"/);
+});
+
+test("core forms keep required work visible and collapse optional detail", () => {
+  const source = readFileSync(new URL("../js/components/forms.js", import.meta.url), "utf8");
+  const leadForm = source.slice(source.indexOf("export function openLeadForm"), source.indexOf("export function openMeetingForm"));
+  const meetingForm = source.slice(source.indexOf("export function openMeetingForm"), source.indexOf("export function openOnboardingForm"));
+  assert.match(leadForm, /Business name/);
+  assert.match(leadForm, /Optional deal details/);
+  assert.equal((leadForm.match(/field\("Quoted activation fee"/g) || []).length, 1);
+  assert.match(leadForm, /leave blank until quoted/);
+  assert.doesNotMatch(leadForm, /field\("Stage"/);
+  assert.match(meetingForm, /Discovery, proposal, and follow-up details/);
 });
 
 test("salespeople get a phone-first personal day without losing the business dashboard", () => {

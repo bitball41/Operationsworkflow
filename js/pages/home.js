@@ -1,8 +1,8 @@
 /** Agency operating dashboard: attention, snapshot, today, pipeline, health. */
 import { getState } from "../core/state.js";
-import { escapeHtml, formatCurrency, greeting, isToday, relativeTime, statusLabel, sum } from "../core/utils.js";
+import { escapeHtml, formatCurrency, greeting, isToday, relativeTime, statusLabel } from "../core/utils.js";
 import { btn, empty, healthDot, icon, metricGrid, pageHeader, pill, row, rows, section, table, td } from "../components/ui.js";
-import { agencySummary, attentionItems, clientLifecycleRows, commissionAmount, pipelineCounts } from "../services/operations.js";
+import { agencySummary, attentionItems, clientLifecycleRows, commissionAmount, leadActivationValue, pipelineCounts, pipelineValueSummary } from "../services/operations.js";
 import { currentMember, isOwner } from "../services/permissions.js";
 import { clientName } from "./shared.js";
 
@@ -64,7 +64,7 @@ export function renderMyDay() {
       ${pageHeader({
         title: `${greeting()}, ${firstName}`,
         subtitle: new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
-        actions: btn("Start calling", { action: "navigate", attrs: 'data-route-target="calling"', variant: "primary", iconName: "phone" }),
+        actions: btn("Start calling", { action: "navigate", attrs: 'data-route-target="pipeline" data-route-params=\'{"section":"work"}\'', variant: "primary", iconName: "phone" }),
       })}
 
       ${section("Today", {
@@ -80,7 +80,7 @@ export function renderMyDay() {
       <div class="employee-grid">
         ${section("Call queue", {
           count: queue.length,
-          actions: btn("Open queue", { action: "navigate", attrs: 'data-route-target="calling"', size: "sm" }),
+          actions: btn("Open queue", { action: "navigate", attrs: 'data-route-target="pipeline" data-route-params=\'{"section":"work"}\'', size: "sm" }),
           body: queue.length ? `<div class="mobile-action-list">${queue.slice(0, 6).map((lead, index) => `
             <article class="mobile-action-card${index === 0 ? " is-next" : ""}">
               <div>
@@ -90,7 +90,7 @@ export function renderMyDay() {
               </div>
               <div class="mobile-action-card__actions">
                 ${lead.phone ? `<a class="btn btn--primary btn--sm" href="tel:${escapeHtml(lead.phone)}">Call</a>` : pill("warning", "No phone")}
-                ${btn("Record", { action: "navigate", attrs: `data-route-target="calling" data-route-params="${escapeHtml(JSON.stringify({ lead: lead.id }))}"`, size: "sm" })}
+                ${btn("Record", { action: "navigate", attrs: `data-route-target="pipeline" data-route-params="${escapeHtml(JSON.stringify({ section: "work", lead: lead.id }))}"`, size: "sm" })}
               </div>
             </article>`).join("")}</div>` : empty({ title: "Queue clear", message: "No open leads are assigned to you." }),
         })}
@@ -105,7 +105,7 @@ export function renderMyDay() {
               sub: `${item.due_at ? relativeTime(item.due_at) : "No due time"} · attempt ${item.sequence_number || 1}`,
               iconName: "timer",
               action: "navigate",
-              attrs: `data-route-target="calling" data-route-params="${escapeHtml(JSON.stringify({ lead: item.lead_id }))}"`,
+              attrs: `data-route-target="pipeline" data-route-params="${escapeHtml(JSON.stringify({ section: "work", lead: item.lead_id }))}"`,
               side: icon("chevron"),
             });
           })) : empty({ title: "No open follow-ups", message: "Scheduled callbacks for your assigned leads appear here." }),
@@ -115,7 +115,7 @@ export function renderMyDay() {
       <div class="employee-grid">
         ${section("Meetings", {
           count: upcomingMeetings.length,
-          actions: btn("Calendar", { action: "navigate", attrs: 'data-route-target="meetings"', size: "sm" }),
+          actions: btn("Meetings", { action: "navigate", attrs: 'data-route-target="pipeline" data-route-params=\'{"section":"meetings"}\'', size: "sm" }),
           body: upcomingMeetings.length ? rows(upcomingMeetings.map((meeting) => row({
             main: meeting.title,
             sub: `${new Date(meeting.starts_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · ${leadById.get(String(meeting.lead_id))?.business_name || "Client meeting"}`,
@@ -127,7 +127,7 @@ export function renderMyDay() {
         })}
 
         ${section("Recent results", {
-          actions: btn("All calls", { action: "navigate", attrs: 'data-route-target="calling"', size: "sm" }),
+          actions: btn("All calls", { action: "navigate", attrs: 'data-route-target="pipeline" data-route-params=\'{"section":"work"}\'', size: "sm" }),
           body: calls.length ? rows(calls.slice(0, 5).map((call) => row({
             main: leadById.get(String(call.lead_id))?.business_name || "Lead",
             sub: `${call.outcome.replaceAll("_", " ")} · ${relativeTime(call.called_at || call.created_at)}`,
@@ -235,7 +235,7 @@ function todayItems(data) {
         detail: [lead.category, lead.city].filter(Boolean).join(" · ") || "Ready to call",
         iconName: "phone",
         action: "navigate",
-        attrs: `data-route-target="calling" data-route-params="${escapeHtml(JSON.stringify({ lead: lead.id }))}"`,
+        attrs: `data-route-target="pipeline" data-route-params="${escapeHtml(JSON.stringify({ section: "work", lead: lead.id }))}"`,
       });
     });
 
@@ -248,7 +248,7 @@ export function renderHome() {
   const clients = clientLifecycleRows(data);
   const name = currentMember()?.full_name || data.profile?.full_name || "Connor";
   const openLeads = data.leads.filter((lead) => !CLOSED_LEADS.has(lead.status));
-  const pipelineValue = sum(openLeads, (lead) => lead.quoted_setup_fee || lead.deal_value || 0);
+  const pipeline = pipelineValueSummary(openLeads);
   const agentsLive = data.voiceAgents.filter((agent) => agent.provider_deleted_at == null && ["live", "active", "production"].includes(agent.environment || agent.status)).length
     || summary.automationsLive;
   const meetingsThisWeek = data.meetings.filter((meeting) => {
@@ -300,7 +300,7 @@ export function renderHome() {
         body: metricGrid([
           ["Active clients", summary.activeClients],
           ["Agents live", agentsLive, summary.automationsRequiringAttention ? `${summary.automationsRequiringAttention} need review` : ""],
-          ["Open pipeline", formatCurrency(pipelineValue), `${summary.leadsInPipeline} open leads`],
+          [pipeline.estimated ? "Estimated open pipeline" : "Quoted open pipeline", formatCurrency(pipeline.value), `${pipeline.count} open leads`],
           ["Meetings this week", meetingsThisWeek, `MRR ${formatCurrency(summary.monthlyRecurringRevenue)}`],
         ]),
       })}
@@ -332,7 +332,7 @@ export function renderHome() {
             rows: priorityDeals.map((lead) => {
               const owner = data.teamMembers.find((member) => String(member.id) === String(lead.assigned_team_member_id));
               return `<tr data-action="lead-open" data-id="${lead.id}">
-                ${td("Deal", `<div class="cell"><strong>${escapeHtml(lead.business_name)}</strong><span>${formatCurrency(lead.quoted_setup_fee || lead.deal_value || 0)}</span></div>`)}
+                ${td("Deal", `<div class="cell"><strong>${escapeHtml(lead.business_name)}</strong><span>${formatCurrency(leadActivationValue(lead))}</span></div>`)}
                 ${td("Stage", pill(lead.status))}
                 ${td("Owner", escapeHtml(owner?.full_name || "Unassigned"))}
                 ${td("Next", escapeHtml(lead.follow_up_at ? relativeTime(lead.follow_up_at) : "Set follow-up"))}

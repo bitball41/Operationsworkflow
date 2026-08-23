@@ -3,7 +3,7 @@ import { AUTOMATION_OPPORTUNITIES, CALL_OUTCOMES } from "../config.js";
 import { getState } from "../core/state.js";
 import { escapeHtml, formatCurrency, formatDate, formatNumber, isToday, relativeTime, statusLabel, sum } from "../core/utils.js";
 import { bar, btn, empty, field, input, notice, pageHeader, pill, row, rows, section, select, stats, table, td, textarea } from "../components/ui.js";
-import { commissionAmount, getNextCallLead } from "../services/operations.js";
+import { commissionAmount, getNextCallLead, leadActivationValue } from "../services/operations.js";
 import { currentMemberId, isOwner, isSalesperson, ownerOnlyNotice } from "../services/permissions.js";
 import { byId, clientName, filterSelect, searchInput, viewTabs } from "./shared.js";
 
@@ -42,7 +42,7 @@ function callHistory(data, routeParams = {}) {
           ...salesRows.map((call) => {
             const lead = byId(data.leads, call.lead_id);
             return `<tr>
-              ${td("Who", `<div class="cell"><strong>${escapeHtml(lead?.business_name || "Lead")}</strong><span>${escapeHtml(memberName(data, call.salesperson_id))}</span></div>`)}
+              ${td("Who", `<div class="cell"><strong>${escapeHtml(lead?.business_name || "Lead")}</strong><span>Manual sales record · ${escapeHtml(memberName(data, call.salesperson_id))}</span></div>`)}
               ${td("Context", escapeHtml(call.pain_point || call.notes || "Sales call"))}
               ${td("Outcome", pill(call.outcome))}
               ${td("When", `${relativeTime(call.called_at || call.created_at)}`)}
@@ -50,7 +50,7 @@ function callHistory(data, routeParams = {}) {
             </tr>`;
           }),
           ...agentRows.slice(0, 20).map((conversation) => `<tr data-action="voice-conversation-open" data-id="${conversation.id}">
-            ${td("Who", `<div class="cell"><strong>${escapeHtml(conversation.caller_name || conversation.caller_phone || "Unknown caller")}</strong><span>Agent call${conversation.duration_seconds == null ? "" : ` · ${Math.round(Number(conversation.duration_seconds))}s`}</span></div>`)}
+            ${td("Who", `<div class="cell"><strong>${escapeHtml(conversation.caller_name || conversation.caller_phone || "Caller not supplied")}</strong><span>Signed AI agent record${conversation.duration_seconds == null ? "" : ` · ${Math.round(Number(conversation.duration_seconds))}s`}</span></div>`)}
             ${td("Context", escapeHtml(conversation.problem || conversation.summary || "No summary returned"))}
             ${td("Outcome", pill(conversation.status || conversation.call_successful || "completed"))}
             ${td("When", relativeTime(conversation.started_at || conversation.created_at))}
@@ -85,7 +85,8 @@ export function renderSalesActivity() {
     <div class="crm-center__pulse">
       <span><b>${upcoming.length}</b> upcoming meetings</span>
       <span><b>${data.meetings.filter((meeting) => meeting.outcome === "proposal_needed").length}</b> need proposals</span>
-      <span><b>${data.salesCalls.length}</b> recorded calls</span>
+      <span><b>${data.salesCalls.length}</b> manual outcomes</span>
+      <span><b>${data.voiceConversations.length}</b> AI call records</span>
     </div>
     ${viewTabs("view", [["calls", "Queue & history"], ["demos", "Demos & meetings"]], view)}
     ${view === "demos" ? renderMeetings() : renderCalling()}
@@ -142,7 +143,7 @@ export function renderCalling() {
             <div><dt>Salesperson</dt><dd>${escapeHtml(memberName(data, lead.assigned_team_member_id))}</dd></div>
             <div><dt>Calls attempted</dt><dd>${formatNumber(lead.calls_attempted || 0)}</dd></div>
             <div><dt>Last contacted</dt><dd>${lead.last_contacted_at ? relativeTime(lead.last_contacted_at) : "Never"}</dd></div>
-            <div><dt>Activation value</dt><dd>${formatCurrency(lead.quoted_setup_fee || lead.deal_value || 0)}</dd></div>
+            <div><dt>Activation value</dt><dd>${formatCurrency(leadActivationValue(lead))}</dd></div>
             <div><dt>Monthly value</dt><dd>${formatCurrency(lead.quoted_monthly_fee || 0)}</dd></div>
           </dl>
 
@@ -224,7 +225,7 @@ export function renderMeetings() {
         ${td("Outcome", pill(meeting.outcome))}
         ${td("", btn("Open", { action: "meeting-open", size: "sm", attrs: `data-id="${meeting.id}"` }))}
       </tr>`),
-      emptyState: empty({ title: "No meetings", message: "Book a discovery or demo meeting from Calling or add one here." }),
+      emptyState: empty({ title: "No meetings", message: "Book a discovery meeting from Call next or add one here." }),
     })}
   </div>`;
 }

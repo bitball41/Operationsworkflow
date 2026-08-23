@@ -205,15 +205,19 @@ async function init() {
     if (storage === "cloud") {
       hydrateAssistantHistory();
       render();
-      const reload = debounce(() => reloadWorkspace().catch(console.error), 600);
-      subscribeToWorkspaceChanges(reload);
+      subscribeToWorkspaceChanges(() => reloadWorkspace());
       await servicesReady;
     }
   } catch (error) {
     console.error(error);
     setState({
       workspace: { status: "error", message: error.message || "Could not load the Operations workspace." },
-      connection: { ok: false, message: error.message || "Could not load the Operations workspace." },
+      connection: {
+        ok: false,
+        status: [401, 403].includes(Number(error?.status)) ? "auth_error" : "degraded",
+        message: error.message || "Could not load the Operations workspace.",
+        lastSyncedAt: getState().connection?.lastSyncedAt || null,
+      },
     });
     render();
   }

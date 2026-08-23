@@ -152,6 +152,9 @@ export function clearLocalWorkspace() {
  */
 export async function initWorkspace() {
   clearLocalWorkspace();
+  setState({
+    connection: { ok: false, status: "loading", message: "Opening workspace…", lastSyncedAt: null },
+  }, { silent: true });
   try {
     const snapshot = await fetchWorkspace();
     await loadCloudWorkspace(snapshot);
@@ -159,7 +162,12 @@ export async function initWorkspace() {
       storage: "cloud",
       user: snapshot.workspace || { name: "Operations" },
       workspace: { status: "ready", message: "" },
-      connection: { ok: true, message: "" },
+      connection: {
+        ok: true,
+        status: "synced",
+        message: "",
+        lastSyncedAt: new Date().toISOString(),
+      },
     }, { silent: true });
     return "cloud";
   } catch (error) {
@@ -168,7 +176,13 @@ export async function initWorkspace() {
     setState({
       user: null,
       workspace: { status: "error", message: "The Operations workspace could not be loaded. No browser copy was used." },
-      connection: { ok: false, message: error?.message || "Could not reach the workspace service." },
+      storage: "cloud",
+      connection: {
+        ok: false,
+        status: [401, 403].includes(Number(error?.status)) ? "auth_error" : "degraded",
+        message: error?.message || "Could not reach the workspace service.",
+        lastSyncedAt: null,
+      },
     }, { silent: true });
     return "error";
   }
@@ -193,12 +207,62 @@ export async function loadCloudWorkspace(snapshot = null) {
 
   setData(next);
   if (source.workspace) setState({ user: source.workspace }, { silent: true });
-  setState({ connection: { ok: true, message: "" } }, { silent: true });
+  setState({
+    connection: {
+      ok: true,
+      status: "synced",
+      message: "",
+      lastSyncedAt: new Date().toISOString(),
+    },
+  }, { silent: true });
   return next;
 }
 
 export async function reloadWorkspace() {
-  return loadCloudWorkspace();
+  const previous = getState().connection || {};
+  setState({
+    connection: {
+      ...previous,
+      status: "refreshing",
+      message: "Refreshing workspace…",
+    },
+  });
+  try {
+    return await loadCloudWorkspace();
+  } catch (error) {
+    setState({
+      connection: {
+        ok: false,
+        status: [401, 403].includes(Number(error?.status)) ? "auth_error" : "degraded",
+        message: error?.message || "Workspace refresh failed.",
+        lastSyncedAt: previous.lastSyncedAt || null,
+      },
+    });
+    throw error;
+  }
+}
+
+function mergeRecord(collection, record) {
+  if (!record?.id) return getState().data[collection];
+  const rows = getState().data[collection] || [];
+  const existing = rows.findIndex((item) => String(item.id) === String(record.id));
+  const next = existing === -1
+    ? [record, ...rows]
+    : rows.map((item, index) => (index === existing ? record : item));
+  return [...next].sort(compare(collection));
+}
+
+/** Applies rows returned by one atomic Worker command without another network
+ * round trip. The database transaction is already committed at this point. */
+export function applyWorkspaceTransaction(result = {}) {
+  const patch = {};
+  if (result.lead) patch.leads = mergeRecord("leads", result.lead);
+  if (result.client) patch.clients = mergeRecord("clients", result.client);
+  if (result.onboardingRecord) patch.onboardingRecords = mergeRecord("onboardingRecords", result.onboardingRecord);
+  if (result.project) patch.projects = mergeRecord("projects", result.project);
+  if (result.activity) patch.activity = mergeRecord("activity", result.activity);
+  if (Object.keys(patch).length) setData(patch);
+  return result;
 }
 
 /* ---------- CRUD ---------- */
@@ -452,14 +516,44 @@ export async function uploadDemoAsset(demoId, file) {
 /* ---------- refresh ---------- */
 
 export function subscribeToWorkspaceChanges(onChange) {
-  const refresh = () => {
-    if (!globalThis.document || globalThis.document.visibilityState === "visible") onChange();
+  let timer = null;
+  let stopped = false;
+  let inFlight = false;
+  let failures = 0;
+
+  const schedule = () => {
+    if (stopped || !globalThis.setTimeout) return;
+    if (timer) globalThis.clearTimeout?.(timer);
+    const delay = failures ? Math.min(300_000, 30_000 * (2 ** failures)) : 30_000;
+    timer = globalThis.setTimeout(refresh, delay);
   };
-  const timer = globalThis.setInterval?.(refresh, 30_000);
+  const refresh = async () => {
+    if (timer) {
+      globalThis.clearTimeout?.(timer);
+      timer = null;
+    }
+    if (stopped || inFlight || (globalThis.document && globalThis.document.visibilityState !== "visible")) {
+      schedule();
+      return;
+    }
+    inFlight = true;
+    try {
+      await onChange();
+      failures = 0;
+    } catch (error) {
+      failures += 1;
+      console.error(error);
+    } finally {
+      inFlight = false;
+      schedule();
+    }
+  };
+  schedule();
   globalThis.addEventListener?.("focus", refresh);
   globalThis.document?.addEventListener?.("visibilitychange", refresh);
   return () => {
-    if (timer) globalThis.clearInterval?.(timer);
+    stopped = true;
+    if (timer) globalThis.clearTimeout?.(timer);
     globalThis.removeEventListener?.("focus", refresh);
     globalThis.document?.removeEventListener?.("visibilitychange", refresh);
   };

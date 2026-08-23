@@ -336,6 +336,38 @@ async function leadBelongsToMember(client, workspaceId, leadId, memberId) {
   return Boolean(data);
 }
 
+export async function handleWorkspaceLeadWin(env, leadId, member) {
+  const errorResponse = configured(env);
+  if (errorResponse) return errorResponse;
+  if (!UUID.test(String(leadId || ""))) {
+    return json({ error: "invalid_id", message: "A valid lead id is required." }, 400);
+  }
+  if (member?.status !== "active") return forbidden("Only active employees can close leads.");
+  if (!["owner", "admin", "sales_manager", "salesperson"].includes(member.role)) {
+    return forbidden("Only sales roles can close leads.");
+  }
+
+  const workspaceId = operationsWorkspaceId(env);
+  const client = adminClient(env);
+  if (member.role === "salesperson" && !await leadBelongsToMember(client, workspaceId, leadId, member.id)) {
+    return forbidden("Salespeople can only win leads assigned to them.");
+  }
+
+  const { data, error } = await client.rpc("convert_lead_to_client", {
+    p_workspace_id: workspaceId,
+    p_lead_id: leadId,
+    p_actor_member_id: member.id,
+  });
+  if (error) {
+    if (String(error.code || "") === "42501") return forbidden(error.message);
+    if (String(error.code || "") === "P0002") {
+      return json({ error: "not_found", message: "That lead was not found in this workspace." }, 404);
+    }
+    throw error;
+  }
+  return json(data || {});
+}
+
 async function salespersonOwnsRecord(client, workspaceId, collection, table, id, memberId) {
   const row = await rowForMemberScope(client, workspaceId, collection, table, id);
   if (!row) return null;

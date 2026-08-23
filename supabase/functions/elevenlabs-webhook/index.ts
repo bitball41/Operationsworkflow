@@ -126,7 +126,7 @@ function normalizeDirection(metadata: JsonRecord): "inbound" | "outbound" | "web
   return "web";
 }
 
-async function workspaceForEvent(client: SupabaseClient, providerAgentId: string) {
+async function agentForEvent(client: SupabaseClient, providerAgentId: string) {
   const { data: agent, error } = await client
     .from("voice_agents")
     .select("id,user_id,client_id,is_example")
@@ -134,18 +134,28 @@ async function workspaceForEvent(client: SupabaseClient, providerAgentId: string
     .eq("provider_agent_id", providerAgentId)
     .maybeSingle();
   if (error) throw error;
-  if (agent) return { agent, workspaceId: agent.user_id as string };
+  return agent;
+}
 
-  const configured = cleanString(Deno.env.get("OPERATIONS_WORKSPACE_ID"), 60);
-  if (configured) return { agent: null, workspaceId: configured };
-  const { data: workspace, error: workspaceError } = await client
-    .from("operations_workspaces")
-    .select("id")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (workspaceError) throw workspaceError;
-  return { agent: null, workspaceId: cleanString(workspace?.id, 60) };
+async function quarantineUnknownAgent(
+  client: SupabaseClient,
+  event: JsonRecord,
+  eventType: string,
+  providerAgentId: string,
+  conversationId: string,
+): Promise<void> {
+  const timestamp = eventDate(event.event_timestamp);
+  const eventKey = `${eventType}:${conversationId}:${cleanString(event.event_timestamp, 40) || "unknown"}`;
+  const { error } = await client.from("elevenlabs_webhook_quarantine").upsert({
+    event_key: eventKey,
+    event_type: eventType,
+    provider_agent_id: providerAgentId,
+    provider_conversation_id: conversationId,
+    event_timestamp: timestamp,
+    payload: event,
+    reason: "unknown_agent",
+  }, { onConflict: "event_key", ignoreDuplicates: true });
+  if (error) throw error;
 }
 
 async function handle(req: Request): Promise<Response> {
@@ -179,7 +189,12 @@ async function handle(req: Request): Promise<Response> {
   }
 
   const client = adminClient();
-  const { agent, workspaceId } = await workspaceForEvent(client, providerAgentId);
+  const agent = await agentForEvent(client, providerAgentId);
+  if (!agent) {
+    await quarantineUnknownAgent(client, event, eventType, providerAgentId, conversationId);
+    return json({ received: true, quarantined: true, reason: "unknown_agent" }, 202);
+  }
+  const workspaceId = cleanString(agent.user_id, 60);
   if (!workspaceId) return json({ error: "workspace_not_configured" }, 503);
   const timestamp = eventDate(event.event_timestamp);
   const eventKey = `${eventType}:${conversationId}:${cleanString(event.event_timestamp, 40) || "unknown"}`;
