@@ -1,5 +1,15 @@
 import { workspaceAdmin } from "./workspace.js";
 
+const OWNER_ACCESS_EMAIL = "cj.nissim@icloud.com";
+
+/**
+ * The Zero Trust service token is named "Buisness Manager". Access service-token
+ * JWTs have no email; `common_name` is either that token name or the Client ID
+ * (`CF-Access-Client-Id`). Only these verified identities may act as the owner.
+ * Optional `CF_ACCESS_OWNER_SERVICE_TOKEN` covers the documented Client ID form.
+ */
+const OWNER_SERVICE_TOKEN_IDENTITIES = new Set(["buisness manager"]);
+
 function json(body, status) {
   return new Response(JSON.stringify(body), {
     status,
@@ -15,17 +25,31 @@ function normalizedEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
+function normalizedIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function ilikeLiteral(value) {
   return String(value).replace(/[\\%_]/g, "\\$&");
 }
 
+function ownerEmailFromServiceToken(claims, env) {
+  const commonName = normalizedIdentity(claims?.common_name);
+  if (!commonName) return "";
+  const allowed = new Set(OWNER_SERVICE_TOKEN_IDENTITIES);
+  const configured = normalizedIdentity(env?.CF_ACCESS_OWNER_SERVICE_TOKEN);
+  if (configured) allowed.add(configured);
+  return allowed.has(commonName) ? OWNER_ACCESS_EMAIL : "";
+}
+
 /**
- * Cloudflare Access proves the human identity. This second lookup maps that
- * verified email to an active employee record inside the one Operations
- * workspace; it does not create an application account or browser credential.
+ * Cloudflare Access proves identity. This second lookup maps a verified email,
+ * or one allowlisted Access service-token `common_name`, to an active employee
+ * record inside the one Operations workspace. It does not create an
+ * application account or browser credential.
  */
 export async function authorizeWorkspaceMember(claims, env) {
-  const email = normalizedEmail(claims?.email);
+  const email = normalizedEmail(claims?.email) || ownerEmailFromServiceToken(claims, env);
   if (!email) {
     return {
       ok: false,
