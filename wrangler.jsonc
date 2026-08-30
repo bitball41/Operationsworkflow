@@ -28,7 +28,8 @@
     "WHOP_WEBHOOK_DOMAIN": "hooks.conno.fun",
     "OPERATIONS_WORKSPACE_ID": "2847b8e2-8a34-4a72-8e44-2cfc1be4255b",
     "CF_ACCESS_TEAM_DOMAIN": "https://openscout-pages.cloudflareaccess.com",
-    "CF_ACCESS_AUD": "8cb2b052dc81e5cf1b6e74eefa600e1d610f7346712d0582f3447475140c867e"
+    "CF_ACCESS_AUD": "8cb2b052dc81e5cf1b6e74eefa600e1d610f7346712d0582f3447475140c867e",
+    "CF_ACCESS_OWNER_SERVICE_TOKEN": "b431bb480b11759a694c84f26136f8a4.access"
   },
   "routes": [
     { "pattern": "operations.conno.fun", "custom_domain": true },
