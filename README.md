@@ -26,10 +26,11 @@ there is no `/api`, so every key-backed feature reports itself as not connected.
 
 Cloudflare Access is the only sign-in boundary. The application has no accounts,
 password form, sign-up flow, or browser-side Supabase session. After Access
-admits the request, the Worker maps the verified email claim to an active
+admits the request, the Worker maps the verified email claim — or the
+allowlisted Access service token named `Buisness Manager` — to an active
 `team_members` row in the one configured Operations workspace. Unknown,
-inactive and email-less identities fail closed. The mapping is an employee
-record, not an application account.
+inactive and other email-less identities fail closed. The mapping is an
+employee record, not an application account.
 Production totals come from real records. One clearly labeled, idempotent
 `Cactus Wrench Roofing` example client is included to demonstrate the complete
 client operating flow without pretending it is revenue, a deployed phone line,
@@ -467,7 +468,9 @@ Safe activation order:
    and run one unrelated-phone test call before calling an agent deployed.
 5. Give every allowed human an `active` `team_members` row whose
    `access_email` exactly matches the verified Cloudflare Access email claim.
-   Keep unknown and inactive test identities available for denial checks.
+   The Access service token named `Buisness Manager` maps to the existing
+   owner row (`cj.nissim@icloud.com`). Keep unknown and inactive test
+   identities available for denial checks.
 6. Configure only the provider keys, model ids and regional base URLs that are
    actually available to the Worker.
 7. Deploy the Worker and verify owner, salesperson, unknown, inactive and

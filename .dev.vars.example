@@ -47,6 +47,10 @@ SUPABASE_SECRET_KEY=
 OPERATIONS_WORKSPACE_ID=2847b8e2-8a34-4a72-8e44-2cfc1be4255b
 CF_ACCESS_TEAM_DOMAIN=https://openscout-pages.cloudflareaccess.com
 CF_ACCESS_AUD=8cb2b052dc81e5cf1b6e74eefa600e1d610f7346712d0582f3447475140c867e
+# Optional. Cloudflare documents service-token JWT `common_name` as the Client
+# ID (`<hex>.access`). Set this to that Client ID if the token name is not in the
+# JWT. Never put the Client Secret here.
+# CF_ACCESS_OWNER_SERVICE_TOKEN=
 
 # Localhost only. Production hosts still require a verified Cloudflare Access
 # assertion even if this value is accidentally left enabled.
